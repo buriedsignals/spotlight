@@ -427,8 +427,8 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
             # fact-checker, at Investigation, can add a verdict or confidence, so
             # this is the case's fault (exit 3, as B1), unless another row for the
             # finding is complete: then the proposal selected the wrong one.
-            complete = [r for r in all_candidates if r is not row and r.get("verdict") in VERDICTS_1_1
-                        and r.get("confidence") in ("high", "medium", "low")]
+            complete = [r for r in all_candidates if r is not row and r.get("id") is not None and r.get("verdict") in VERDICTS_1_1
+                        and r.get("confidence") in ("high", "medium", "low")]  # selectable by fact_check_id
             if complete:
                 raise BuildError(f"claim {claim['key']}: the selected fact-check row has no 1.1 verdict and confidence; "
                                  f"select a complete row with fact_check_id (such as {complete[0].get('id')!r})")

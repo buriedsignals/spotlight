@@ -191,6 +191,7 @@ def main() -> int:
         # Codex review of simp-review: when another row for the finding is
         # complete, selecting the incomplete one is the proposal's to fix (exit 2).
         two_rows = json.loads(json.dumps(original_check))
+        two_rows["claims"][0]["id"] = "FC-complete"
         incomplete = {**json.loads(json.dumps(two_rows["claims"][0])), "id": "FC-incomplete"}
         incomplete.pop("confidence", None)
         two_rows["claims"].append(incomplete)
@@ -199,8 +200,15 @@ def main() -> int:
         selecting["claims"][0]["fact_check_id"] = "FC-incomplete"
         checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
                                  input=json.dumps(selecting), capture_output=True, text=True)
-        require(checked.returncode == 2 and "select a complete row with fact_check_id" in checked.stderr,
+        require(checked.returncode == 2 and "select a complete row with fact_check_id" in checked.stderr
+                and "FC-complete" in checked.stderr,
                 f"selecting the incomplete of two rows was not a proposal refusal: {checked.returncode} {checked.stderr}")
+        # A complete row with no id cannot be selected, so the case cannot be built (exit 3).
+        two_rows["claims"][0].pop("id")
+        write(case, "fact-check.json", two_rows)
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
+                                 input=json.dumps(selecting), capture_output=True, text=True)
+        require(checked.returncode == 3, f"an unselectable complete row was offered to the proposal: {checked.returncode} {checked.stderr}")
         write(case, "fact-check.json", original_check)
 
         # A single idless fact-check row needs no invented selector. A wrong

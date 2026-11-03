@@ -1844,6 +1844,8 @@ test('a worker records a passage through the writer script, or by citing lines o
 		// A cite outside the file is refused before any write.
 		{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 3, line_end: 9 }] } },
 		{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 3 }] } },
+		// Evidence typed beside a cite is replaced by the cited lines (Codex review of simp-review).
+		{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits distribution.', confidence: 'low', evidence: ['I', 'n'] }, cite: [{ path: 'research/licence-page.md', line_start: 3, line_end: 3 }] } },
 		// A source the cite does not back is refused (step 2 Codex review, P1).
 		{ name: 'record_finding', arguments: { finding: { claim: 'The licence is revoked.', confidence: 'low', sources: [{ url: 'https://invented.example/revoked' }] }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } },
 		// A file with no investigator fetch receipt, only a bundle row naming a URL,
@@ -1893,15 +1895,16 @@ test('a worker records a passage through the writer script, or by citing lines o
 	// new evidence item and a passage the Report may quote.
 	assert.match(results[5], /lines 3-9 are outside the file \(lines 1-3\)[\s\S]*Nothing was written/);
 	assert.match(results[6], /Finding id: F2\. Evidence item\(s\) E2 added[\s\S]*Passage\(s\) Q1 recorded/);
-	assert.match(results[7], /sources "https:\/\/invented\.example\/revoked" are not among the cited captures \(https:\/\/docs\.example\.org\/licence\)[\s\S]*Nothing was written/);
+	assert.match(results[8], /sources "https:\/\/invented\.example\/revoked" are not among the cited captures \(https:\/\/docs\.example\.org\/licence\)[\s\S]*Nothing was written/);
 	const copied = 'You may modify the software\nand distribute modified versions.';
 	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<Record<string, unknown>> };
 	const cited = findings.findings.find((row) => row.id === 'F2')!;
 	assert.deepEqual(cited.evidence, [copied], 'one entry per cite');
+	assert.deepEqual(findings.findings.find((row) => row.claim === 'The licence permits distribution.')?.evidence, ['and distribute modified versions.'], 'typed evidence is replaced by the cited lines');
 	assert.deepEqual(cited.sources, [{ url: 'https://docs.example.org/licence', accessed: '2026-07-16T12:30:00Z', local_file: 'research/licence-page.md' }]);
 	assert.deepEqual(cited.evidence_bundle_refs, ['E2']);
 	assert.ok(!findings.findings.some((row) => row.claim === 'The licence is revoked.'));
-	assert.match(results[8], /cite works only on a capture your own fetch saved[\s\S]*Nothing was written/);
+	assert.match(results[9], /cite works only on a capture your own fetch saved[\s\S]*Nothing was written/);
 	assert.ok(!findings.findings.some((row) => row.claim === 'SearXNG is free software.'));
 	const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<Record<string, unknown>> };
 	assert.equal(bundle.items.find((item) => item.id === 'E2')?.source_url, 'https://docs.example.org/licence');
@@ -2003,6 +2006,7 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.deepEqual(committed.evidence, ['You may modify the software'], 'a one-cite commit keeps evidence as a list of the cited text');
 		// inv-retest-def8674f.md: the bundle the commit created carries its schema_version, the case validates and the fact-checker starts.
 		assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).schema_version, '1.0');
+		assert.ok(fake.requests.some((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker') && toolResults(request).some((text) => text.includes('[Harness checks after the investigator finished: all passed]') && text.includes('validate-case.py: PASSED'))), 'the investigator\'s case check passed');
 		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), `the fact-checker started: ${toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n').slice(0, 800)}`);
 		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined);
 		const recordCall = worker.flatMap((request) => request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)).find((call) => call.function.name === 'record_finding')!;

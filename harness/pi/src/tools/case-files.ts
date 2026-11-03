@@ -1588,9 +1588,11 @@ function applyCites(context: ToolContext, given: unknown): unknown {
 	if (cites.some((cite) => !cite || typeof cite.path !== 'string' || !Number.isInteger(cite.line_start) || !Number.isInteger(cite.line_end))) return given;
 	const resolved = resolveCites(context, cites);
 	const finding = { ...(args.finding as RecordRow) };
-	// Always a list, one entry per cite (inv-retest-def8674f.md: a single cite's
-	// string came back as an array of single characters further on).
-	if (finding.evidence === undefined) finding.evidence = resolved.map((cite) => cite.text);
+	// The cited texts, always, as a list with one entry per cite: with a cite
+	// the evidence is code's copy of the lines (Tom, C13), never a model-typed
+	// value (inv-retest-def8674f.md: evidence came back as an array of single
+	// characters; Codex review of simp-review: supplied evidence bypassed this).
+	finding.evidence = resolved.map((cite) => cite.text);
 	const urls = [...new Set(resolved.map((cite) => cite.url))];
 	const stray = recordRows(finding.sources).filter((source) => typeof source.url === 'string' && !urls.includes(source.url));
 	if (stray.length) throw new ToolArgumentError(`record_finding: sources ${stray.map((source) => JSON.stringify(source.url)).join(', ')} are not among the cited captures (${urls.join(', ')}); omit sources and code lists the cited ones. Nothing was written.`);
