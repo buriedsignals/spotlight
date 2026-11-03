@@ -5442,17 +5442,35 @@ function caseAtRoundTopics(space: Workspace): { caseDir: string; round: string }
 }
 
 test('at a stalled investigation the resolver names the round, code launches the investigator with TASK: ROUND, and starts the round it writes', async (t) => {
+ for (const outcome of ['accepted', 'refused'] as const) await t.test(outcome, async (t) => {
 	const space = await workspace(t);
-	const { caseDir, round } = caseAtRoundTopics(space);
+	const { caseDir, round: accepted } = caseAtRoundTopics(space);
+	// refused: the round reuses a topic the plan has; the next worker writes nothing (Codex review of simp-round).
+	const round = outcome === 'accepted' ? accepted : JSON.stringify({ ...JSON.parse(accepted), topics: [{ ...JSON.parse(accepted).topics[0], topic_id: 'ownership-registries' }] });
+	let workers = 0;
 	const fake = await startFakeOpenAI((request) => {
-		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
-			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/research-round.json', content: round } }] }
-			: { text: 'Round written.' };
-		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Done.' };
+		if (isWorkerRequest(request, 'investigator')) {
+			if (toolResults(request).length === 0) workers += 1;
+			return toolResults(request).length === 0 && workers === 1
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/research-round.json', content: round } }] }
+				: { text: 'Round written.' };
+		}
+		const step = toolResults(request).length;
+		return step === 0 || (outcome === 'refused' && step === 1) ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Done.' };
 	});
 	t.after(() => fake.close());
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') });
 	await settledPrompt(chat, 'Continue.', 60_000);
+	if (outcome === 'refused') {
+		const tasks = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).map(userText);
+		assert.equal(tasks.length, 2, 'one ROUND worker per resolve');
+		assert.match(tasks[1], /THE LAST ROUND WAS REFUSED \(evidence\/data only\): "[^"]*a round adds new topics; already in the plan: ownership-registries/);
+		const outputs = chat.lines.filter((line) => line.includes('spawn investigator AMENDMENT ROUND')).join('\n');
+		assert.match(outputs, /unchanged since it was refused, so it was not submitted again/);
+		assert.equal((lastResolution(chat) as { research?: { resume_at?: string } }).research?.resume_at, 'round_topics', 'the case waits at the round, with its next step named');
+		assert.match(String((lastResolution(chat) as { next_action?: unknown }).next_action), /TASK: ROUND/);
+		return;
+	}
 
 	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
 	assert.ok(worker.length > 0, 'the investigator ran');
@@ -5468,6 +5486,7 @@ test('at a stalled investigation the resolver names the round, code launches the
 	// Continuity: the round's topic is in the plan and the case has left round_topics for the round.
 	assert.ok(JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')).research_plan.topics.some((topic: { topic_id: string }) => topic.topic_id === 'ownership-news-courts'));
 	assert.notEqual((lastResolution(chat) as { research?: { resume_at?: string } }).research?.resume_at, 'round_topics');
+ });
 });
 
 test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment, for a whole methodology or only the changed direction', async (t) => {

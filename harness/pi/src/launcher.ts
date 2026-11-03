@@ -375,7 +375,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				const checked = await validateInvestigationInputs(checkContext(harness), controller.signal);
 				if (!checked.passed) throw new Error(`spawn_agent: ${INPUTS_REFUSED}\n${checked.report}`);
 			}
-			owed = await deliverable(harness, request.agent, amending ? workerTask : fresh ? `${request.task}\n${fresh}` : request.task, status);
+			owed = await deliverable(harness, request.agent, amending || rounding ? workerTask : fresh ? `${request.task}\n${fresh}` : request.task, status);
 			const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }, extra: Record<string, string> = {}) => {
 				const current = await caseStatus(harness);
 				const refused = await refusalFor(harness, request.agent, task, current);
@@ -533,7 +533,15 @@ function roundTask(harness: Harness, status: Record<string, unknown>): string {
 
 async function applyRound(harness: Harness): Promise<string> {
 	const { config, active } = harness;
-	if (!existsSync(resolve(active.caseDir, 'data/research-round.json'))) return '[Harness: no data/research-round.json was written, so the research round was not started.]';
+	const file = resolve(active.caseDir, 'data/research-round.json');
+	if (!existsSync(file)) return '[Harness: no data/research-round.json was written, so the research round was not started.]';
+	// A proposal refused before is not submitted again unchanged (Codex review of
+	// simp-round); the hash is kept in the harness data folder, per case.
+	const hash = createHash('sha256').update(readFileSync(file)).digest('hex');
+	const refusedFile = resolve(config.dataDir, 'rounds', `${config.caseId}.refused.sha256`);
+	if (existsSync(refusedFile) && readFileSync(refusedFile, 'utf8').trim() === hash) {
+		return `[Harness: data/research-round.json is unchanged since it was refused, so it was not submitted again; the investigator must write a corrected round.]${harness.lastRoundRefusal ? `\n${harness.lastRoundRefusal}` : ''}`;
+	}
 	const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
 	try {
 		await runAdapter(transitionArguments('startResearchRound', {}, active, ORCHESTRATOR, true));
@@ -541,6 +549,8 @@ async function applyRound(harness: Harness): Promise<string> {
 		return '[Harness: startResearchRound applied: the round\'s topics run when you call spotlight_resolve.]';
 	} catch (error) {
 		harness.lastRoundRefusal = harness.redact((error as Error).message).slice(0, 1500);
+		mkdirSync(dirname(refusedFile), { recursive: true, mode: 0o700 });
+		writeFileSync(refusedFile, `${hash}\n`, { mode: 0o600 });
 		return `[Harness: the research round was refused; resolving again sends the investigator this refusal.]\n${harness.lastRoundRefusal}`;
 	}
 }
