@@ -33,6 +33,8 @@ export function baseEnv(space: Workspace, modelBaseURL: string, caseId = 'case-a
 		SPOTLIGHT_RECHECK: 'off',
 		// The Navigator lookup before planning would reach Navigator (step2-design.md section 4).
 		SPOTLIGHT_NAVIGATOR_PRESTEP: 'off',
+		// The orchestrator's code router (router.ts) would make the scripted calls these tests give the model.
+		SPOTLIGHT_CODE_ROUTER: 'off',
 		...(process.env.SPOTLIGHT_PYTHON ? { SPOTLIGHT_PYTHON: process.env.SPOTLIGHT_PYTHON } : {}),
 	};
 }

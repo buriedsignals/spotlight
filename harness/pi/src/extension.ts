@@ -4,7 +4,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
+import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
+import { ROUTER_MODEL, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
+import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
@@ -118,6 +123,61 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 	};
 }
 
+// Plan step 4 (reports/step4-routing-design.md): the orchestrator's provider,
+// wrapped by the code router (router.ts). A code move is answered here as the
+// assistant's tool call, marked code-made (responseModel ROUTER_MODEL, its
+// reason in responseId) so records, detectors, scoring and training extraction
+// never count it as a model decision; every other request goes to the model
+// unchanged. Each decision is logged with its reason.
+const INTENT_TIMEOUT_MS = 8000;
+function memberIntent(message: string): Promise<Intent | undefined> {
+	return new Promise((done) => {
+		const child = execFile(process.env.SPOTLIGHT_PYTHON || 'python3', [resolve(CHECKOUT_ROOT, 'scripts', 'member-intent.py'), ...(process.env.SPOTLIGHT_CONFIG ? ['--config', process.env.SPOTLIGHT_CONFIG] : [])], { timeout: INTENT_TIMEOUT_MS, encoding: 'utf8' }, (error, stdout) => {
+			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined); return; }
+			try {
+				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; unavailable?: string };
+				if (answer.unavailable) log(`[router] decision model unavailable: ${answer.unavailable.slice(0, 200)}`);
+				done(answer.intent);
+			} catch {
+				done(undefined);
+			}
+		});
+		child.stdin?.end(message);
+	});
+}
+
+const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1]['streamSimple']> = (model, context, options) => {
+	const out = createAssistantMessageEventStream();
+	void (async () => {
+		let move: RouterMove;
+		try {
+			const state = routerState(context.messages);
+			move = state.member ? routeMember(state, await memberIntent(state.member)) : routeWithoutMember(state);
+		} catch (error) {
+			move = { kind: 'model', reason: `router error: ${(error as Error).message.slice(0, 200)}` };
+		}
+		log(`[router] ${move.kind === 'call' ? move.tool : 'model'} (${move.reason})`);
+		if (move.kind === 'model') {
+			for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
+			out.end();
+			return;
+		}
+		const call = { type: 'toolCall' as const, id: `router-${Date.now().toString(36)}`, name: move.tool, arguments: {} };
+		const message = {
+			role: 'assistant' as const, content: [call], api: model.api, provider: model.provider, model: model.id,
+			responseModel: ROUTER_MODEL, responseId: `router: ${move.reason}`,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+			stopReason: 'toolUse' as const, timestamp: Date.now(),
+		};
+		out.push({ type: 'start', partial: { ...message, content: [] } });
+		out.push({ type: 'toolcall_start', contentIndex: 0, partial: message });
+		out.push({ type: 'toolcall_end', contentIndex: 0, toolCall: call, partial: message });
+		out.push({ type: 'done', reason: 'toolUse', message });
+		out.end(message);
+	})();
+	return out;
+};
+
 export default function spotlightExtension(pi: ExtensionAPI): void {
 	const role = required('SPOTLIGHT_ROLE');
 	if (process.env.SPOTLIGHT_ROUTE_INFERENCE !== 'own') {
@@ -128,6 +188,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
 	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
+		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : {}),
 		name: 'Spotlight',
 		baseUrl: required('SPOTLIGHT_MODEL_BASE_URL'),
 		api: 'openai-completions',

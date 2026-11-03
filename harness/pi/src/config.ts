@@ -610,6 +610,8 @@ export function childEnv(
 		// token is not here: only the launcher calls the Editorial MCP.
 		SPOTLIGHT_EDITION: config.edition,
 	});
+	// The orchestrator's code router (router.ts) is on for the local tiers; this forces it.
+	if (role === 'orchestrator' && env.SPOTLIGHT_CODE_ROUTER) out.SPOTLIGHT_CODE_ROUTER = env.SPOTLIGHT_CODE_ROUTER;
 	if (config.searchURL) out.SPOTLIGHT_SEARCH_URL = config.searchURL;
 	if (config.rlmURL) {
 		out.SPOTLIGHT_RLM_OPENAI_BASE_URL = config.rlmURL;

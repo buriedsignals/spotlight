@@ -1525,7 +1525,7 @@ m.StandIn(Path(sys.argv[2]))`;
 	return home;
 }
 
-async function fakeDecisions(probability: number) {
+async function fakeDecisions(probability: number, choice = 'other') {
 	const { createServer } = await import('node:http');
 	const states: unknown[] = [];
 	const server = createServer((request, response) => {
@@ -1534,7 +1534,7 @@ async function fakeDecisions(probability: number) {
 		request.on('end', () => {
 			const parsed = JSON.parse(body) as { state: unknown; questions: Record<string, unknown> };
 			states.push(parsed.state);
-			const answers = Object.fromEntries(Object.keys(parsed.questions).map((key) => [key, { noul: probability }]));
+			const answers = Object.fromEntries(Object.entries(parsed.questions).map(([key, question]) => [key, (question as { type?: string }).type === 'choice' ? { choice, probabilities: { [choice]: probability } } : { noul: probability }]));
 			response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ model: 'd1-test', answers }));
 		});
 	});
@@ -5429,8 +5429,16 @@ const resolveResults = (chat: Chat) => chat.lines
 	.filter((record) => record.type === 'tool_execution_end' && record.toolName === 'spotlight_resolve' && record.result!.content[0].text.startsWith('{'))
 	.map((record) => JSON.parse(record.result!.content[0].text) as Record<string, unknown>);
 
-test('a scripted orchestrator that only resolves, answers the member and opens the review reaches Investigation and the fact-checker; code spawns every worker', async (t) => {
+// Plan step 4 (reports/step4-routing-design.md): with the code router on, an
+// orchestrator model that only ever writes text reaches the same places; the
+// router's calls are marked code-made in the session record and logged with
+// their reason.
+test('a scripted orchestrator that only resolves, answers the member and opens the review reaches Investigation and the fact-checker; code spawns every worker; with the code router, a model that only writes text does too', async (t) => {
+ for (const route of ['scripted', 'router'] as const) await t.test(route, async (t) => {
 	const space = await workspace(t);
+	const decisions = route === 'router' ? await fakeDecisions(0.9, 'approval_talk') : undefined;
+	if (decisions) t.after(() => decisions.close());
+	let modelCalls = 0;
 	const source = join(space.root, 'outputs');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate', '--activated', '--clean']);
 	const caseDir = join(space.casesRoot, 'case-a');
@@ -5454,6 +5462,9 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 			return { text: /MODE: EXECUTION/.test(text) ? `Investigated. ${'Each registry page was read in full. '.repeat(50)}` : 'Done.' };
 		}
 		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		// The router route's model never calls a tool: it only writes words.
+		if (route === 'router') return { text: 'Here is where the case stands.' };
+		modelCalls += 1;
 		const last = request.messages.at(-1)!;
 		if (last.role !== 'tool') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
 		const called = (request.messages.filter((message) => message.role === 'assistant').at(-1)!.tool_calls as Array<{ function: { name: string } }>)[0].function.name;
@@ -5461,7 +5472,9 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 		return { text: 'Here is where the case stands.' };
 	});
 	t.after(() => fake.close());
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) });
+	const config = await gateConfig(space);
+	if (decisions) await writeFile(config, JSON.stringify({ ...JSON.parse(await readFile(config, 'utf8')), integrations: { ...JSON.parse(await readFile(config, 'utf8')).integrations, decisions: { endpoint: { url: decisions.url, api: 'openrouter-decisions' } } } }));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, ...(route === 'router' ? { SPOTLIGHT_CODE_ROUTER: 'on' } : {}) });
 	await settledPrompt(chat, 'Go ahead with that direction.');
 	execFileSync(PYTHON, [SEAM, 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-08-23T12:00:00Z', caseDir]);
 	await settledPrompt(chat, 'I approved the plan.');
@@ -5469,6 +5482,17 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 	const orchestrator = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'));
 	const called = new Set(orchestrator.flatMap((request) => request.messages.filter((message) => message.role === 'assistant').flatMap((message) => ((message.tool_calls ?? []) as Array<{ function: { name: string } }>).map((call) => call.function.name))));
 	assert.deepEqual([...called].sort(), ['open_review', 'spotlight_resolve']);
+	if (route === 'router') {
+		assert.equal(modelCalls, 0, 'the model made no routing call');
+		// Each router call is marked code-made in the run's records (the stdout
+		// records e2e calls.jsonl is built from), and logged with its reason.
+		const routed = chat.lines.filter((line) => line.includes('"responseModel":"spotlight-code-router"'));
+		assert.ok(routed.length > 0, 'router calls are marked in the records');
+		assert.ok(routed.some((line) => line.includes('"responseId":"router: member approval_talk"')));
+		assert.match(chat.stderr(), /\[router\] spotlight_resolve \(member approval_talk\)/);
+		assert.match(chat.stderr(), /\[router\] open_review \(the resolver names open_review\)/);
+		assert.ok(decisions!.states.length >= 2, 'the decision model read each member message');
+	}
 	const steps = resolveResults(chat).flatMap((state) => ((state.fixed_steps ?? []) as Array<{ step: string }>).map((receipt) => receipt.step));
 	assert.ok(steps.includes('spawn investigator PLANNING'), steps.join(', '));
 	assert.ok(steps.includes('spawn investigator EXECUTION'), steps.join(', '));
@@ -5477,6 +5501,7 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 	assert.match(execution.output, /^Investigated\. [\s\S]*\n\n\[Harness checks after the investigator finished: all passed\]/);
 	assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), 'the fact-checker was handed the case');
 	assert.ok(resolveResults(chat).some((state) => (state.phase_skill as { name?: string } | undefined)?.name === 'phase-methodology'), 'the phase skill came with the resolve');
+ });
 });
 
 // Member consent: code never crosses a gate. At a member gate it acts only when
