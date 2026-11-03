@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
-import { NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_ROUND, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 
 const PYTHON = process.env.SPOTLIGHT_PYTHON ?? 'python3';
@@ -316,4 +316,15 @@ test('the triage hold names the member options only after a failed triage', () =
 	const held = { phase: 'research', research: { resume_at: 'triage' } };
 	assert.equal(nextAction(held, () => false), undefined);
 	assert.equal(nextAction({ ...held, research_round: { triage: { ok: false, error: 'research triage: research needs a decision model' } } }, () => false), NEXT_TRIAGE_HELD);
+});
+
+// r2-k1.md: every Research step names its next move; the AMENDMENT steps are code's, the gate is the member's.
+test('the Research steps name their next move, and code launches the investigator for the round and the amendment', () => {
+	assert.equal(nextAction({ phase: 'research', research: { resume_at: 'round_topics' } }, () => false), NEXT_ROUND);
+	assert.equal(nextAction({ phase: 'research', research: { resume_at: 'amendment' } }, () => false), NEXT_AMENDMENT);
+	assert.equal(nextAction({ phase: 'research_approval' }, () => false), NEXT_RESEARCH_APPROVAL);
+	assert.match(NEXT_RESEARCH_APPROVAL, /open_review/);
+	assert.deepEqual(dispatchAt({ phase: 'research', status: 'active', research: { resume_at: 'round_topics' } }), { agent: 'investigator', task: 'MODE: AMENDMENT\nTASK: ROUND', step: 'investigator AMENDMENT ROUND' });
+	assert.deepEqual(dispatchAt({ phase: 'research', status: 'active', research: { resume_at: 'amendment' } }), { agent: 'investigator', task: 'MODE: AMENDMENT\nTASK: AMEND', step: 'investigator AMENDMENT AMEND' });
+	assert.equal(dispatchAt({ phase: 'research_approval', status: 'active' }), undefined, 'the gate is the member\'s');
 });

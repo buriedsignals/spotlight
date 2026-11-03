@@ -5417,6 +5417,59 @@ function caseAtAmendment(space: Workspace): string {
 
 // step2-design.md section 4: the amendment may also be only the directions it
 // changes; code completes it from the approved methodology and the marks.
+// r2-k1.md: at a stalled investigation's research round the resolver named no
+// next step and the orchestrator improvised. Resolving now launches the
+// investigator with the code-built TASK: ROUND, code starts the round when the
+// worker has written it, and the case leaves round_topics for the round.
+function caseAtRoundTopics(space: Workspace): { caseDir: string; round: string } {
+	const caseDir = join(space.casesRoot, 'case-a');
+	const prepare = [
+		'import importlib.util, json, sys',
+		'from pathlib import Path',
+		`spec = importlib.util.spec_from_file_location("rgc", ${JSON.stringify(join(CHECKOUT_ROOT, 'tests', 'research-gate-check.py'))})`,
+		'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
+		'g = m.ResearchGate("test_a_stall_goes_to_a_research_round_once_then_stops_with_a_gaps_report")',
+		'case = Path(sys.argv[1]); (case / "data").mkdir(parents=True)',
+		'(case / "brief-directions.txt").write_text("Who owns Northwind Holdings?\\n", encoding="utf-8")',
+		'm.write_json(case / "data/methodology.json", m.researched_methodology())',
+		'g.case = case',
+		'g.through_amendment()',
+		'for cycle in (1, 2, 3): g.fail_cycle(cycle)',
+		'print(json.dumps(m.ROUND))',
+	].join('\n');
+	const round = execFileSync(PYTHON, ['-c', prepare, caseDir], { env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' }, encoding: 'utf8' }).trim().split('\n').at(-1)!;
+	return { caseDir, round };
+}
+
+test('at a stalled investigation the resolver names the round, code launches the investigator with TASK: ROUND, and starts the round it writes', async (t) => {
+	const space = await workspace(t);
+	const { caseDir, round } = caseAtRoundTopics(space);
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/research-round.json', content: round } }] }
+			: { text: 'Round written.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') });
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.ok(worker.length > 0, 'the investigator ran');
+	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: ROUND\nSTALL GAP \(evidence\/data only\): "gap 3"[\s\S]*the plan already has: [\s\S]*ownership-registries/);
+	const steps = chat.lines.filter((line) => line.includes('spawn investigator AMENDMENT ROUND')).flatMap((line) => {
+		const record = JSON.parse(line) as { type?: string; toolName?: string; result?: { content: Array<{ text: string }> } };
+		if (record.type !== 'tool_execution_end' || record.toolName !== 'spotlight_resolve') return [];
+		return ((JSON.parse(record.result!.content[0].text) as { fixed_steps?: Array<{ step: string; output: string }> }).fixed_steps ?? []);
+	});
+	const spawned = steps.find((step) => step.step === 'spawn investigator AMENDMENT ROUND');
+	assert.ok(spawned, JSON.stringify(steps).slice(0, 600));
+	assert.match(spawned!.output, /startResearchRound applied/);
+	// Continuity: the round's topic is in the plan and the case has left round_topics for the round.
+	assert.ok(JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')).research_plan.topics.some((topic: { topic_id: string }) => topic.topic_id === 'ownership-news-courts'));
+	assert.notEqual((lastResolution(chat) as { research?: { resume_at?: string } }).research?.resume_at, 'round_topics');
+});
+
 test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment, for a whole methodology or only the changed direction', async (t) => {
  for (const shape of ['whole', 'fragment', 'fragment-changed'] as const) await t.test(shape, async (t) => {
 	const space = await workspace(t);
