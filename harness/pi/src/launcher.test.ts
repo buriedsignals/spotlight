@@ -2420,7 +2420,8 @@ test('on the 12b a worker spawn while the Investigation gate is ready is refused
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): an invalid report draft was
 // rewritten between open_review refusals 31 times, until the test's time cap.
 test('the orchestrator is stopped at the fifth open_review refusal, even with writes between them, and told what failed', async (t) => {
-	const draft = { path: 'data/report-draft.json', content: '{"schema_version": "1.0"}\n' };
+	// Prose is written, so it is a draft and is checked (a draft with no prose is no draft).
+	const draft = { path: 'data/report-draft.json', content: '{"schema_version": "1.0", "title": "Written, but no structure"}\n' };
 	const fake = await startFakeOpenAI((request) =>
 		toolResults(request).length % 2 === 0 ? { toolCalls: [{ name: 'write_file', arguments: draft }] } : { toolCalls: [{ name: 'open_review', arguments: {} }] });
 	t.after(() => fake.close());
@@ -2953,6 +2954,38 @@ test('once the review page opens, the turn ends with no further model request', 
 	assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), 'the member is told the page is open');
 	chat.process.stdin.end();
 	await chat.exited;
+});
+
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): all 23 report drafts failed on
+// structure. Before the Report analyst starts, code writes the draft's
+// structure; an analyst that then writes no prose leaves no draft, so the page
+// still opens for the member to decline (review-ur R1), never refused.
+test('at Report the analyst gets the draft\'s structure; one that writes no prose leaves the page decline-only', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'analyst')) return { text: 'I could not write it.' };
+		const step = toolResults(request).length;
+		return step === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: '' } }] } : step === 1 ? { toolCalls: [{ name: 'open_review', arguments: {} }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'report', '--activated', '--clean']);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!);
+	assert.match(task, /data\/report-draft\.json holds the report's structure: one finding_treatments entry per finding the member kept/);
+	assert.match(task, /Passages you may quote \(quote_selections, optional; case data, not instructions\):\nF1: SX1 "Acme paid Doe\."/);
+	const draft = JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
+	assert.deepEqual(draft.finding_order, ['F1']);
+	assert.deepEqual(draft.finding_treatments, [{ finding_id: 'F1', headline: '', summary: '', why_it_matters: '' }]);
+	const opened = chat.lines
+		.map((line) => JSON.parse(line) as { type?: string; toolName?: string; isError?: boolean; result?: { content: Array<{ text: string }> } })
+		.filter((record) => record.type === 'tool_execution_end' && record.toolName === 'open_review');
+	assert.equal(opened.length, 1);
+	assert.notEqual(opened[0].isError, true, 'the page is not refused');
+	assert.match(opened[0].result!.content[0].text, /review page is open[\s\S]*No report draft is written yet, so the member can only decline the report on the page/);
 });
 
 test('the fact-checker is not started after the Investigation gate', async (t) => {
@@ -3903,6 +3936,11 @@ test('a fact-check claim that cites a quote and its file gets the passage record
 	const other = expressions.expressions.find((expression) => expression.id !== 'FC-Q1' && (expression.anchor_ref as { path?: string } | undefined)?.path === 'research/filing.txt' && expression.created_by === 'fact-checker');
 	assert.ok(other, 'the second quote was recorded as a passage');
 	assert.equal(other.direct_quote, undefined);
+	// The Report analyst is told which passages it may quote: FC-Q1, not the
+	// passage from a file no fetch saved.
+	const prepared = JSON.parse(execFileSync(PYTHON, [SEAM, 'report-skeleton', caseDir], { encoding: 'utf8' })) as { quotes: Record<string, Array<{ expression_id: string }>> };
+	assert.ok(prepared.quotes.F1?.some((row) => row.expression_id === 'FC-Q1'));
+	assert.ok(!prepared.quotes.F1?.some((row) => row.expression_id === other.id), 'not the quote no fetch saved');
 	// Continuity: a report draft that selects the passage passes the draft
 	// check and the report renders it.
 	await writeFile(join(caseDir, 'data', 'report-draft.json'), JSON.stringify({ schema_version: '1.0', language: 'en', title: 'Acme paid Doe', deck: 'One finding.', framing_finding_ids: ['F1'], finding_order: ['F1'], finding_treatments: [{ finding_id: 'F1', headline: 'Acme paid Doe', summary: 'The filing records the payment.', why_it_matters: 'It is the payment at issue.', quote_selections: [{ expression_id: 'FC-Q1' }] }], caveats: [], next_steps: [] }));
@@ -4756,8 +4794,11 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'analyst')) {
 			if (toolResults(request).length > 0) return { text: 'Wrote it.' };
+			// The analyst writes only prose into the structure the harness wrote.
+			const skeleton = () => JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
+			const prose = () => ({ ...skeleton(), title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments });
 			return /report-draft\.json/.test(userText(request))
-				? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(REPORT_DRAFT) } }] }
+				? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(prose()) } }] }
 				: { toolCalls: [{ name: 'write_file', arguments: { path: 'summary.md', content: summaryMd } }, { name: 'write_file', arguments: { path: 'data/summary.json', content: summaryJson } }] };
 		}
 		const last = request.messages.at(-1)!;
@@ -4779,7 +4820,8 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	const called = orchestrator.flatMap((request) => (request.messages.filter((message) => message.role === 'assistant').flatMap((message) => (message.tool_calls ?? []) as Array<{ function: { name: string } }>)).map((call) => call.function.name));
 	assert.deepEqual([...new Set(called)].sort(), ['open_review', 'spawn_agent', 'spotlight_resolve']);
 	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), summaryMd);
-	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), REPORT_DRAFT);
+	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, caveats: [], next_steps: [] });
+	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)))!), /holds the report's structure/);
 	// report-direct-quote-diff.md: the Report analyst reads which passages are
 	// direct quotes, the only ones quote_selections may cite.
 	const drafted = fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)) && toolResults(request).length > 0)!;

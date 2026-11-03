@@ -443,7 +443,7 @@ const ANALYST_DELIVERABLES: Record<string, Deliverable> = {
 	},
 	report: {
 		files: ['data/report-draft.json'],
-		line: 'Your deliverable: data/report-draft.json, the report framing, as invoke_skill report-drafting (Workflow steps 1 and 2) describes and schemas/report-draft.schema.json requires. Cover every finding the gate kept: only a verified finding whose selection is false, or another finding whose disposition is set_aside, is left out; a finding with disposition keep (no selection item, any verdict, false included) is kept and appears. Preserve verdicts, confidence and uncertainty. Write it with write_file, then finish; the member decides the report on the review page.',
+		line: 'Your deliverable: the prose of data/report-draft.json, as invoke_skill report-drafting (Workflow steps 1 and 2) describes. Preserve verdicts, confidence and uncertainty. Write it with write_file, then finish; the member decides the report on the review page.',
 	},
 };
 

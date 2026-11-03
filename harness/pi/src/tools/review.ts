@@ -30,9 +30,24 @@ const GATE_CHECKS: Record<string, (context: ToolContext) => { file: string; args
 		{ file: 'data/findings.json', args: ['validate-case.py', context.caseDir] },
 		{ file: 'data/fact-check.json', args: ['validate-fact-check.py', context.caseDir] },
 	],
-	// The member may decline without a draft; a draft that exists is checked.
-	report: (context) => (existsSync(join(context.caseDir, 'data/report-draft.json')) ? [{ file: 'data/report-draft.json', args: ['validate-report-draft.py', context.caseDir] }] : []),
+	// The member may decline without a draft; a draft with prose written is checked.
+	report: (context) => (draftWritten(context.caseDir) ? [{ file: 'data/report-draft.json', args: ['validate-report-draft.py', context.caseDir] }] : []),
 };
+
+// Whether any of the report draft's prose is written; the skeleton the
+// harness writes at Report has none (review.py report_draft_written).
+function draftWritten(caseDir: string): boolean {
+	let draft: { title?: unknown; deck?: unknown; finding_treatments?: unknown };
+	try {
+		draft = JSON.parse(readFileSync(join(caseDir, 'data/report-draft.json'), 'utf8'));
+	} catch {
+		return false;
+	}
+	if (draft === null || typeof draft !== 'object') return false;
+	const treatments = Array.isArray(draft.finding_treatments) ? draft.finding_treatments : [];
+	const prose = [draft.title, draft.deck, ...treatments.flatMap((item) => (item && typeof item === 'object' ? [item.headline, item.summary, item.why_it_matters] : []))];
+	return prose.some((text) => typeof text === 'string' && text.trim() !== '');
+}
 
 // With nothing left to write, the resolver's `missing` at the Investigation
 // gate is only the approval itself.
@@ -94,8 +109,8 @@ export function batchBlocked(dataDir: string | undefined, caseDir: string): stri
 
 export async function missingForApproval(caseDir: string, resolved: Record<string, unknown>, blocked?: string): Promise<string | undefined> {
 	const has = (path: string) => existsSync(join(caseDir, path));
-	if (resolved.phase === 'report' && !has('data/report-draft.json')) {
-		return 'No report draft exists, so the member can only decline the report on the page. If the member wants the report, write data/report-draft.json as report-drafting says, then call open_review again.';
+	if (resolved.phase === 'report' && !draftWritten(caseDir)) {
+		return 'No report draft is written yet, so the member can only decline the report on the page. If the member wants the report, spawn_agent with agent analyst to write the draft\'s prose, then call open_review again.';
 	}
 	const ingest = resolved.ingest as { resume_at?: unknown } | undefined;
 	// A blocked batch cannot be built from any draft either.

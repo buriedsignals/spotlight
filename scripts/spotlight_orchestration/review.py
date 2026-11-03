@@ -986,13 +986,87 @@ def _newsroom_checks(case: Path, kind: str) -> dict[str, Any] | None:
     }
 
 
+REPORT_PROSE = ("headline", "summary", "why_it_matters")
+
+
+def report_draft_written(draft: object) -> bool:
+    """Whether the model has written any of the draft's prose. The harness's
+    skeleton (report_skeleton) has none, and counts as no draft yet."""
+    if not isinstance(draft, dict):
+        return False
+    treatments = draft.get("finding_treatments")
+    prose = [draft.get("title"), draft.get("deck")] + [
+        item.get(field)
+        for item in (treatments if isinstance(treatments, list) else [])
+        if isinstance(item, dict)
+        for field in REPORT_PROSE
+    ]
+    return any(isinstance(text, str) and text.strip() for text in prose)
+
+
+def report_skeleton(case: Path) -> dict[str, Any] | None:
+    """The report draft's structure, with the prose left empty: one treatment
+    per finding the Investigation gate kept, in findings.json order. None when
+    the gate kept no finding (the report can only be declined), and when the
+    gate's marks cannot be read (an unbound review): the draft validator then
+    names that to the analyst, as without a skeleton."""
+    findings_doc = _read_case_json(case, "data/findings.json")
+    raw = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+    try:
+        kept_out = set_aside_findings(case)
+    except OrchestrationError:
+        return None
+    ids = [
+        finding["id"]
+        for finding in (raw if isinstance(raw, list) else [])
+        if isinstance(finding, dict) and isinstance(finding.get("id"), str) and finding["id"].strip()
+        and finding["id"] not in kept_out
+    ]
+    if not ids:
+        return None
+    return {
+        "schema_version": "1.0",
+        "title": "",
+        "deck": "",
+        "framing_finding_ids": ids,
+        "finding_order": ids,
+        "finding_treatments": [{"finding_id": fid, **{field: "" for field in REPORT_PROSE}} for fid in ids],
+        "caveats": [],
+        "next_steps": [],
+    }
+
+
+def report_quotes(case: Path) -> dict[str, list[dict[str, str]]]:
+    """The passages a report draft may select per finding, as
+    validate-report-draft.py accepts them: an activated case, an active
+    passage the harness marked direct_quote, not a translation, linked to the
+    finding. Listed for the analyst; the validator still decides."""
+    findings_doc = _read_case_json(case, "data/findings.json")
+    activated = isinstance(findings_doc, dict) and findings_doc.get("schema_version") == "1.1" and case_path(
+        case, "data/case-contract.json").is_file()
+    expressions = _read_case_json(case, "data/source-expressions.json") if activated else None
+    quotes: dict[str, list[dict[str, str]]] = {}
+    for item in (expressions or {}).get("expressions", []) if isinstance(expressions, dict) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"].strip():
+            continue
+        events = item.get("lifecycle_events")
+        last = events[-1] if isinstance(events, list) and events and isinstance(events[-1], dict) else {}
+        if last.get("event") != "activated" or item.get("direct_quote") is not True or item.get("derivative_type") == "translation":
+            continue
+        for link in item.get("finding_links") or []:
+            finding = link.get("finding_id") if isinstance(link, dict) else None
+            if isinstance(finding, str) and finding.strip():
+                quotes.setdefault(finding.strip(), []).append({"expression_id": item["id"].strip(), "text": str(item.get("text", ""))})
+    return quotes
+
+
 def _report_content(case: Path) -> dict[str, Any]:
     """The draft the member publishes or declines, as text for the page."""
     draft = _read_case_json(case, REPORT_DRAFT)
     summary = _read_case_json(case, "data/summary.json")
     content: dict[str, Any] = {
         "title": _text(summary.get("title"), 500) if isinstance(summary, dict) else "",
-        "draft_ready": isinstance(draft, dict),
+        "draft_ready": report_draft_written(draft),
         "draft_title": _text(draft.get("title"), 500) if isinstance(draft, dict) else "",
     }
     if isinstance(draft, dict):

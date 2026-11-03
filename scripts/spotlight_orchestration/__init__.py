@@ -26,6 +26,8 @@ __all__ = [
     "review_view",
     "seal_investigation_gate",
     "start_research_round",
+    "write_report_skeleton",
+    "report_quotes",
 ]
 
 
@@ -158,6 +160,25 @@ def seal_investigation_gate(
         transitions.seal_investigation_gate,
         authorized_cases_root=authorized_cases_root,
     )
+
+
+def write_report_skeleton(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> bool:
+    """At Report, write data/report-draft.json's structure with empty prose
+    when no draft exists yet; returns whether it wrote one."""
+    return _transition(
+        case_dir,
+        transitions.write_report_skeleton,
+        authorized_cases_root=authorized_cases_root,
+    )
+
+
+def report_quotes(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> dict[str, list[dict[str, str]]]:
+    """Read-only: the passages a report draft may quote, per finding."""
+    return review.report_quotes(resolve_case(case_dir, authorized_cases_root))
 
 
 def decide_report(
