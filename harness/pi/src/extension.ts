@@ -211,7 +211,9 @@ const commitStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 		const state = commitState(context.messages, recordedLines);
 		for (const line of state.committed) recordedLines.add(line);
 		let reason = '';
-		const own = getCurrentTools(context.messages).some((tool) => tool.name === 'record_finding');
+		// Only an activated case records passages, the durable record of what was
+		// committed; a legacy case keeps the model's own route (Codex review of simp-commit, P2).
+		const own = getCurrentTools(context.messages).some((tool) => tool.name === 'record_finding') && existsSync(resolve(required('SPOTLIGHT_CASE_DIR'), 'data', 'case-contract.json'));
 		if (own) requestsSinceCommit += 1;
 		if (own && commitDue(state, requestsSinceCommit)) {
 			requestsSinceCommit = 0;
@@ -225,8 +227,10 @@ const commitStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 					},
 				});
 				const answer = await commit.result();
-				const call = answer.content.find((part) => part.type === 'toolCall') as { name?: string; arguments?: unknown } | undefined;
-				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : acceptCommit(call?.name, call?.arguments, state.shown);
+				const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
+				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` }
+					: calls.length !== 1 ? { reason: `the commit answer has ${calls.length} tool calls` }
+					: acceptCommit(calls[0].name, calls[0].arguments, state.shown);
 				if ('args' in accepted) {
 					const toolCall = { type: 'toolCall' as const, id: `${COMMIT_CALL_PREFIX}${Date.now().toString(36)}`, name: 'record_finding', arguments: accepted.args };
 					const message = { ...answer, content: [toolCall], responseId: `commit step: ${state.uncommitted.length} unrecorded line(s) shown`, stopReason: 'toolUse' as const };
@@ -260,7 +264,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
 	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
-		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : role === 'investigator' && routerOn(process.env) ? { streamSimple: commitStream } : {}),
+		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : role === 'investigator' && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' ? { streamSimple: commitStream } : {}),
 		name: 'Spotlight',
 		baseUrl: required('SPOTLIGHT_MODEL_BASE_URL'),
 		api: 'openai-completions',

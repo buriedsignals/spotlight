@@ -81,9 +81,11 @@ export function commitState(messages: readonly unknown[], recorded: ReadonlySet<
 		if (!call) continue;
 		const body = text(message.content);
 		if (call.name === 'grep_files') {
-			for (const row of body.split('\n')) {
-				const match = /^([^:\n]+):(\d+):(.*)$/.exec(row);
-				if (match && match[3].length < GREP_LINE_CHARS) show(match[1], Number(match[2]), call.turn);
+			// A result with any row that is not path:line:text (a path holding a
+			// newline could forge one) shows nothing (Codex review of simp-commit, P2).
+			const rows = body.split('\n').map((row) => /^([^:\n\r]+):(\d+):(.*)$/.exec(row));
+			if (body.trim() !== 'no matches' && rows.every(Boolean)) {
+				for (const match of rows) if (match![3].length < GREP_LINE_CHARS) show(match![1], Number(match![2]), call.turn);
 			}
 		} else if (call.name === 'read_file' && typeof call.args.path === 'string' && (call.args.offset || call.args.limit)) {
 			const from = Number(call.args.offset ?? 1);
@@ -127,12 +129,14 @@ export function acceptCommit(name: string | undefined, args: unknown, shown: Sho
 	if (typeof claim !== 'string' || !claim.trim() || !['high', 'medium', 'low'].includes(String(confidence))) return { reason: 'the commit answer has no claim or confidence' };
 	const cite: Array<{ path: string; line_start: number; line_end: number }> = [];
 	for (const entry of Array.isArray(input.cite) ? (input.cite as Array<{ path?: unknown; line_start?: unknown; line_end?: unknown }>) : []) {
-		if (typeof entry?.path !== 'string' || !Number.isInteger(entry.line_start) || !Number.isInteger(entry.line_end)) continue;
+		const start = Number(entry?.line_start), end = Number(entry?.line_end);
+		if (typeof entry?.path !== 'string' || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end) continue;
 		const seen = shown.get(entry.path.replace(/^\.\//, ''));
 		if (!seen) continue;
+		// Only the shown lines inside the range are visited (Codex review of simp-commit, P2).
 		let run: { path: string; line_start: number; line_end: number } | undefined;
-		for (let line = Number(entry.line_start); line <= Number(entry.line_end) && cite.length < 10; line++) {
-			if (!seen.has(line)) { run = undefined; continue; }
+		for (const line of [...seen.keys()].filter((line) => line >= start && line <= end).sort((a, b) => a - b)) {
+			if (cite.length >= 10 && !(run && run.line_end === line - 1)) break;
 			if (run && run.line_end === line - 1) run.line_end = line;
 			else { run = { path: entry.path.replace(/^\.\//, ''), line_start: line, line_end: line }; cite.push(run); }
 		}
