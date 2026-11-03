@@ -567,14 +567,11 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
                 "verified verdict has no case-local fact-check evidence anchor; add local_file, "
                 "source_ref, or evidence_bundle_id to evidence_for"
             )
-        elif status == "verified" and (version == "1.1" or bool(registry)) and not any(
+        elif status == "verified" and version == "1.1" and not any(
                 isinstance(entry, dict) and fact_checker_acquired(case_dir, entry, bundles, registry) for entry in evidence_for):
             # r12 (r12-ingest-audit A3): both verified rows cited only the
             # investigator's capture. An investigator's saved copy alone never
             # makes a verdict verified (agents/fact-checker.md).
-            # A legacy 1.0 case gets the same rule once the Pi harness has
-            # recorded a fetch for it (Codex re-review of fix11, finding 1);
-            # with no receipts the 1.0 rule stays as it was.
             failures.append(
                 "verified verdict cites no evidence the fact-checker acquired; cite your own capture's evidence "
                 "item (created_by fact-checker) in evidence_for, or set the verdict to unverified"
