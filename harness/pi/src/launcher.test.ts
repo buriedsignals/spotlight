@@ -1415,7 +1415,10 @@ test('a worker that records every third turn over 30 turns is never stopped by t
 
 // Review W2: an AMENDMENT investigator's deliverable is its research step's
 // file (roles.ts deliverableFor), here data/research-suggestions.json.
-test('an AMENDMENT investigator that writes its suggestions file is credited and not stopped by the progress watchdog', async (t) => {
+// step1-routing.md (fz1s1:10, :19): at research resume_at suggestions the move
+// is fixed, so resolving launches that investigator; the orchestrator only
+// resolves, and the case then reaches the Research page.
+test('resolving at Research suggestions launches the AMENDMENT investigator; its suggestions file is credited, not stopped by the progress watchdog, and the case reaches the Research page', async (t) => {
 	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	const sample = join(space.root, 'with-suggestions');
@@ -1430,11 +1433,14 @@ test('an AMENDMENT investigator that writes its suggestions file is credited and
 			if (turn === 16) return { text: 'Suggested.' };
 			return turn === 10 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/research-suggestions.json', content: suggestions } }] } : search(turn);
 		}
-		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: AMENDMENT\nSuggest a mark for every clue and direction.' } }] } : { text: 'Done.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Done.' };
 	});
 	t.after(() => fake.close());
-	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') }), 'Continue.');
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') });
+	await settledPrompt(chat, 'Continue.');
 	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: SUGGEST\n/);
+	assert.equal(lastResolution(chat).phase, 'research_approval', 'the suggestions count and the Research page is next');
 	assert.ok(toolResults(worker.at(-1)!).some((text) => text.startsWith('wrote ')), `the suggestions write was accepted: ${toolResults(worker.at(-1)!)[10]}`);
 	assert.equal(worker.length, 17);
 	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n');
