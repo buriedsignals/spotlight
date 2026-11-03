@@ -777,7 +777,7 @@ export const PROGRESS_RECEIPT_TAG = '[progress-watchdog receipt]';
 function recordTarget(tool: string, args: Record<string, unknown>): string | undefined {
 	if (tool === 'source_expressions') return args.action === 'fingerprint_findings' ? 'data/findings.json' : 'data/source-expressions.json';
 	if (tool === 'record_indicator_framework') return 'data/indicator-framework.json';
-	if (tool === 'record_finding' || tool === 'record_assessment') return canonicalWriteCall(tool, args)?.path;
+	if (tool === 'record_finding' || tool === 'record_assessment' || tool === 'judge_finding') return canonicalWriteCall(tool, args)?.path;
 	return undefined;
 }
 
@@ -865,7 +865,7 @@ function registerProgressWatchdog(pi: ExtensionAPI, role: string, caseDir: strin
 // run, and CALL_BUDGET_GRACE calls later its run ends.
 export const CALL_BUDGET_SPENT = "This task's calls are spent. Write only your assigned deliverable with what you have, state what remains incomplete, then finish.";
 const CALL_BUDGET_GRACE = 10;
-const BUDGET_WRITES = new Set(['write_file', 'edit_file', 'source_expressions', 'record_finding', 'record_assessment']);
+const BUDGET_WRITES = new Set(['write_file', 'edit_file', 'source_expressions', 'record_finding', 'record_assessment', 'judge_finding']);
 function registerCallBudget(pi: ExtensionAPI, budget: number): void {
 	let calls = 0;
 	pi.on('tool_call', (event) => {
@@ -956,7 +956,7 @@ const batchTools = { narrowed: false };
 export const fcBatchClosed = (tool: string) =>
 	`${tool} is closed for the rest of this batch because the batch's call budget is spent; source_expressions, invoke_skill and new sources are closed until the batch ends. Next: write this batch's claims with record_assessment (or write_file to data/fact-check.json). read_file, grep_files, list_files and hash_files stay open for saved evidence. Then finish.`;
 function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
-	const writingTools = tools.filter((name) => ['write_file', 'record_assessment', 'read_file', 'grep_files', 'list_files', 'hash_files'].includes(name));
+	const writingTools = tools.filter((name) => ['write_file', 'record_assessment', 'judge_finding', 'read_file', 'grep_files', 'list_files', 'hash_files'].includes(name));
 	let done = false;
 	let calls = 0;
 	pi.on('agent_start', () => {
@@ -980,7 +980,7 @@ function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 	});
 	pi.on('tool_result', async (event) => {
 		const text = event.content.map((part) => part.type === 'text' ? part.text : '').join('\n');
-		if ((event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment') && !event.isError && text.includes('Every finding in your batch has a claim')) {
+		if ((event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment' || event.toolName === 'judge_finding') && !event.isError && text.includes('Every finding in your batch has a claim')) {
 			const caseDir = required('SPOTLIGHT_CASE_DIR');
 			const batch = new Set(required('SPOTLIGHT_FC_BATCH').split(','));
 			const docs = readCheckDocs(caseDir);
@@ -1165,7 +1165,7 @@ function registerFactCheckDue(pi: ExtensionAPI): (tool: ToolDefinition) => ToolD
 		const path = started.get(event.toolCallId);
 		started.delete(event.toolCallId);
 		calls += 1;
-		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') {
+		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment' || event.toolName === 'judge_finding') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') {
 			calls = 0;
 			notice = FACT_CHECK_DUE;
 		}

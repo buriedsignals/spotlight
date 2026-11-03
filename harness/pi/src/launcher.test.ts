@@ -1944,6 +1944,7 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 const LOCAL_TOOLS = new Set([
 	'record_finding',
 	'record_assessment',
+	'judge_finding',
 	'spotlight_resolve',
 	'spotlight_transition',
 	'spawn_agent',
@@ -4629,14 +4630,22 @@ test('a rejected multi-quote write is carried after its earlier evidence side ef
 	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
 });
 
-test('a fact-checker can cite the harness recheck as its independent acquired evidence', async (t) => {
+// step2-design.md section 3 (Tom, plan C8): a re-fetch of the same source that
+// still holds the supporting passage verifies the finding. The fact-checker
+// may cite the re-fetch itself, or answer judge_finding and code writes the
+// claim; a page that changed leaves the finding unverified with the reason.
+test('a fact-checker can cite the harness recheck as its independent acquired evidence, or answer judge_finding and code writes the claim', async (t) => {
+ for (const route of ['record', 'judge', 'judge-changed'] as const) await t.test(route, async (t) => {
 	const url = 'https://registry.example.org/recheck';
+	// The case's supporting passage is "Acme paid Doe." (the fixture's SX1).
+	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : 'Registry record\nAcme paid Doe.\n';
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) {
 			if (toolResults(request).length) return { text: 'Checked.' };
+			if (route !== 'record') return { toolCalls: [{ name: 'judge_finding', arguments: { answer: 'supports', reason: 'The registry states the payment.' } }] };
 			const path = /research\/fc-recheck-E1\.md(?:\.raw)?/.exec(userText(request))?.[0];
 			assert.ok(path, 'the assigned packet identifies the recheck file');
-			const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ description: 'The rechecked registry states the payment.', source: url, quote: 'Acme paid Doe in full.', source_ref: { path, line_start: 2, line_end: 2 } }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The registry states it.' } };
+			const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ description: 'The rechecked registry states the payment.', source: url, quote: 'Acme paid Doe.', source_ref: { path, line_start: 2, line_end: 2 } }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The registry states it.' } };
 			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
 		}
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
@@ -4654,18 +4663,39 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	await writeFile(bundlePath, JSON.stringify(bundle));
 	const runs = join(space.root, 'recheck-runs');
 	const python = join(space.root, 'recheck-python');
-	await writeFile(python, `#!${process.execPath}\nconst fs = require('node:fs');\nconst cp = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) { fs.appendFileSync(${JSON.stringify(runs)}, 'fetch\\n'); process.stdout.write(JSON.stringify({ markdown:'Registry record\\nAcme paid Doe in full.\\n', source_url:args.at(-1), provider:'crawl4ai', status_code:200 })); }\nelse { try { process.stdout.write(cp.execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, {stdio:['inherit','pipe','inherit']})); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exit(error.status ?? 1); } }\n`, { mode: 0o755 });
+	await writeFile(python, `#!${process.execPath}\nconst fs = require('node:fs');\nconst cp = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) { fs.appendFileSync(${JSON.stringify(runs)}, 'fetch\\n'); process.stdout.write(JSON.stringify({ markdown:${JSON.stringify(page)}, source_url:args.at(-1), provider:'crawl4ai', status_code:200 })); }\nelse { try { process.stdout.write(cp.execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, {stdio:['inherit','pipe','inherit']})); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exit(error.status ?? 1); } }\n`, { mode: 0o755 });
 	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_RECHECK: 'on', SPOTLIGHT_ANONYMIZE_FETCH: 'true' }), 'Continue.');
 	assert.equal((await readFile(runs, 'utf8')).trim().split('\n').length, 1, 'only the harness fetched the source');
 	const checked = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
+	assert.doesNotMatch(task, /re-fetch or text match is not verification|A text match is not verification/, 'the task no longer says a re-fetch is not verification');
+	assert.match(task, /still contains the passage that supports the finding, that verifies it from the same source/);
+	if (route === 'judge-changed') {
+		// Continuity: the claim is written, unverified with the reason, and validates.
+		assert.equal(checked.claims[0].verdict, 'unverified');
+		assert.match(checked.claims[0].notes, /The registry states the payment\. \(Harness re-check: .*supporting passage is no longer on the page/);
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
+		return;
+	}
 	const items = JSON.parse(await readFile(bundlePath, 'utf8')).items;
+	console.log('DEBUG', JSON.stringify(checked.claims), JSON.stringify(toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!)).slice(0, 1500));
 	const item = items.find((entry: { raw_path?: string }) => entry.raw_path?.startsWith('research/fc-recheck-E1.md'));
 	assert.ok(item);
 	assert.equal(item.created_by, 'fact-checker');
 	assert.equal(item.source_url, url);
 	assert.equal(item.sha256, createHash('sha256').update(await readFile(join(caseDir, item.raw_path))).digest('hex'));
 	assert.equal(checked.claims[0].evidence_for[0].evidence_bundle_id, item.id);
-	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
+	if (route === 'judge') {
+		assert.equal(checked.claims[0].verdict, 'verified');
+		assert.equal(checked.claims[0].confidence, undefined, 'code writes no confidence');
+		assert.match(checked.claims[0].evidence_for[0].description, /Same source as the investigation, not a second source/);
+	}
+	try {
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir], { encoding: 'utf8' });
+	} catch (error) {
+		assert.fail(`validate-fact-check.py: ${String((error as { stdout?: string }).stdout ?? error)} ${JSON.stringify(checked.claims)}`);
+	}
+ });
 });
 
 test('launcher source rechecks reach the assigned packet and reuse the case cache', async (t) => {

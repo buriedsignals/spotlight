@@ -103,6 +103,36 @@ async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[],
 	}
 }
 
+// Plan C8 (Tom, 2026-11-03): a re-fetch of the same source that still holds
+// the supporting passage verifies the finding. With no grounding assessment of
+// its own, the fact-checker's capture of a URL takes the support type the
+// investigator recorded for that finding from the same URL: its item's link,
+// else the finding's grounding when the finding cites that item. Only direct
+// or indirect count; a different URL gets none.
+export function sameSourceSupport(context: ToolContext, url: string, finding: string): string | undefined {
+	const row = list(readJson(context.caseDir, 'findings.json'), 'findings').find((entry) => entry.id === finding);
+	const refs = new Set(Array.isArray(row?.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []);
+	const grounding = (row?.grounding as Row | undefined)?.support_type;
+	for (const item of list(readJson(context.caseDir, 'evidence-bundle.json'), 'items')) {
+		if (item.created_by === 'fact-checker' || (item.source_url ?? item.url) !== url) continue;
+		const link = list(item, 'claim_links').find((entry) => entry.finding_id === finding && ['direct', 'indirect'].includes(String(entry.support_type)));
+		if (link) return String(link.support_type);
+		if (refs.has(String(item.id)) && ['direct', 'indirect'].includes(String(grounding))) return String(grounding);
+	}
+	return undefined;
+}
+
+// The support type a quote's fact-checker evidence item links with.
+function quoteSupport(context: ToolContext, claim: Row, item: Row, relation: string): string {
+	if (relation === 'contradicts') return 'contradicted';
+	const support = (claim.grounding_assessment as Row | undefined)?.support_type;
+	if (typeof support === 'string' && ['direct', 'indirect', 'inferred', 'contradicted', 'insufficient'].includes(support)) return support;
+	const ref = (item.source_ref ?? {}) as Row;
+	const path = typeof ref.path === 'string' ? ref.path : typeof item.local_file === 'string' ? item.local_file : undefined;
+	const capture = path ? factCheckerCapture(context, path) : undefined;
+	return (capture && typeof claim.finding_id === 'string' ? sameSourceSupport(context, capture.url, claim.finding_id) : undefined) ?? 'insufficient';
+}
+
 // Whether an item's quote occurs in a file. An item without a quote is not
 // anchored there, whatever lines it names.
 function anchoredIn(caseDir: string, path: string, item: Row): boolean {
@@ -135,8 +165,7 @@ async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sour
 			for (const item of list(claim, key)) {
 				const refs = item.source_expression_refs;
 				if (typeof item.quote === 'string' && item.quote.trim() && !(Array.isArray(refs) && refs.length > 0) && typeof claim.finding_id === 'string') {
-					const support = (claim.grounding_assessment as Row | undefined)?.support_type;
-					const supportType = relation === 'contradicts' ? 'contradicted' : typeof support === 'string' && ['direct', 'indirect', 'inferred', 'contradicted', 'insufficient'].includes(support) ? support : 'insufficient';
+					const supportType = quoteSupport(context, claim, item, relation);
 					pending.push({ item, finding: claim.finding_id, relation, supportType });
 				}
 			}
@@ -158,8 +187,7 @@ async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sour
 				const ref = (item.source_ref ?? {}) as Row;
 				const path = typeof ref.path === 'string' ? ref.path : typeof item.local_file === 'string' ? item.local_file : undefined;
 				if (!path || !factCheckerCapture(context, path) || !anchoredIn(context.caseDir, path, item)) continue;
-				const support = (claim.grounding_assessment as Row | undefined)?.support_type;
-				const supportType = relation === 'contradicts' ? 'contradicted' : typeof support === 'string' && ['direct', 'indirect', 'inferred', 'contradicted', 'insufficient'].includes(support) ? support : 'insufficient';
+				const supportType = quoteSupport(context, claim, item, relation);
 				anchored.push({ item, finding: claim.finding_id, relation, supportType });
 			}
 		}

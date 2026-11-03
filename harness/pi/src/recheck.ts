@@ -1,7 +1,7 @@
 // #274: before a fact-check batch the harness re-fetches each cited source
-// once per case and says whether the recorded passages are still on it, so the
-// fact-checker goes to the web only for a source that changed or a claim it
-// disputes. The copy is saved as research/fc-recheck-<item>.md(.raw), named and
+// once per case and says whether the recorded passages are still on it. A
+// re-fetch that still holds the supporting passage verifies the finding
+// (Tom, 2026-11-03, plan C8); a second source is optional. The copy is saved as research/fc-recheck-<item>.md(.raw), named and
 // dated as harness-acquired; it is not added to the evidence bundle, so it is
 // evidence only if the fact-checker records it as an item of its own. Sensitive
 // cases make no request.
@@ -18,6 +18,9 @@ const rows = (doc: unknown, key: string): Row[] => {
 	return Array.isArray(value) ? value.filter((row): row is Row => !!row && typeof row === 'object') : [];
 };
 const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
+
+// Re-fetches in flight at once.
+export const RECHECK_PARALLEL = 4;
 
 export type RecheckOptions = { context: ToolContext; dataDir: string; sensitive: boolean; signal?: AbortSignal };
 
@@ -39,9 +42,18 @@ export async function recheckSources(docs: CheckDocs, ids: string[], options: Re
 	const items = rows(docs.bundle, 'items').filter((item) => refs.has(String(item.id)) || rows(item, 'claim_links').some((link) => ids.includes(String(link.finding_id))));
 	const passages = rows(docs.expressions, 'expressions');
 	const tool = fetchTool(options.context);
+	// step2-design.md section 3: the sources are fetched in parallel, a few at a
+	// time, each URL once; a failure stays that URL's status.
+	const pending = new Map<string, Row>();
 	for (const item of items) {
 		const url = item.source_url ?? item.url;
-		if (typeof url !== 'string' || !/^https?:\/\//.test(url) || done[url] || options.signal?.aborted) continue;
+		if (typeof url === 'string' && /^https?:\/\//.test(url) && !done[url] && !pending.has(url)) pending.set(url, item);
+	}
+	const queue = [...pending.entries()];
+	const worker = async () => {
+		for (let next = queue.shift(); next && !options.signal?.aborted; next = queue.shift()) await recheckOne(next[0], next[1]);
+	};
+	const recheckOne = async (url: string, item: Row) => {
 		const quotes = passages.filter((p) => p.original_evidence_bundle_id === item.id).map((p) => flat(String(p.text ?? ''))).filter(Boolean);
 		const stamp = new Date().toISOString();
 		try {
@@ -55,7 +67,8 @@ export async function recheckSources(docs: CheckDocs, ids: string[], options: Re
 		} catch (error) {
 			done[url] = { status: `unreachable: ${(error as Error).message.slice(0, 160)} (harness re-fetch ${stamp})` };
 		}
-	}
+	};
+	await Promise.all(Array.from({ length: Math.min(RECHECK_PARALLEL, queue.length) }, worker));
 	try {
 		mkdirSync(dirname(store), { recursive: true, mode: 0o700 });
 		writeFileSync(store, JSON.stringify(done), { mode: 0o600 });

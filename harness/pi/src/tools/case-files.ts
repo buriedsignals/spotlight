@@ -13,6 +13,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCh
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, fetchedFile, registeredCapture } from './fetch.ts';
+import { sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { HARNESS_PROPOSALS, RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
@@ -1390,6 +1391,8 @@ export function canonicalWriteCall(tool: string, args: unknown): { path: string;
 			? { path: input.path, ...(typeof input.content === 'string' ? { content: input.content } : {}) }
 			: undefined;
 	}
+	// judge_finding writes the fact-check through record_assessment; its content is code's.
+	if (tool === 'judge_finding') return { path: 'data/fact-check.json' };
 	const key = tool === 'record_finding' ? 'finding' : tool === 'record_assessment' ? 'assessment' : undefined;
 	if (!key || !input[key] || typeof input[key] !== 'object' || Array.isArray(input[key])) return undefined;
 	return {
@@ -1654,6 +1657,118 @@ async function citePassages(context: ToolContext, sourceExpressions: ToolDefinit
 	return `Passage(s) ${expressions.map((expression) => expression.id).join(', ')} recorded from the cited lines.`;
 }
 
+// step2-design.md section 3 (TUNE W1-W4 for the fact-checker): one question
+// per finding. The fact-checker answers supports, partly, doesnt or cant_tell
+// with a one-line reason; code writes the claim through record_assessment.
+// Verified needs Tom's rule (2026-11-03, plan C8): the harness re-fetch of the
+// same source, under the fact-checker's receipt and unchanged since, still
+// holds the passage that supports the finding. Otherwise the claim is
+// unverified with the reason; partly adds the partial_support flag. Code
+// writes no confidence. A second source stays on record_assessment, whose
+// quote path records its passage.
+const ANSWERS = ['supports', 'partly', 'doesnt', 'cant_tell'] as const;
+const flatText = (text: string) => text.replace(/\s+/g, ' ').trim();
+
+// The lines of `text` that hold `quote`: as written first, else with spacing
+// normalized (the re-check's own comparison), then that window as the file has it.
+function locate(text: string, quote: string): { line_start: number; line_end: number; quote: string } | undefined {
+	const lines = sourceLines(text);
+	const wanted = quote.trim();
+	if (!wanted) return undefined;
+	for (const exact of [true, false]) {
+		for (let size = 1; size <= Math.min(20, lines.length); size++) {
+			for (let start = 0; start + size <= lines.length; start++) {
+				const window = lines.slice(start, start + size).join('\n');
+				if (exact ? window.includes(wanted) : flatText(window).includes(flatText(wanted))) return { line_start: start + 1, line_end: start + size, quote: exact ? wanted : window.trim() };
+			}
+		}
+	}
+	return undefined;
+}
+
+type Recheck = Record<string, { status?: string; acquisition?: { path?: string; url?: string; accessed?: string; sha256?: string } } | string>;
+function taskRecheck(context: ToolContext): Recheck {
+	const path = context.env.SPOTLIGHT_TASK_RECHECK;
+	if (typeof path !== 'string' || !/^data\/harness-checks\/fact-checker\/recheck-[0-9a-f]{64}\.json$/.test(path)) return {};
+	try { return JSON.parse(readFileSync(join(context.caseDir, path), 'utf8')) as Recheck; } catch { return {}; }
+}
+
+// The finding's supporting passage found in the harness re-fetch of its
+// source, as an evidence item quotes.ts records; or the reason there is none.
+function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; status: string } {
+	const finding = recordRows(recordDocument(context, 'data/findings.json').findings).find((row) => row.id === findingId);
+	const refs = new Set(Array.isArray(finding?.evidence_bundle_refs) ? finding.evidence_bundle_refs.map(String) : []);
+	const items = recordRows(recordDocument(context, 'data/evidence-bundle.json').items).filter((item) => refs.has(String(item.id)) || recordRows(item.claim_links).some((link) => link.finding_id === findingId));
+	const passages = recordRows(recordDocument(context, 'data/source-expressions.json').expressions).filter((passage) =>
+		recordRows(passage.lifecycle_events).at(-1)?.event === 'activated'
+		&& recordRows(passage.finding_links).some((link) => link.finding_id === findingId && link.relation === 'supports'));
+	const recheck = taskRecheck(context);
+	const statuses: string[] = [];
+	for (const item of items) {
+		const url = typeof item.source_url === 'string' ? item.source_url : typeof item.url === 'string' ? item.url : undefined;
+		const own = passages.filter((passage) => passage.original_evidence_bundle_id === item.id && typeof passage.text === 'string');
+		if (!url || !own.length) continue;
+		const check = recheck[url];
+		const acquisition = typeof check === 'object' ? check.acquisition : undefined;
+		const capture = typeof acquisition?.path === 'string' ? factCheckerCapture(context, acquisition.path) : undefined;
+		if (!capture || capture.sha256 !== acquisition?.sha256) {
+			statuses.push(`${url}: ${typeof check === 'object' && check.status ? check.status : typeof check === 'string' ? check : 'no harness re-fetch'}`);
+			continue;
+		}
+		let text: string;
+		try { text = readFileSync(readTarget(context.caseDir, acquisition!.path!, context.scope), 'utf8'); } catch { statuses.push(`${url}: the re-fetched copy cannot be read`); continue; }
+		if (!sameSourceSupport(context, url, findingId)) { statuses.push(`${url}: the investigation records no direct or indirect support from this source for the finding`); continue; }
+		for (const passage of own) {
+			const found = locate(text, String(passage.text));
+			if (found) return { status: 'found', item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${capture.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: acquisition!.path, line_start: found.line_start, line_end: found.line_end } } };
+		}
+		statuses.push(`${url}: re-fetched, but the supporting passage is no longer on the page`);
+	}
+	if (!statuses.length) return { status: passages.length ? 'no harness re-fetch of its sources' : 'no recorded supporting passage to compare' };
+	return { status: statuses.join('; ') };
+}
+
+function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[], filled: string | undefined): ToolDefinition {
+	const parameters = Type.Object({
+		finding_id: Type.Optional(Type.String({ minLength: 1 })),
+		answer: Type.Union(ANSWERS.map((answer) => Type.Literal(answer))),
+		reason: Type.String({ minLength: 1, maxLength: 1000 }),
+	}, { additionalProperties: false });
+	return {
+		name: 'judge_finding',
+		label: 'Judge finding',
+		parameters,
+		executionMode: 'sequential',
+		description: `Answer one question for one finding: does its source support it? answer is supports, partly, doesnt or cant_tell, with a one-line reason. Code checks the harness re-fetch for the supporting passage and writes the claim: verified only when the harness re-fetch of the same source still contains the passage that supports it; otherwise unverified with your reason, and partly adds a partial_support flag. For disputed, false, not_checkable or a second source of your own, use record_assessment.${filled ? ` Your batch holds one finding, ${filled}: omit finding_id.` : batch.length ? ` finding_id is one of ${batch.join(', ')}.` : ''}`,
+		async execute(id, raw, signal, ...rest) {
+			const input = checkedParams<{ finding_id?: string; answer: typeof ANSWERS[number]; reason: string }>('judge_finding', parameters, raw);
+			const findingId = input.finding_id ?? filled;
+			if (!findingId) throw new ToolArgumentError(`judge_finding: finding_id is required${batch.length ? `: one of ${batch.join(', ')}` : ''}.`);
+			if (batch.length && !batch.includes(findingId)) throw new ToolArgumentError(`judge_finding: ${findingId} is not in your batch (${batch.join(', ')}).`);
+			const reason = input.reason.trim();
+			const evidence: RecordRow[] = [];
+			let status = '';
+			if (input.answer === 'supports') {
+				const support = refetchedSupport(context, findingId);
+				if (support.item) evidence.unshift(support.item);
+				else status = support.status;
+			}
+			const verdict = input.answer === 'supports' && evidence.length ? 'verified' : 'unverified';
+			const assessment: RecordRow = {
+				finding_id: findingId,
+				verdict,
+				evidence_for: evidence,
+				evidence_against: [],
+				notes: status ? `${reason} (Harness re-check: ${status}.)` : reason,
+				...(input.answer === 'partly' ? { flags: [{ code: 'partial_support', reason }] } : {}),
+			};
+			const result = await assess.execute(id, { assessment }, signal, ...rest);
+			const said = verdict === 'verified' ? `${findingId} recorded as verified.` : `${findingId} recorded as unverified${status ? `: ${status}` : ''}.`;
+			return { ...result, content: [...result.content, { type: 'text' as const, text: said }] };
+		},
+	};
+}
+
 export function recordTools(tools: ToolDefinition[], context: ToolContext): ToolDefinition[] {
 	const role = context.env.SPOTLIGHT_ROLE;
 	if (role !== 'investigator' && role !== 'fact-checker') return [];
@@ -1678,7 +1793,7 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 	const write = tools.find((tool) => tool.name === 'write_file');
 	const expressions = tools.find((tool) => tool.name === 'source_expressions');
 	if (!write) return [];
-	return [{
+	const tool: ToolDefinition = {
 		name,
 		label: finding ? 'Record finding' : 'Record assessment',
 		parameters,
@@ -1746,5 +1861,6 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 			];
 			return finding ? { ...result, content: [...result.content, { type: 'text' as const, text: [`Finding id: ${String(row.id)}.`, ...cited].join(' ') }] } : result;
 		},
-	}];
+	};
+	return finding ? [tool] : [tool, judgeTool(context, tool, batch, filled)];
 }

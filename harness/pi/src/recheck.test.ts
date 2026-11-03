@@ -9,18 +9,21 @@ import test from 'node:test';
 import { recheckSources } from './recheck.ts';
 import * as fetchTools from './tools/fetch.ts';
 
-test('a cited source is re-fetched once per case and reported as still saying, changed or unreachable; a sensitive case is not fetched', async (t) => {
+// step2-design.md section 3: the sources of a batch are fetched in parallel.
+test('cited sources are re-fetched in parallel, once per case, and reported as still saying, changed or unreachable; a sensitive case is not fetched', async (t) => {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-recheck-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const caseDir = join(root, 'case');
 	await mkdir(join(caseDir, 'research'), { recursive: true });
 	const runs = join(root, 'runs.txt');
+	const spans = join(root, 'spans.txt');
 	// A stand-in for the scraping seam: the page for each URL, or a failure.
 	const pages = { 'https://a.example/same': 'Header. Acme paid Doe in 2024. Footer.', 'https://b.example/moved': 'This page now says something else.' };
 	const seam = join(root, 'python');
 	await writeFile(
 		seam,
-		`#!${process.execPath}\nconst url = process.argv.at(-1);\nrequire('fs').appendFileSync(${JSON.stringify(runs)}, url + '\\n');\nconst pages = ${JSON.stringify(pages)};\nif (!pages[url]) { process.stderr.write('scrape failed: crawl4ai was bot-blocked on ' + url); process.exit(3); }\nprocess.stdout.write(JSON.stringify({ markdown: pages[url], source_url: url, provider: 'crawl4ai', status_code: 200 }));\n`,
+		// Each fetch takes a moment and logs when it starts and ends.
+		`#!${process.execPath}\nconst fs = require('fs');\nconst url = process.argv.at(-1);\nfs.appendFileSync(${JSON.stringify(runs)}, url + '\\n');\nfs.appendFileSync(${JSON.stringify(spans)}, 'start\\n');\nconst pages = ${JSON.stringify(pages)};\nsetTimeout(() => {\nfs.appendFileSync(${JSON.stringify(spans)}, 'end\\n');\nif (!pages[url]) { process.stderr.write('scrape failed: crawl4ai was bot-blocked on ' + url); process.exit(3); }\nprocess.stdout.write(JSON.stringify({ markdown: pages[url], source_url: url, provider: 'crawl4ai', status_code: 200 }));\n}, 400);\n`,
 	);
 	await chmod(seam, 0o755);
 	const docs = {
@@ -43,6 +46,8 @@ test('a cited source is re-fetched once per case and reported as still saying, c
 
 	assert.deepEqual(await recheckSources(docs, ['F1'], options(true)), {}, 'a sensitive case makes no request');
 	const first = await recheckSources(docs, ['F1'], options(false));
+	const order = (await readFile(spans, 'utf8')).trim().split('\n');
+	assert.deepEqual(order.slice(0, 3), ['start', 'start', 'start'], `the three sources are fetched at once: ${order.join(' ')}`);
 	assert.equal(first['https://a.example/same'].status, 'still says the 1 recorded passage');
 	assert.equal(first['https://b.example/moved'].status, 'changed: 1 of 1 recorded passages are no longer on the page');
 	assert.match(first['https://c.example/blocked'].status, /^unreachable: fetch failed: crawl4ai was bot-blocked on https:\/\/c\.example\/blocked/);
