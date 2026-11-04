@@ -46,6 +46,11 @@ function caseForModel(active: ActiveCase, runAdapter: AdapterRunner): Promise<Re
 	return resolveCase(active, runAdapter).then((state) => withPlanCheck(state, gateCheck(active, runAdapter, context)));
 }
 
+// The orchestrator's case phase, read now (set in toolsFor). The router's
+// methodology relay checks it: the last resolve in the transcript can predate
+// an approval the review page recorded (Codex review of simp-relay, P2).
+let casePhase: (() => Promise<string>) | undefined;
+
 // Consecutive watchdog-stopped dispatches of one worker task
 // (STALLED_DISPATCHES). Process memory, read by the dispatches (toolsFor) and
 // the text-turn nudge (spotlightExtension): declared inside toolsFor it was out
@@ -95,7 +100,8 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
 		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));
-		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
+		casePhase = async () => String((await resolveCase(active, runAdapter)).phase ?? '');
+		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, casePhase!)));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	const allowed = tools.filter((tool) => allowlist.has(tool.name));
@@ -174,6 +180,7 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 				// r1-router-smoke.md: each decision logs D1's probability and latency.
 				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
 				move = routeMember(state, asked.intent);
+				if (move.kind === 'call' && move.tool === 'spawn_agent' && (await casePhase?.()) !== 'methodology_approval') move = { kind: 'model', reason: 'member change_request, but the case is no longer at the methodology review' };
 			} else move = routeWithoutMember(state);
 		} catch (error) {
 			move = { kind: 'model', reason: `router error: ${(error as Error).message.slice(0, 200)}` };

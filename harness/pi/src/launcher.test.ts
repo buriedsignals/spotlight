@@ -5829,7 +5829,9 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 	const space = await workspace(t);
 	// K5 Tor P1: the member's change at the methodology review reaches the plan.
 	const asked = 'Before I approve, add a research topic on the registry\'s board today: which sources confirm the current members?';
-	const decisions = route === 'router' ? await fakeDecisions(0.9, (message) => (message === asked ? 'change_request' : 'approval_talk')) : undefined;
+	// After the page approval the last resolve the router saw can still be the review's (Codex review of simp-relay, P2).
+	const late = 'Also add a research topic on the registry\'s auditors.';
+	const decisions = route === 'router' ? await fakeDecisions(0.9, (message) => (message === asked || message === late ? 'change_request' : 'approval_talk')) : undefined;
 	if (decisions) t.after(() => decisions.close());
 	const source = join(space.root, 'outputs');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate', '--activated', '--clean']);
@@ -5879,6 +5881,11 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 		assert.match(chat.stderr(), /\[router\] spawn_agent \(member change_request at the methodology review\) \[D1 change_request[^\n]*\n(?:[^\n]*\n)*?[^\n]*\[router\] spotlight_resolve[^\n]*\n(?:[^\n]*\n)*?[^\n]*\[router\] open_review \(the resolver names open_review\)/);
 	}
 	execFileSync(PYTHON, [SEAM, 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-08-23T12:00:00Z', caseDir]);
+	if (route === 'router') {
+		await settledPrompt(chat, late);
+		assert.match(chat.stderr(), /\[router\] model \(member change_request, but the case is no longer at the methodology review\)/);
+		assert.ok(!fake.requests.some((request) => isWorkerRequest(request, 'investigator') && userText(request).includes(late)), 'no correction after the approval');
+	}
 	await settledPrompt(chat, 'I approved the plan.');
 
 	const orchestrator = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'));
