@@ -601,6 +601,8 @@ export function childEnv(
 		SPOTLIGHT_ROUTE_INFERENCE: route.inference,
 		SPOTLIGHT_MODEL_CONTEXT_WINDOW: String(config.contextWindow),
 		SPOTLIGHT_MODEL_TIER: config.modelTier,
+		// The fold point, so read_file can page a capture that would cross it (H-K3a).
+		...(config.fold ? { SPOTLIGHT_FOLD_AT: String(config.fold.at) } : {}),
 		SPOTLIGHT_PYTHON: config.python,
 		SPOTLIGHT_CONFIG: config.spotlightConfig,
 		SPOTLIGHT_SENSITIVE: config.sensitive ? 'true' : 'false',

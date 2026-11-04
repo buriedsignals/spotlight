@@ -27,6 +27,32 @@ const AGENT_REFERENCES_DIR = resolve(CHECKOUT_ROOT, 'agents', 'references');
 const MAX_READ_CHARS = 200_000;
 export const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
 
+// H-K3a (K3 Tor P3): at the 12b tier's 40,960 window (fold point 20,480), one
+// whole read of a ~30k-character capture crossed the fold point, the fold
+// dropped it, and the worker read it again, seven times. Below this fold point
+// a read returns at most a page, a quarter of the fold point at 2.3 characters
+// a token, of whole lines, and names the next offset and limit. The frontier
+// tier has no fold point, and larger windows are unchanged.
+export const READ_PAGE_FOLD_MAX = 32_768;
+export function readPageChars(env: Record<string, string | undefined> = process.env): number | undefined {
+	const at = Number(env.SPOTLIGHT_FOLD_AT);
+	if (env.SPOTLIGHT_MODEL_TIER === 'frontier' || !Number.isInteger(at) || at <= 0 || at > READ_PAGE_FOLD_MAX) return undefined;
+	return Math.floor((at * 2.3) / 4);
+}
+function readPage(lines: string[], first: number, total: number, page: number): string {
+	let used = 0;
+	let count = 0;
+	for (const line of lines) {
+		if (count > 0 && used + line.length + 1 > page) break;
+		used += line.length + 1;
+		count += 1;
+	}
+	const last = first + count - 1;
+	// One line longer than a page is cut; the marker below says the last row may be partial.
+	const body = lines.slice(0, count).join('\n').slice(0, page);
+	return `${body}\n[page: lines ${first}-${last} of ${total}, so the read stays under this model's context fold. Read the next part with read_file offset ${last + 1} and limit ${count}.]\n${READ_TRUNCATED}`;
+}
+
 // fc-stall scan (incr-test2 sp98): fact-checker threads folded at 50-54k after
 // whole reads of findings.json, evidence-bundle.json and source-expressions.json,
 // then started over. A worker's whole read of one of these, past this size,
@@ -1224,6 +1250,12 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				} else if (input.offset || input.limit) {
 					const from = (input.offset ?? 1) - 1;
 					selected = sourceLines(text).slice(from, from + (input.limit ?? Number.MAX_SAFE_INTEGER)).join('\n');
+				}
+				const page = input.json_pointer === undefined ? readPageChars() : undefined;
+				if (page && selected.length > page) {
+					const all = sourceLines(text);
+					const first = input.offset ?? 1;
+					return textResult(readPage(all.slice(first - 1, input.limit ? first - 1 + input.limit : undefined), first, all.length, page));
 				}
 				return textResult(
 					selected.length > MAX_READ_CHARS

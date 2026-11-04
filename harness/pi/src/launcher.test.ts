@@ -1391,6 +1391,52 @@ const search = (turn: number): Reply => ({ toolCalls: [{ name: 'grep_files', arg
 // Each record adds a finding, so the file's content changes (review W3).
 const record = (turn: number, path = 'data/findings.json'): Reply => ({ toolCalls: [{ name: 'write_file', arguments: { path, content: JSON.stringify({ project: 'case-a', findings: [{ id: `F${turn}`, claim: `Claim ${turn}.` }] }) } }] });
 
+// H-K3a (K3 Tor P3): at 12b with a 40,960 window (fold point 20,480), one whole
+// read of a ~30k-character capture crossed the fold point and the worker read it
+// again seven times. The read now returns a page of whole lines with the next
+// offset and limit; the worker pages to the line it needs and records it. The
+// frontier tier reads the whole file as before.
+test('on a small fold point read_file pages a large capture, the worker follows the pages and records a cited finding; frontier reads it whole', async (t) => {
+	for (const tier of ['12b', 'frontier'] as const) await t.test(tier, async (t) => {
+		const lines = Array.from({ length: 400 }, (_, index) => index === 299 ? 'The registry names Acme Holdings as the owner of the fixture company.'.padEnd(75, '.') : `Registry page line ${index + 1} with routine filing text.`.padEnd(75, '.'));
+		const capture = `${lines.join('\n')}\n`;
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				const results = toolResults(request);
+				if (results.length === 0) return { toolCalls: [{ name: 'read_file', arguments: { path: 'research/registry.md' } }] };
+				const next = /Read the next part with read_file offset (\d+) and limit (\d+)/.exec(results.at(-1)!);
+				if (results.length === 1 && next) return { toolCalls: [{ name: 'read_file', arguments: { path: 'research/registry.md', offset: Number(next[1]), limit: Number(next[2]) } }] };
+				if (!results.some((result) => /recorded|F1/.test(result) && !/^refused/.test(result)) && results.length < 4) return { toolCalls: [{ name: 'record_finding', arguments: { finding: { claim: 'The registry names Acme Holdings as the owner.', confidence: 'medium' }, cite: [{ path: 'research/registry.md', line_start: 300, line_end: 300 }] } }] };
+				return { text: 'Recorded.' };
+			}
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EXECUTION\nWork the approved methodology.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = await caseAtInvestigation(space);
+		await mkdir(join(caseDir, 'research'), { recursive: true });
+		await writeFile(join(caseDir, 'research', 'registry.md'), capture);
+		registerCapture(space.dataDir, caseDir, 'research/registry.md', 'https://registry.example/acme', 'investigator');
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' });
+
+		await settledPrompt(chat, 'Continue.');
+
+		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+		const results = toolResults(worker.at(-1)!);
+		if (tier === 'frontier') {
+			assert.equal(results[0].trimEnd(), capture.trimEnd(), 'frontier reads the whole capture');
+			assert.doesNotMatch(results[0], /\[page: /);
+			return;
+		}
+		assert.ok(results[0].length < 12_500, `the first read is one page (${results[0].length} characters)`);
+		assert.match(results[0], /^Registry page line 1 /);
+		assert.match(results[0], /\[page: lines 1-\d+ of 400, so the read stays under this model's context fold\. Read the next part with read_file offset \d+ and limit \d+\.\]/);
+		assert.match(results[1], /The registry names Acme Holdings/, 'the next page holds line 300');
+		const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<{ claim: string; evidence?: unknown }> };
+		assert.ok(findings.findings.some((finding) => /Acme Holdings/.test(finding.claim)), JSON.stringify(results.slice(2)));
+	});
+});
+
 for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker that searches 20 times without a record is stopped at 16 turns with a receipt`, async (t) => {
 	const run = await watchdogRun(t, tier, (turn) => (turn < 20 ? search(turn) : { text: 'Investigated.' }));
 	assert.equal(run.turns, 16);
