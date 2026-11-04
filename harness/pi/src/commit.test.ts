@@ -91,6 +91,9 @@ test('the write commit step: which deliverables, when it is due, and which answe
 	assert.equal(writeCommitDue([...turns(6), ...refused, ...turns(6)], file, caseDir), true);
 	const wrote = [call('w', 'write_file', { path: './data/methodology.json', content: '{}' }), result('w', 'wrote data/methodology.json')];
 	assert.equal(writeCommitDue([...wrote, ...turns(12)], file, caseDir), false);
+	// Codex review of simp-b28, P2: a path the file tool resolves to the file is the file.
+	const alias = [call('a', 'write_file', { path: 'data/../data/methodology.json', content: '{}' }), result('a', 'wrote data/methodology.json')];
+	assert.equal(writeCommitDue([...alias, ...turns(12)], file, caseDir), false);
 	// Codex review of simp-b18, P2: an accepted edit_file is a write of the file too.
 	const edited = [call('e', 'edit_file', { path: file, old_string: 'a', new_string: 'b' }), result('e', 'edited data/methodology.json')];
 	assert.equal(writeCommitDue([...edited, ...turns(12)], file, caseDir), false);

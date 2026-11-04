@@ -9,7 +9,7 @@ import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-age
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
 import { ROUTER_CALL_PREFIX, ROUTER_MODEL, harnessTurn, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
-import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
+import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
@@ -29,7 +29,7 @@ import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAge
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
-import { evidenceValidates, validateFactCheckBatch } from './validators.ts';
+import { deliverablePasses, evidenceValidates, hasDeliverableCheck, validateFactCheckBatch } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
 
@@ -398,6 +398,8 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
 	const ownFiles = (process.env.SPOTLIGHT_DELIVERABLE_FILES ?? '').split(',').filter(Boolean);
+	const deliverable = writeCommitFile(process.env.SPOTLIGHT_DELIVERABLE_FILES);
+	if ((role === 'investigator' || role === 'analyst') && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' && deliverable && hasDeliverableCheck(deliverable)) registerDeliverableEnd(pi, deliverable, caseDir);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
@@ -1288,6 +1290,34 @@ function registerReplyDeliverable(pi: ExtensionAPI, write: ToolDefinition, file:
 		}
 		log(`the ${file} JSON in a worker's reply was written`);
 		return { message: { ...event.message, content: [...parts, { type: 'text', text: `\n${replyTaken(file)}` }] } as typeof event.message };
+	});
+}
+
+// B28 (Tom, 2026-11-04; lfm3-short-check.md: LFM3 rewrote a written plan):
+// on the local tiers with the code router on, once a worker's write-file
+// deliverable is written and passes its check (validators.ts
+// deliverablePasses), the worker's turn ends: a later message with tool calls
+// is replaced by this answer, and any call still pending is blocked. A write
+// that fails the check changes nothing; the post-worker check and its
+// correction run as before. Not reset on agent_start: a fold's continuation is
+// the same task.
+export const deliverableDone = (file: string) => `The worker wrote ${file}, which passes its check, and was stopped there.`;
+function registerDeliverableEnd(pi: ExtensionAPI, file: string, caseDir: string): void {
+	let done = false;
+	pi.on('tool_call', () => (done ? { block: true, reason: deliverableDone(file), terminate: true } : undefined));
+	pi.on('tool_result', async (event) => {
+		if (done || (event.toolName !== 'write_file' && event.toolName !== 'edit_file') || event.isError) return undefined;
+		const text = event.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
+		if (typeof event.input.path !== 'string' || caseRelative(event.input.path, caseDir) !== file || !/^(?:wrote|edited) /.test(text)) return undefined;
+		done = await deliverablePasses(file, { caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: required('SPOTLIGHT_CONFIG'), env: process.env });
+		if (done) log(`${file} is written and passes its check; the worker's turn ends`);
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		if (!done || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		log(`the worker went on after ${file} passed its check; its turn was ended`);
+		return { message: { ...event.message, content: [{ type: 'text', text: deliverableDone(file) }] } as typeof event.message };
 	});
 }
 

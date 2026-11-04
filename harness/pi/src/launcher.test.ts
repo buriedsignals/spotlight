@@ -2327,6 +2327,50 @@ test('after a planning task the harness runs the methodology check, not the find
 	assert.match(written[2], /wrote data\/methodology\.json/);
 	assert.equal(toolResults(worker.at(-1)!).length, 11);
  });
+
+ // B28: on 12b with the router on, once the plan is written and passes its
+ // check the worker's turn ends, so its next write never runs; an invalid write
+ // before it leaves the worker on its route. Frontier is unchanged.
+ for (const tier of ['12b', 'frontier'] as const) await t.test(`a valid plan, then another write (${tier})`, async (t) => {
+	const space = await workspace(t);
+	const sample = join(space.root, 'planned');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), sample, 'methodology']);
+	const valid = JSON.parse(await readFile(join(sample, 'data', 'methodology.json'), 'utf8'));
+	const contents = ['{"project": "case-a"}', JSON.stringify(valid), JSON.stringify({ ...valid, tools_required: [...(valid.tools_required ?? []), 'Another registry'] })];
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const done = toolResults(request).length;
+			return done < 3 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: contents[done] } }] } : { text: 'Plan written.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_CONFIG: await gateConfig(space) });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const results = toolResults(worker.at(-1)!);
+	// The invalid first write was accepted as today, and the worker wrote again.
+	assert.match(results[0], /wrote data\/methodology\.json/);
+	assert.match(results[1], /wrote data\/methodology\.json/);
+	const tools = (JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')).tools_required ?? []) as string[];
+	const delegated = chat.lines.filter((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"')).join('\n');
+	assert.match(delegated, /validate-methodology-navigator\.py: PASSED/);
+	if (tier === 'frontier') {
+		assert.equal(worker.length, 4, 'the third write ran and the worker answered');
+		assert.ok(tools.includes('Another registry'));
+		return;
+	}
+	assert.equal(worker.length, 3, 'the turn ended on the valid plan; the third write never ran');
+	assert.ok(!tools.includes('Another registry'), 'the valid plan stands');
+	assert.match(delegated, /wrote data\/methodology\.json, which passes its check, and was stopped there/);
+ });
 });
 
 // k2-tor.md P1: code started PLANNING 11 times after identical progress
@@ -3466,7 +3510,8 @@ test('at Report resolve names the offer before a draft and open_review after it;
 			const draft = { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] };
 			if (isWriteCommit(request)) return draft;
 			const done = toolResults(request).length;
-			if (route === 'committed') return writeCalls(request).length ? { text: 'Drafted.' } : { toolCalls: [{ name: 'read_file', arguments: { path: 'data/report-draft.json', offset: done + 1, limit: 1 } }] };
+			// B28: after the committed draft passes its check, a second write is never run.
+			if (route === 'committed') return writeCalls(request).length ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: 'Rewritten title', deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] } : { toolCalls: [{ name: 'read_file', arguments: { path: 'data/report-draft.json', offset: done + 1, limit: 1 } }] };
 			return done === 0 ? draft : { text: 'Drafted.' };
 		}
 		const step = toolResults(request).length;
@@ -3491,6 +3536,7 @@ test('at Report resolve names the offer before a draft and open_review after it;
 		const [written] = writeCalls(fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && !isWriteCommit(request)).at(-1)!);
 		assert.ok(written[0].startsWith('commit-') && written[1] === 'data/report-draft.json', JSON.stringify(written));
 		assert.match(written[2], /wrote data\/report-draft\.json/);
+		assert.equal(JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8')).title, REPORT_DRAFT.title, 'the second write never ran');
 	}
  });
 });

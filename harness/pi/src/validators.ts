@@ -76,6 +76,24 @@ function checksAfter(role: string, phase: string, producerModel: string, context
 
 export type ValidationOutcome = { ran: string[]; passed: boolean; report: string };
 
+// B28: the check that says a worker's write-file deliverable is done, by file:
+// the same check the harness runs after that worker. The knowledge proposal is
+// refused at write time and ends its turn already (registerProposalEnd); the
+// research-step files have no check of their own until the resolver applies them.
+const DELIVERABLE_CHECK: Record<string, [role: string, phase: string]> = {
+	'data/methodology.json': ['investigator', 'methodology'],
+	'data/report-draft.json': ['analyst', 'report'],
+};
+export const hasDeliverableCheck = (file: string) => Object.hasOwn(DELIVERABLE_CHECK, file);
+export async function deliverablePasses(file: string, context: ToolContext): Promise<boolean> {
+	const [role, phase] = DELIVERABLE_CHECK[file];
+	for (const check of checksAfter(role, phase, '', context)) {
+		const result = await runPython(context, check.args, { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
+		if (result.code !== 0) return false;
+	}
+	return true;
+}
+
 // Before spending a worker on verification, require its investigation inputs
 // to validate. Existing fact-check errors remain that worker's repair job.
 // Use the validator's full owner-tagged diagnostics, never an abbreviated

@@ -10,6 +10,8 @@
 // it invents a cite), so the step fires only on shown, unrecorded lines and a
 // cite of unseen lines is dropped.
 
+import { relative, resolve, sep } from 'node:path';
+
 export const COMMIT_CALL_PREFIX = 'commit-';
 // Tool turns the model's own route keeps after the first unrecorded line, and
 // the gap between two commit attempts (design: 2 and 4).
@@ -220,8 +222,9 @@ export const writeCommitTools = (file: string) => [
 	{ type: 'function', function: { name: 'not_ready', description: `You cannot write ${file} yet.`, parameters: { type: 'object', additionalProperties: false, required: ['reason'], properties: { reason: { type: 'string' } } } } },
 ];
 
-// A path as the worker spelled it, case-relative ("./", "{CASE_DIR}/" or the absolute case path).
-const caseRelative = (path: string, caseDir: string) => path.replace(/^\{CASE_DIR\}[\\/]/, '').replace(caseDir.endsWith('/') ? caseDir : `${caseDir}/`, '').replace(/^\.\//, '');
+// A path as the worker spelled it, case-relative and resolved as the file tools
+// resolve it ("./", "{CASE_DIR}/", "..", or the absolute case path).
+export const caseRelative = (path: string, caseDir: string) => relative(caseDir, resolve(caseDir, path.replace(/^\{CASE_DIR\}(?:[\\/]|$)/, ''))).split(sep).join('/');
 
 // Due while the file has no accepted write or edit ("wrote ..."/"edited ..."
 // result; `writtenBefore`: one this process saw before a fold shortened the
