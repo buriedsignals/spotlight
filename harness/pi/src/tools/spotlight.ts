@@ -175,6 +175,10 @@ export const NEXT_TRIAGE_HELD =
 export const NEXT_ROUND = 'Next: call spotlight_resolve: code starts the investigator for the stalled investigation\'s research round (AMENDMENT, TASK: ROUND) and then starts the round. Do not write data/research-round.json or call startResearchRound yourself.';
 export const NEXT_AMENDMENT = 'Next: call spotlight_resolve: code starts the investigator to write the methodology amendment from the member\'s marks (AMENDMENT, TASK: AMEND) and then checks it.';
 export const NEXT_RESEARCH_APPROVAL = 'Next: call open_review so the member can mark the research leads and clues and approve the Research gate, then end your turn and wait for their decision.';
+// r2-k1.md run 4: at Ingest, once the knowledge batch is built, the resolver
+// named no move, so the router handed the turn to the model and the member
+// was asked in chat. The member's decision is the ingest page.
+export const NEXT_INGEST_APPROVAL = 'Next: call open_review so the member can review the knowledge batch and request or decline ingestion, then end your turn and wait for their decision.';
 export const NEXT_METHODOLOGY_APPROVAL =
 	'Next: call open_review so the member can approve the methodology, then end your turn and wait for their decision.';
 
@@ -208,6 +212,12 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		}
 		case 'research_approval':
 			return NEXT_RESEARCH_APPROVAL;
+		case 'ingest':
+			// Only in an activated case whose review draft is built (the page reads
+			// the draft): before that the analyst's proposal is owed, and a legacy
+			// case is not ingested (Codex review of simp-ingest). The newsroom
+			// edition, with no local batch, is not named here.
+			return (resolved.ingest as { resume_at?: unknown } | undefined)?.resume_at === 'decision' && onDisk('data/case-contract.json') && onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : undefined;
 		case 'investigation':
 			break;
 		default:

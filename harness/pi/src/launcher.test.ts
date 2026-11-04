@@ -2464,7 +2464,7 @@ test('when the batch cannot be built for a reason no agent can fix, the orchestr
 	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), false);
 });
 
-test('at Ingest the analyst reads only its inputs and writes only its proposal, and the harness builds the batch from it', async (t) => {
+test('at Ingest the analyst reads only its inputs and writes only its proposal, and the harness builds the batch from it; with the code router the ingest page then opens and the member decides', async (t) => {
 	for (const tier of ['12b', '26b', 'frontier']) await t.test(tier, async (t) => {
 		const fake = await startFakeOpenAI(
 			delegateToAnalyst((request) =>
@@ -2488,7 +2488,8 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 		const space = await workspace(t);
 		const caseDir = await caseAtIngest(space);
 		const before = await caseDigests(caseDir);
-		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+		// 12b runs with the code router (r2-k1.md run 4: the page never opened).
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, ...(tier === '12b' ? { SPOTLIGHT_CODE_ROUTER: 'on' } : {}) });
 
 		await settledPrompt(chat, 'Continue.');
 
@@ -2528,9 +2529,22 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 		const ids = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-ids.json'), 'utf8')) as { models: Record<string, string> };
 		assert.deepEqual(ids.models, { investigator: 'stub-model', 'fact-checker': 'stub-model' });
 		const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
-		const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+		// The spawn's result as the session recorded it (with the router on, code makes the next call, so the model never sees it).
+		const delegated = chat.lines.filter((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"')).join('\n');
+		void orchestrator;
 		assert.match(delegated, /Proposed one claim\./);
 		assert.match(delegated, /build-knowledge-batch\.py: PASSED/);
+		if (tier !== '12b') return;
+		// Batch built -> the resolver names open_review -> the router opens the
+		// ingest page -> the member decides there.
+		assert.match(String(resolveResults(chat).at(-1)?.next_action), /call open_review/);
+		assert.match(chat.stderr(), /\[router\] open_review \(the resolver names open_review\)/);
+		const seam = (args: string[]) => execFileSync(PYTHON, [SEAM, ...args], { encoding: 'utf8' });
+		const view = JSON.parse(seam(['review-view', 'ingest', caseDir])) as { digest: string };
+		const nonce = (JSON.parse(seam(['issue-review-nonce', 'ingest', caseDir])) as { nonce: string }).nonce;
+		seam(['decide-ingest', 'declined', '--nonce', nonce, '--digest', view.digest, '--decided-by', 'journalist:fixture', '--decided-at', '2026-10-23T12:00:00Z', caseDir]);
+		const status = JSON.parse(seam(['status', '--json', caseDir])) as { phase?: string; ingest?: { resume_at?: string } };
+		assert.ok(!(status.phase === 'ingest' && status.ingest?.resume_at === 'decision'), `the member's decision moved the case on: ${JSON.stringify(status)}`);
 	});
 });
 
