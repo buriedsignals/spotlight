@@ -5490,7 +5490,10 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	const space = await workspace(t);
 	const caseDir = caseAtGate(space);
 	const summaryMd = await readFile(join(caseDir, 'summary.md'), 'utf8');
-	const summaryJson = await readFile(join(caseDir, 'data', 'summary.json'), 'utf8');
+	// P3W-1 (pod-3way-qwen35-9b.md): the file as Qwen3.5-9B wrote it, no title, status, summary or generated_at, findings with claim_text.
+	// Code completes it from the findings and the fact-check, and the case reaches the report gate.
+	const [finding] = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')).findings;
+	const summaryJson = JSON.stringify({ schema_version: '1.0', project: 'offline-demo', findings: [{ id: finding.id, claim_text: finding.claim }] });
 	await unlink(join(caseDir, 'summary.md'));
 	await unlink(join(caseDir, 'data', 'summary.json'));
 	const fake = await startFakeOpenAI((request) => {
@@ -5522,6 +5525,10 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	const called = orchestrator.flatMap((request) => (request.messages.filter((message) => message.role === 'assistant').flatMap((message) => (message.tool_calls ?? []) as Array<{ function: { name: string } }>)).map((call) => call.function.name));
 	assert.deepEqual([...new Set(called)].sort(), ['open_review', 'spawn_agent', 'spotlight_resolve']);
 	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), summaryMd);
+	const completed = JSON.parse(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8'));
+	assert.deepEqual(completed.findings, [{ id: 'F1', claim: finding.claim, confidence: 'high', fact_check_verdict: 'verified', source_count: 1 }]);
+	assert.match(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir], { encoding: 'utf8' }), /PASS|valid/i, 'the completed file passes the check that stopped the Qwen run');
+	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /write title, summary, key_conclusions and limitations; code fills the rest/);
 	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, caveats: [], next_steps: [] });
 	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)))!), /holds the report's structure/);
 	// report-direct-quote-diff.md: the Report analyst reads which passages are
@@ -5630,7 +5637,7 @@ test('a failing gate summary: repairs carry the FAIL lines, the cap sets the sum
 	const space = await workspace(t);
 	const caseDir = caseAtGate(space);
 	const summaryMd = await readFile(join(caseDir, 'summary.md'), 'utf8');
-	const invalid = JSON.stringify({ ...JSON.parse(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8')), schema_version: '0.9' });
+	const invalid = JSON.stringify({ ...JSON.parse(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8')), cycles: 0 });
 	await unlink(join(caseDir, 'summary.md'));
 	await unlink(join(caseDir, 'data', 'summary.json'));
 	let calls = 0;
@@ -5650,17 +5657,17 @@ test('a failing gate summary: repairs carry the FAIL lines, the cap sets the sum
 
 	const analystTasks = () => fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && toolResults(request).length === 0).map(userText);
 	assert.equal(analystTasks().length, 3, 'the first try and two repairs');
-	assert.doesNotMatch(analystTasks()[0], /schema_version must be 1\.0/);
-	for (const task of analystTasks().slice(1)) assert.match(task, /summary\.json: schema_version must be 1\.0/);
+	assert.doesNotMatch(analystTasks()[0], /cycles: must be an integer/);
+	for (const task of analystTasks().slice(1)) assert.match(task, /summary\.json\.cycles: must be an integer/);
 	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'analyst')).at(-1)!);
 	assert.match(results[2], /\[report-repair receipt\] \{"cap":"report-repairs","role":"analyst","phase":"investigation_gate_approval","repairs":2,"failed_checks":3,"set_aside":"data\/harness-checks\/analyst\/summary-rejected-[^"]+\.json"\}[^\n]*ask in the chat for another try/);
 	assert.match(results[3], /no analyst was started[^\n]*gate summary could not be made valid[^\n]*\[report-repair receipt\]/);
-	assert.match(results[3], /schema_version must be 1\.0/);
+	assert.match(results[3], /cycles: must be an integer/);
 	assert.ok(!existsSync(join(caseDir, 'data', 'summary.json')) && !existsSync(join(caseDir, 'summary.md')), 'the invalid summary is no longer the case\'s summary');
 	const setAside = /"set_aside":"([^"]+)"/.exec(results[2])![1];
 	const kept = JSON.parse(await readFile(join(caseDir, setAside), 'utf8')) as { receipt: { failed_checks: number }; validator_report: string; files: Record<string, string> };
-	assert.deepEqual([kept.receipt.failed_checks, kept.files['data/summary.json'], kept.files['summary.md']], [3, invalid, summaryMd]);
-	assert.match(kept.validator_report, /schema_version must be 1\.0/);
+	assert.deepEqual([kept.receipt.failed_checks, JSON.parse(kept.files['data/summary.json']).cycles, kept.files['summary.md']], [3, 0, summaryMd]);
+	assert.match(kept.validator_report, /cycles: must be an integer/);
 
 	await settledPrompt(chat, 'Please try the summary once more.');
 	assert.equal(analystTasks().length, 4, 'the member\'s message allows another try');

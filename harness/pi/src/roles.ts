@@ -472,6 +472,8 @@ export function deliverableFor(role: string, phase: string, task: string, resear
 	// B20b: a local tier's fact-checker with no batch answers through judge_finding, as a batch does.
 	if (role === 'fact-checker' && local) return one('data/fact-check.json', 'Your deliverable: data/fact-check.json. For each finding that still needs a judgment, one call: judge_finding {finding_id, answer: supports, partly, doesnt, cant_tell or contradicts, reason: one line}; code writes its claim and keeps the others. record_assessment opens only after you fetch a second source. Then finish.');
 	if (role === 'fact-checker') return one('data/fact-check.json', 'Your deliverable: data/fact-check.json covering every finding in data/findings.json for this cycle. Submit each complete judgment with record_assessment (assessment is one claim object); code adds or replaces that finding_id and keeps the others. Then finish.');
+	// P3W-1: on a local tier code fills data/summary.json's fields from the case files (case-files.ts completeSummary); the prose is the analyst's.
+	if (role === 'analyst' && local && phase === 'investigation_gate_approval') return { ...ANALYST_DELIVERABLES[phase], line: 'Your deliverable: summary.md and data/summary.json for the Investigation gate, from the current findings, fact-check and investigation log, as the Investigation gate section of agents/analyst.md says. In data/summary.json write title, summary, key_conclusions and limitations; code fills the rest from the findings and the fact-check. Write both with write_file, then finish.' };
 	if (role === 'analyst') return ANALYST_DELIVERABLES[phase] ?? one('data/knowledge-proposal.json');
 	if (role !== 'investigator') return undefined;
 	if (taskMode(task)?.endsWith('CORRECTION')) return undefined;

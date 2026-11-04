@@ -920,6 +920,43 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 
 const SUGGESTION_INPUTS = ['data/leads.json', 'data/clues.json', 'data/research-triage.json'];
 
+// P3W-1 (pod-3way-qwen35-9b.md: 15 validate-case errors on summary.json ended the run one step before the gate): every field of data/summary.json but the
+// prose is in the findings and the fact-check, so code writes it there. The analyst's title, summary, conclusions and limitations stay; a title or summary left
+// empty gets a plain count, which is a fact, not a narrative. A finding with no verdict yet proves no row, and the file stays as written.
+function completeSummary(caseDir: string, merged: string, notes: string[]): string {
+	let summary: Record<string, unknown>;
+	let project: unknown;
+	let findings: { id?: unknown; claim?: unknown; confidence?: unknown; sources?: unknown }[];
+	let claims: { finding_id?: unknown; verdict?: unknown }[];
+	try {
+		summary = JSON.parse(merged);
+		const findingsDoc = JSON.parse(readFileSync(join(caseDir, 'data', 'findings.json'), 'utf8'));
+		project = findingsDoc.project;
+		findings = findingsDoc.findings;
+		// An investigation that found nothing qualifying has no verdict to read (Codex P2).
+		claims = Array.isArray(findings) && findings.length === 0 ? [] : JSON.parse(readFileSync(join(caseDir, 'data', 'fact-check.json'), 'utf8')).claims;
+	} catch {
+		return merged;
+	}
+	if (!summary || typeof summary !== 'object' || Array.isArray(summary) || !Array.isArray(findings) || !Array.isArray(claims)) return merged;
+	const verdicts = new Map(claims.map((claim) => [claim?.finding_id, claim?.verdict]));
+	const rows = findings.map((finding) => ({ id: finding?.id, claim: finding?.claim, confidence: finding?.confidence, fact_check_verdict: verdicts.get(finding?.id), ...(Array.isArray(finding?.sources) ? { source_count: finding.sources.length } : {}) }));
+	if (rows.some((row) => typeof row.fact_check_verdict !== 'string')) return merged;
+	const counts = new Map<unknown, number>();
+	for (const row of rows) counts.set(row.fact_check_verdict, (counts.get(row.fact_check_verdict) ?? 0) + 1);
+	const verified = counts.get('verified') ?? 0;
+	const given = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
+	const filled: Record<string, unknown> = { ...summary, schema_version: '1.0', ...(typeof project === 'string' ? { project } : {}), generated_at: new Date().toISOString(), status: given(summary.status) ? summary.status : 'pending_review', verified_findings: verified, findings: rows };
+	const changed = Object.keys(filled).filter((key) => !isDeepStrictEqual(filled[key], summary[key]));
+	notes.push(`Code filled ${changed.join(', ')} in data/summary.json from the findings and the fact-check.`);
+	if (!given(summary.title) || !given(summary.summary)) {
+		if (!given(summary.title)) filled.title = `${verified} verified finding${verified === 1 ? '' : 's'}`;
+		if (!given(summary.summary)) filled.summary = `${rows.length} finding${rows.length === 1 ? '' : 's'}${rows.length ? `: ${[...counts].map(([verdict, count]) => `${count} ${String(verdict)}`).join(', ')}` : ''}.`;
+		notes.push('Code wrote a plain count as title and summary where they were empty; write your own in their place.');
+	}
+	return `${JSON.stringify(filled, null, 2)}\n`;
+}
+
 // Only documented path fields get the case-root alias; other text is evidence
 // or judgment, and an absent or unsafe path remains for the validator to flag.
 // These are record-envelope facts, never source dates or semantic judgments.
@@ -944,6 +981,7 @@ function artifactEnvelope(caseDir: string, target: string, submitted: string, me
 		return `${JSON.stringify({ ...suggestions, inputs }, null, 2)}\n`;
 	}
 	// H-K2h (C13): the proposal's envelope is the runtime's, filled by code.
+	if (name === 'data/summary.json') return localTier(env) ? completeSummary(caseDir, merged, notes) : merged;
 	if (name === 'data/knowledge-proposal.json') {
 		let proposal: unknown;
 		try { proposal = JSON.parse(merged); } catch { return merged; }

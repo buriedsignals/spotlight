@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -793,6 +793,43 @@ test('code repairs only worker paperwork it can prove, on local tiers, and says 
 			const next = await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify({ project: 'p', claims: [claim(3, 'three')] }) });
 			assert.deepEqual(JSON.parse(await readFile(data(caseDir, 'fact-check.json'), 'utf8')).verdicts, local ? undefined : [claim(2, 'two'), clash, noId]);
 			assert.equal(/Code removed 2 old row\(s\) from verdicts/.test(next), local);
+		});
+
+		await t.test('gate summary', async (t) => {
+			const { caseDir, call } = await fixture(t, undefined, 'analyst', env);
+			const finding = (n: number, confidence: string, sources: number) => ({ id: `F${n}`, claim: `claim ${n}`, confidence, sources: Array(sources).fill({ url: 'https://example.org/' }) });
+			await writeFile(data(caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: [finding(1, 'high', 2), finding(2, 'low', 1)] }));
+			await writeFile(data(caseDir, 'fact-check.json'), JSON.stringify({ project: 'p', claims: [{ finding_id: 'F1', verdict: 'verified' }] }));
+			const written = { title: 'A title', summary: 'The narrative.', key_conclusions: ['One.'], findings: [{ id: 'F1', claim_text: 'typed', fact_check_verdict: 'false' }] };
+			const write = (summary: object) => call('write_file', { path: 'data/summary.json', content: JSON.stringify(summary) });
+			const file = async () => JSON.parse(await readFile(data(caseDir, 'summary.json'), 'utf8'));
+			// A finding with no verdict yet: nothing proves its row, so the file stays as written.
+			assert.doesNotMatch(await write(written), /Code/);
+			assert.deepEqual(await file(), written);
+			await writeFile(data(caseDir, 'fact-check.json'), JSON.stringify({ project: 'p', claims: [{ finding_id: 'F1', verdict: 'verified' }, { finding_id: 'F2', verdict: 'unverified' }] }));
+			const reply = await write(written);
+			const summary = await file();
+			if (!local) {
+				assert.deepEqual(summary, written);
+				assert.doesNotMatch(reply, /Code/);
+				return;
+			}
+			assert.match(reply, /Code filled .*findings.* in data\/summary\.json from the findings and the fact-check/);
+			assert.deepEqual([summary.title, summary.summary, summary.key_conclusions], [written.title, written.summary, written.key_conclusions], 'the prose stays the analyst\'s');
+			assert.deepEqual([summary.schema_version, summary.project, summary.status, summary.verified_findings], ['1.0', 'p', 'pending_review', 1]);
+			assert.ok(Number.isFinite(Date.parse(summary.generated_at)) && summary.generated_at.endsWith('Z'));
+			assert.deepEqual(summary.findings, [{ id: 'F1', claim: 'claim 1', confidence: 'high', fact_check_verdict: 'verified', source_count: 2 }, { id: 'F2', claim: 'claim 2', confidence: 'low', fact_check_verdict: 'unverified', source_count: 1 }]);
+			// With no narrative, the required fields state only the counts, and the reply says to replace them.
+			const plain = await write({ status: 'draft' });
+			const counted = await file();
+			assert.deepEqual([counted.title, counted.summary, counted.status], ['1 verified finding', '2 findings: 1 verified, 1 unverified.', 'draft']);
+			assert.match(plain, /Code wrote a plain count as title and summary/);
+			// Nothing qualified: no verdict is owed, and the file still completes.
+			await writeFile(data(caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: [], no_qualifying_findings: { reason: 'none' } }));
+			await unlink(data(caseDir, 'fact-check.json'));
+			await write({});
+			const empty = await file();
+			assert.deepEqual([empty.title, empty.summary, empty.verified_findings, empty.findings], ['0 verified findings', '0 findings.', 0, []]);
 		});
 
 		await t.test('report draft', async (t) => {
