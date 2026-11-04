@@ -39,6 +39,10 @@ export function readPageChars(env: Record<string, string | undefined> = process.
 	if (env.SPOTLIGHT_MODEL_TIER === 'frontier' || !Number.isInteger(at) || at <= 0 || at > READ_PAGE_FOLD_MAX) return undefined;
 	return Math.floor((at * 2.3) / 4);
 }
+// The paperwork repairs below are for the local tiers (C13, briefs/simp-code.md): a frontier write gets what it always got.
+export function localTier(env: Record<string, string | undefined> | undefined): boolean {
+	return ((env?.SPOTLIGHT_MODEL_TIER ?? process.env.SPOTLIGHT_MODEL_TIER)?.trim() || '12b') !== 'frontier';
+}
 function readPage(lines: string[], first: number, total: number, page: number, limit?: number): string {
 	let used = 0;
 	let count = 0;
@@ -577,22 +581,40 @@ function refuseLeadsEvidence(caseDir: string, target: string, content: string): 
 // while the item keeps its raw_path, a merge keeps them as they were and reports which ones it kept. A changed raw_path is left to the
 // write checks (refuseLeadsEvidence names the .raw, refuseBundleRewrites refuses moving a cited item), which refuse it with a reason
 // instead of undoing it silently. Every other field stays the worker's.
+// B16, B17, B23(b) (K3 Eurostat P3, K3 Tor P3 rerun: the same refused write 6x, K5-3: 60-character retyped hashes), local tiers: an item new to
+// the bundle takes both fields from the receipt of its registered, unchanged capture, and raw_path on fetch's leads moves to the .raw when that
+// .raw is such a capture, the repair refuseLeadsEvidence names. With no such capture the item stays as written, for the write checks.
 const RECEIPT_FIELDS = ['sha256', 'accessed'] as const;
-function keepReceiptFields(context: ToolContext, current: string | undefined, merged: string): { text: string; kept: string[] } {
+function keepReceiptFields(context: ToolContext, current: string | undefined, merged: string): { text: string; kept: string[]; filled: string[] } {
 	type Item = Record<string, unknown>;
 	const itemsOf = (doc: unknown): Item[] => (doc && typeof doc === 'object' && Array.isArray((doc as { items?: unknown }).items) ? ((doc as { items: unknown[] }).items.filter((item) => item && typeof item === 'object') as Item[]) : []);
 	let before: unknown;
 	let after: unknown;
 	try {
-		before = JSON.parse(current ?? '');
+		before = current === undefined ? {} : JSON.parse(current);
 		after = JSON.parse(merged);
 	} catch {
-		return { text: merged, kept: [] };
+		return { text: merged, kept: [], filled: [] };
 	}
 	const was = new Map(itemsOf(before).filter((item) => typeof item.id === 'string').map((item) => [item.id, item]));
 	const kept: string[] = [];
+	const filled: string[] = [];
+	const local = localTier(context.env);
 	for (const item of itemsOf(after)) {
 		const old = was.get(item.id);
+		const path = item.raw_path;
+		const fromLeads = local && typeof path === 'string' && isLeadFile(context.caseDir, path) && !!registeredCapture(context, `${path}.raw`);
+		if (fromLeads) {
+			item.raw_path = `${path}.raw`;
+			filled.push(`Code moved ${String(item.id)}'s raw_path from ${path} to ${path}.raw, the page as fetched.`);
+		}
+		if (local && (fromLeads || !old)) {
+			const capture = typeof item.raw_path === 'string' ? registeredCapture(context, item.raw_path) : undefined;
+			const fields = capture ? RECEIPT_FIELDS.filter((field) => !isDeepStrictEqual(item[field], capture[field])) : [];
+			for (const field of fields) item[field] = capture![field];
+			if (fields.length) filled.push(`Code filled ${String(item.id)}'s ${fields.join(' and ')} from the fetch receipt.`);
+			continue;
+		}
 		if (!old || typeof old.raw_path !== 'string' || item.raw_path !== old.raw_path) continue;
 		const receipt = registeredCapture(context, old.raw_path);
 		if (!receipt || receipt.sha256 !== old.sha256) continue;
@@ -602,7 +624,7 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 		for (const field of fields) item[field] = receipt[field];
 		kept.push(`${String(item.id)}'s ${fields.join(' and ')}`);
 	}
-	return kept.length ? { text: `${JSON.stringify(after, null, 2)}\n`, kept } : { text: merged, kept };
+	return { text: kept.length || filled.length ? `${JSON.stringify(after, null, 2)}\n` : merged, kept, filled };
 }
 
 // A bundle write keeps what others rely on (12B r3 ia: the fact-checker
@@ -896,13 +918,31 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 	return real;
 }
 
+const SUGGESTION_INPUTS = ['data/leads.json', 'data/clues.json', 'data/research-triage.json'];
+
 // Only documented path fields get the case-root alias; other text is evidence
 // or judgment, and an absent or unsafe path remains for the validator to flag.
 // These are record-envelope facts, never source dates or semantic judgments.
 // Derive the active format after merging: mergeByKey preserves the old header,
 // so an explicit repair of a stale 1.0 header otherwise cannot take effect.
-function artifactEnvelope(caseDir: string, target: string, submitted: string, merged: string, env: Record<string, string | undefined> = {}): string {
+function artifactEnvelope(caseDir: string, target: string, submitted: string, merged: string, env: Record<string, string | undefined> = {}, notes: string[] = []): string {
 	const name = caseRelative(caseDir, target);
+	// B15 (K3-2: invented hashes): the suggestions name the bytes they were written for, which code can hash and a model cannot (research.py suggestions_problems
+	// compares the same three). With an input missing there is nothing to prove, and the file stays as written.
+	if (name === 'data/research-suggestions.json') {
+		if (!localTier(env)) return merged;
+		let suggestions: unknown;
+		let inputs: Record<string, string>;
+		try {
+			suggestions = JSON.parse(merged);
+			inputs = Object.fromEntries(SUGGESTION_INPUTS.map((path) => [path, createHash('sha256').update(readFileSync(readTarget(caseDir, path))).digest('hex')]));
+		} catch {
+			return merged;
+		}
+		if (!suggestions || typeof suggestions !== 'object' || Array.isArray(suggestions) || isDeepStrictEqual((suggestions as { inputs?: unknown }).inputs, inputs)) return merged;
+		notes.push('Code set inputs in data/research-suggestions.json to the hashes of the leads, clues and triage as they are now.');
+		return `${JSON.stringify({ ...suggestions, inputs }, null, 2)}\n`;
+	}
 	// H-K2h (C13): the proposal's envelope is the runtime's, filled by code.
 	if (name === 'data/knowledge-proposal.json') {
 		let proposal: unknown;
@@ -953,6 +993,87 @@ function artifactEnvelope(caseDir: string, target: string, submitted: string, me
 	if (created) document[created] = existing?.[created] ?? new Date().toISOString();
 	if (name === 'data/methodology.json') fillMethodology(caseDir, env, document);
 	return JSON.stringify(document) === before ? merged : `${JSON.stringify(document, null, 2)}\n`;
+}
+
+// B23(a) (K5-3: claims and verdicts in one file, 9 rewrites without clearing it): contract 1.1 has one list, claims. A row moves unchanged, and only
+// with a finding_id no other row of this write has; any other row stays in verdicts for the validators to name. Moved rows meet every claim check.
+function moveVerdicts(document: Record<string, unknown>, notes: string[]): void {
+	const { verdicts, claims = [] } = document;
+	if (!Array.isArray(verdicts) || !Array.isArray(claims)) return;
+	const idOf = (row: unknown) => (row as { finding_id?: unknown } | null)?.finding_id;
+	const ids = [...claims, ...verdicts].map(idOf);
+	const distinct = (row: unknown) => typeof idOf(row) === 'string' && ids.filter((id) => id === idOf(row)).length === 1;
+	const moved = verdicts.filter(distinct);
+	if (moved.length === 0) return;
+	const left = verdicts.filter((row) => !distinct(row));
+	document.claims = [...claims, ...moved];
+	if (left.length) document.verdicts = left;
+	else delete document.verdicts;
+	notes.push(`Code moved ${moved.map(idOf).join(', ')} from verdicts to claims, unchanged: claims is the file's one list.${left.length ? ` ${left.length} row(s) stayed in verdicts: their finding_id is missing or repeated.` : ''}`);
+}
+
+// A merge keeps the file's other fields, so a verdicts list already in the file outlives a write that leaves it out, and claims alone can never clear it
+// (Codex P2). A row whose finding now has a claim, or that names no finding, counted for nothing and goes; a row awaiting its claim stays: moving it here
+// could refuse an unrelated write.
+function dropAnsweredVerdicts(merged: string, written: string, notes: string[]): string {
+	let document: Record<string, unknown>;
+	try {
+		if (Object.hasOwn(JSON.parse(written), 'verdicts')) return merged;
+		document = JSON.parse(merged);
+	} catch {
+		return merged;
+	}
+	const { verdicts, claims } = document;
+	if (!Array.isArray(verdicts) || !Array.isArray(claims)) return merged;
+	const answered = new Set(claims.map((claim) => claim?.finding_id).filter((id) => typeof id === 'string'));
+	const left = verdicts.filter((row) => typeof row?.finding_id === 'string' && !answered.has(row.finding_id));
+	if (left.length === verdicts.length) return merged;
+	if (left.length) document.verdicts = left;
+	else delete document.verdicts;
+	notes.push(`Code removed ${verdicts.length - left.length} old row(s) from verdicts: their findings have claims, or they name none.`);
+	return `${JSON.stringify(document, null, 2)}\n`;
+}
+
+// B14, B23(c) (K2-13: rejected for one top-level "model"; K5-4: bare strings, then {id, text, source_ref}). Only that field goes, never another unknown one.
+// A selection becomes {expression_id} when it names one passage on record; the quote's text always comes from that passage, so a typed copy is dropped.
+function repairDraft(caseDir: string, document: Record<string, unknown>, notes: string[]): void {
+	if (Object.hasOwn(document, 'model')) {
+		delete document.model;
+		notes.push('Code dropped the top-level model field, which a report draft does not have.');
+	}
+	let expressions: unknown;
+	try {
+		expressions = JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')).expressions;
+	} catch {
+		return;
+	}
+	const known = new Set((Array.isArray(expressions) ? expressions : []).map((row) => row?.id).filter((id) => typeof id === 'string'));
+	const named = (selection: unknown): unknown => {
+		if (typeof selection === 'string' || !selection || typeof selection !== 'object') return selection;
+		const { id, expression_id: expression } = selection as { id?: unknown; expression_id?: unknown };
+		return id !== undefined && expression !== undefined && id !== expression ? undefined : expression ?? id;
+	};
+	for (const treatment of Array.isArray(document.finding_treatments) ? document.finding_treatments : []) {
+		const selections: unknown = treatment?.quote_selections;
+		if (!Array.isArray(selections)) continue;
+		const repaired = selections.map((selection) => (known.has(named(selection)) ? { expression_id: named(selection) } : selection));
+		const changed = repaired.filter((selection, index) => !isDeepStrictEqual(selection, selections[index]));
+		if (changed.length === 0) continue;
+		treatment.quote_selections = repaired;
+		notes.push(`Code set ${String(treatment.finding_id)}'s quote_selections to ${changed.map((selection) => selection.expression_id).join(', ')}, each an expression_id on record; the quote's text comes from its passage.`);
+	}
+}
+
+// The shapes of a worker's whole-file write that have one meaning, repaired before the write checks run; `notes` says what changed, for the reply.
+function repairPaperwork(caseDir: string, target: string, content: string, env: Record<string, string | undefined> | undefined, notes: string[]): string {
+	const name = caseRelative(caseDir, target);
+	if ((name !== 'data/fact-check.json' && name !== 'data/report-draft.json') || !localTier(env)) return content;
+	let document: Record<string, unknown>;
+	try { document = JSON.parse(content); } catch { return content; }
+	if (!document || typeof document !== 'object' || Array.isArray(document)) return content;
+	if (name === 'data/fact-check.json') moveVerdicts(document, notes);
+	else repairDraft(caseDir, document, notes);
+	return notes.length ? `${JSON.stringify(document, null, 2)}\n` : content;
 }
 
 function normalizeArtifactPaths(caseDir: string, target: string, content: string, scope?: CaseScope): string {
@@ -1203,12 +1324,16 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	// merge by id, so each write may carry a few entries (directions.ts mergeByKey).
 	// B24: the receipt fields code wrote stay through a worker's bundle merge (keepReceiptFields); keptReceipt says which, for the reply.
 	let keptReceipt: string[] = [];
+	let filledReceipt: string[] = [];
 	const whole = (target: string, content: string, exactEdit = false) => {
 		keptReceipt = [];
+		filledReceipt = [];
 		const merged = mergedWrite(target, content, exactEdit);
+		if (caseRelative(caseDir, target) === 'data/fact-check.json' && localTier(context.env)) return dropAnsweredVerdicts(merged, content, filledReceipt);
 		if (caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return merged;
-		const { text, kept } = keepReceiptFields(context, currentText(target), merged);
+		const { text, kept, filled } = keepReceiptFields(context, currentText(target), merged);
 		keptReceipt = kept;
+		filledReceipt = filled;
 		return text;
 	};
 	const mergedWrite = (target: string, content: string, exactEdit: boolean) => {
@@ -1220,7 +1345,8 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 		if (exactEdit && removesAnonymousRows(role!, relative, current, content)) return content;
 		return mergeByKey(role!, relative, current, content);
 	};
-	const receiptNote = () => (keptReceipt.length ? ` Code kept ${keptReceipt.join('; ')} as the fetch receipt of the capture has them: recorded passages are checked against them.` : '');
+	const receiptNote = () => `${keptReceipt.length ? ` Code kept ${keptReceipt.join('; ')} as the fetch receipt of the capture has them: recorded passages are checked against them.` : ''}${filledReceipt.map((note) => ` ${note}`).join('')}`;
+	const repairNote = (notes: string[]) => notes.map((note) => ` ${note}`).join('');
 	// What a merged write did, so a writer that left entries out learns they stay.
 	const LISTS: Record<string, string> = { 'data/findings.json': 'findings', 'data/evidence-bundle.json': 'items', 'data/fact-check.json': 'claims', 'data/investigation-log.json': 'cycles' };
 	const keptNote = (target: string, written: string, merged: string) => {
@@ -1339,10 +1465,12 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
-				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, true);
-				const normalized = normalizeArtifactPaths(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, scope);
+				const notes: string[] = [];
+				const written = repairPaperwork(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, context.env, notes);
+				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), written, true);
+				const normalized = normalizeArtifactPaths(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), written, scope);
 				const destination = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
-				const content = stampFactCheckerRecords(context, destination, artifactEnvelope(caseDir, destination, normalized, whole(destination, normalized), context.env), role);
+				const content = stampFactCheckerRecords(context, destination, artifactEnvelope(caseDir, destination, normalized, whole(destination, normalized), context.env, notes), role);
 				refuseCitedWithdrawal(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -1359,7 +1487,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				const before = currentText(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				const wrote = writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites);
-				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, input.content)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${receiptNote()}${nextToCheck(wrote, input.content)}`);
+				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, written)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), written, content)}${receiptNote()}${repairNote(notes)}${nextToCheck(wrote, written)}`);
 			},
 		},
 		{
@@ -1387,8 +1515,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (text.indexOf(input.old_text, first + 1) !== -1) {
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
-				const replacement = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
-				const updated = stampFactCheckerRecords(context, target, artifactEnvelope(caseDir, target, replacement, whole(target, replacement, true), context.env), role);
+				const notes: string[] = [];
+				const replacement = repairPaperwork(caseDir, target, text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length), context.env, notes);
+				const updated = stampFactCheckerRecords(context, target, artifactEnvelope(caseDir, target, replacement, whole(target, replacement, true), context.env, notes), role);
 				refuseRecordedFramework(caseDir, target);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
@@ -1400,7 +1529,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseUnanchoredVerdicts(context, target, updated);
 				refuseUnacquiredArchiveDocument(context, target, updated);
 				await refuseInvalidProposal(context, target, updated);
-				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}${receiptNote()}`);
+				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}${receiptNote()}${repairNote(notes)}`);
 			},
 		},
 		{

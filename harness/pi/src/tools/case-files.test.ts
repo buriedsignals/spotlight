@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -732,6 +733,87 @@ test('an evidence item naming a distilled leads file is refused, naming its .raw
 	const beforeLeadEdit = await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8');
 	await assert.rejects(call('edit_file', { path: 'data/evidence-bundle.json', old_text: 'page.md.raw', new_text: 'page.md' }), /distilled leads as evidence for E1 \(raw_path: research\/page\.md\)/);
 	assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), beforeLeadEdit);
+});
+
+// The paperwork repairs are for the local tiers: on frontier the same writes get what they always got.
+// Each repair also leaves alone what it cannot prove (B15, B16, B17, B14, B23).
+test('code repairs only worker paperwork it can prove, on local tiers, and says so; frontier is unchanged', async (t) => {
+	for (const tier of ['12b', 'frontier']) await t.test(tier, async (t) => {
+		const harness = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-receipts-')));
+		t.after(() => rm(harness, { recursive: true, force: true }));
+		const local = tier === '12b';
+		const env = { SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_HARNESS_DATA: harness };
+		const data = (caseDir: string, name: string) => join(caseDir, 'data', name);
+		const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+
+		await t.test('evidence receipts', async (t) => {
+			const { caseDir, call } = await fixture(t, undefined, 'investigator', env);
+			await mkdir(join(caseDir, 'research'));
+			await writeFile(join(caseDir, 'research', 'page.md'), '# RLM-distilled leads from https://example.org/\n- a lead\n');
+			await writeFile(join(caseDir, 'research', 'page.md.raw'), 'The page as fetched.\n');
+			registerCapture(harness, caseDir, 'research/page.md.raw');
+			const write = (item: object) => call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ id: 'E1', ...item }] }) });
+			if (local) assert.match(await write({ raw_path: 'research/page.md' }), /moved E1's raw_path[\s\S]*filled E1's sha256 and accessed/);
+			else await assert.rejects(write({ raw_path: 'research/page.md' }), /distilled leads as evidence for E1/);
+			const reply = await write({ raw_path: 'research/page.md.raw', accessed: '2026-01-01T00:00:00Z' });
+			const item = JSON.parse(await readFile(data(caseDir, 'evidence-bundle.json'), 'utf8')).items[0];
+			assert.equal(item.accessed, local ? '2026-07-16T12:30:00Z' : '2026-01-01T00:00:00Z');
+			assert.equal(item.sha256, local ? sha('The page as fetched.\n') : undefined);
+			if (!local) assert.doesNotMatch(reply, /Code (filled|moved)/);
+		});
+
+		await t.test('suggestion inputs', async (t) => {
+			const { caseDir, call } = await fixture(t, undefined, 'investigator', env);
+			const suggestions = { schema_version: '1.0', generated_at: '2026-11-04T10:00:00Z', inputs: { 'data/leads.json': 'typed' }, clues: [], directions: [] };
+			const write = () => call('write_file', { path: 'data/research-suggestions.json', content: JSON.stringify(suggestions) });
+			const inputs = async () => JSON.parse(await readFile(data(caseDir, 'research-suggestions.json'), 'utf8')).inputs;
+			await writeFile(data(caseDir, 'leads.json'), '{"leads": []}\n');
+			await writeFile(data(caseDir, 'clues.json'), '{"clues":  []}');
+			// One input is missing: nothing to hash, so nothing is claimed.
+			assert.doesNotMatch(await write(), /Code/);
+			assert.deepEqual(await inputs(), suggestions.inputs);
+			await writeFile(data(caseDir, 'research-triage.json'), '{}\n');
+			const reply = await write();
+			assert.deepEqual(await inputs(), local ? { 'data/leads.json': sha('{"leads": []}\n'), 'data/clues.json': sha('{"clues":  []}'), 'data/research-triage.json': sha('{}\n') } : suggestions.inputs);
+			assert.equal(/Code set inputs in data\/research-suggestions\.json/.test(reply), local);
+		});
+
+		await t.test('fact-check verdicts', async (t) => {
+			const { caseDir, call } = await fixture(t, undefined, 'fact-checker', env);
+			await writeFile(data(caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: ['one', 'two', 'three'].map((claim, i) => ({ id: `F${i + 1}`, claim })) }));
+			const claim = (n: number, claim_text: string, verdict = 'unverified') => ({ finding_id: `F${n}`, claim_text, verdict, confidence: 'low', evidence_for: [], evidence_against: [] });
+			const clash = claim(1, 'one', 'disputed');
+			const noId = { claim_text: 'three', verdict: 'unverified' };
+			const reply = await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify({ project: 'p', claims: [claim(1, 'one')], verdicts: [claim(2, 'two'), clash, noId] }) });
+			const file = JSON.parse(await readFile(data(caseDir, 'fact-check.json'), 'utf8'));
+			assert.deepEqual(file.claims, local ? [claim(1, 'one'), claim(2, 'two')] : [claim(1, 'one')]);
+			assert.deepEqual(file.verdicts, local ? [clash, noId] : [claim(2, 'two'), clash, noId], 'a clashing or anonymous row stays where it was written');
+			assert.equal(/Code moved F2 from verdicts to claims/.test(reply), local);
+			// Claims alone clear what stayed: a merge keeps the file's other fields, and a row naming no finding could never be cleared otherwise.
+			const next = await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify({ project: 'p', claims: [claim(3, 'three')] }) });
+			assert.deepEqual(JSON.parse(await readFile(data(caseDir, 'fact-check.json'), 'utf8')).verdicts, local ? undefined : [claim(2, 'two'), clash, noId]);
+			assert.equal(/Code removed 2 old row\(s\) from verdicts/.test(next), local);
+		});
+
+		await t.test('report draft', async (t) => {
+			const { caseDir, call } = await fixture(t, undefined, 'analyst', env);
+			await writeFile(data(caseDir, 'source-expressions.json'), JSON.stringify({ expressions: [{ id: 'SX1' }, { id: 'SX2' }, { id: 'SX3' }] }));
+			const selections = ['SX1', { id: 'SX2', text: 'typed', source_ref: 'x' }, { expression_id: 'SX3', text: 'typed' }, 'SX9', { id: 'SX1', expression_id: 'SX2' }];
+			const draft = { schema_version: '1.0', model: 'lfm3', author: 'lfm3', finding_treatments: [{ finding_id: 'F1', quote_selections: selections }] };
+			const reply = await call('write_file', { path: 'data/report-draft.json', content: JSON.stringify(draft) });
+			const file = JSON.parse(await readFile(data(caseDir, 'report-draft.json'), 'utf8'));
+			assert.equal(file.author, 'lfm3', 'an unknown field that is not model is the validator\'s to name');
+			assert.equal(file.model, local ? undefined : 'lfm3');
+			assert.deepEqual(file.finding_treatments[0].quote_selections, local ? [{ expression_id: 'SX1' }, { expression_id: 'SX2' }, { expression_id: 'SX3' }, 'SX9', { id: 'SX1', expression_id: 'SX2' }] : selections);
+			assert.equal(/Code dropped the top-level model field/.test(reply), local);
+			assert.equal(/Code set F1's quote_selections to SX1, SX2, SX3/.test(reply), local);
+			// An edit gets the same repair.
+			await call('write_file', { path: 'data/report-draft.json', content: '{"schema_version": "1.0"}' });
+			const edited = await call('edit_file', { path: 'data/report-draft.json', old_text: '"1.0"', new_text: '"1.0", "model": "lfm3"' });
+			assert.equal(JSON.parse(await readFile(data(caseDir, 'report-draft.json'), 'utf8')).model, local ? undefined : 'lfm3');
+			assert.equal(/Code dropped the top-level model field/.test(edited), local);
+		});
+	});
 });
 
 // LFM3 e2 stage 1 on Osaurus (bc87c716): flags coded "context" were accepted,

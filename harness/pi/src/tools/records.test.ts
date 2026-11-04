@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
+import { readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -366,6 +367,28 @@ test('a worker\'s bundle write keeps the receipt fields of a cited capture\'s it
 	assert.equal(after.raw_path, capture);
 	assert.equal(after.acquisition_method, 'fetch', 'fields the worker owns are still its to change');
 	assert.match(text(rewritten), new RegExp(`kept ${item.id}'s sha256 and accessed`));
+	// B16, B17, B23(b) (K3 Eurostat P3, K3 Tor P3 rerun, K5-3): a new item the worker writes itself: code fills sha256 and accessed from the
+	// receipt, whatever the worker typed, and an item naming fetch's leads moves to the registered .raw. The next cite on that page then reuses it.
+	const leads = 'research/eurostat-sep.md';
+	const page = `${leads}.raw`;
+	await writeFile(join(caseDir, leads), '# RLM-distilled leads from https://ec.europa.eu/eurostat/z\n- a lead\n');
+	await writeFile(join(caseDir, page), 'Euro indicators\nIn July 2026 the euro area unemployment rate was 6.3%.\n');
+	registerCapture(context.env.SPOTLIGHT_HARNESS_DATA!, caseDir, page, 'https://ec.europa.eu/eurostat/z', 'investigator');
+	const filled = await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...rest, id: 'E-NEW', raw_path: leads, sha256: 'abc123', accessed: '2026-11-04T10:44:37Z', source_url: 'https://ec.europa.eu/eurostat/z' }] }) });
+	const fresh = (await json('evidence-bundle.json')).items.find((entry: { id: string }) => entry.id === 'E-NEW');
+	const receipt = JSON.parse(readFileSync(join(context.env.SPOTLIGHT_HARNESS_DATA!, 'work', 'fetched', readdirSync(join(context.env.SPOTLIGHT_HARNESS_DATA!, 'work', 'fetched'))[0]), 'utf8'))[page];
+	assert.deepEqual([fresh.raw_path, fresh.sha256, fresh.accessed], [page, receipt.sha256, receipt.accessed]);
+	assert.match(text(filled), /Code moved E-NEW's raw_path from research\/eurostat-sep\.md to research\/eurostat-sep\.md\.raw/);
+	assert.match(text(filled), /Code filled E-NEW's sha256 and accessed from the fetch receipt/);
+	assert.match(text(await live('record_finding', { finding: { claim: 'The July 2026 euro area unemployment rate was 6.3%.', confidence: 'medium' }, cite: [{ path: page, line_start: 2, line_end: 2 }] })), /Passage\(s\) \S+ recorded/);
+	// A capture changed since its fetch proves nothing: the item stays as the worker wrote it.
+	const changed = 'research/eurostat-jun.md.raw';
+	await writeFile(join(caseDir, changed), 'as fetched\n');
+	registerCapture(context.env.SPOTLIGHT_HARNESS_DATA!, caseDir, changed, 'https://ec.europa.eu/eurostat/j', 'investigator');
+	await writeFile(join(caseDir, changed), 'edited after the fetch\n');
+	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...rest, id: 'E-EDITED', raw_path: changed, sha256: 'abc123', accessed: '2026-11-04T10:44:37Z' }] }) });
+	const edited = (await json('evidence-bundle.json')).items.find((entry: { id: string }) => entry.id === 'E-EDITED');
+	assert.deepEqual([edited.sha256, edited.accessed], ['abc123', '2026-11-04T10:44:37Z']);
 	// An older case already broken that way (written before this fix): the next cite's passage is refused because of the
 	// earlier passage, and the refusal names that passage, its item and the sha256 to put back, not this cite.
 	const bundle = await json('evidence-bundle.json');

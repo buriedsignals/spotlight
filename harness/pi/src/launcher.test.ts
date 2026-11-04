@@ -1214,7 +1214,9 @@ test('four productive fact-check requests can continue past the allowance withou
 			const id = /^- (F\d+): /m.exec(userText(request))?.[1];
 			const finding = findings.find((row) => row.id === id);
 			assert.ok(finding);
-			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'offline-demo', claims: [{ finding_id: id, claim_text: finding.claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] }] }) } }] };
+			// B23(a) (K5-3): the first batch's verdict is written under verdicts; code moves it and the next batch still follows.
+			const row = { finding_id: id, claim_text: finding.claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'offline-demo', ...(starts === 1 ? { claims: [], verdicts: [row] } : { claims: [row] }) }) } }] };
 		}
 		const n = toolResults(request).length;
 		return n < 4 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: `Continue pass ${n + 1}.` } }] } : { text: 'Done.' };
@@ -1226,7 +1228,9 @@ test('four productive fact-check requests can continue past the allowance withou
 	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!);
 	assert.equal(results.length, 4);
 	assert.ok(!results[3].includes(FACT_CHECKERS_SPENT));
-	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')).claims.map((row: { finding_id: string }) => row.finding_id), ['F1', 'F2', 'F3', 'F4']);
+	const checked = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	assert.deepEqual(checked.claims.map((row: { finding_id: string }) => row.finding_id), ['F1', 'F2', 'F3', 'F4']);
+	assert.equal(checked.verdicts, undefined, 'one container, as the contract allows');
 });
 
 test('a written claim that fails strict validation never earns another fact-check attempt', async (t) => {
@@ -1492,7 +1496,9 @@ test('resolving at Research suggestions launches the AMENDMENT investigator; its
 	const env = { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' };
 	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [fixture, sample, 'research'], { env });
 	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [fixture, caseDir, 'research', '--no-suggestions'], { env });
-	const suggestions = await readFile(join(sample, 'data', 'research-suggestions.json'), 'utf8');
+	const sampled = await readFile(join(sample, 'data', 'research-suggestions.json'), 'utf8');
+	// B15 (K3-2): on 12b the worker's hashes are invented; code computes them, and the Research page still opens. Frontier keeps writing its own.
+	const suggestions = tier === 'frontier' ? sampled : JSON.stringify({ ...JSON.parse(sampled), inputs: { 'data/leads.json': 'a'.repeat(64), 'data/clues.json': 'b'.repeat(64), 'data/research-triage.json': 'c'.repeat(64) } });
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
 			// B19: a provider without tool_choice "required"; the same request with "auto" writes the file.
@@ -1509,6 +1515,7 @@ test('resolving at Research suggestions launches the AMENDMENT investigator; its
 	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && !isWriteCommit(request));
 	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: SUGGEST\n/);
 	assert.equal(lastResolution(chat).phase, 'research_approval', 'the suggestions count and the Research page is next');
+	assert.equal(/Code fills `inputs`/.test(userText(worker[0])), tier === '12b');
 	assert.ok(toolResults(worker.at(-1)!).some((text) => text.startsWith('wrote ')), `the suggestions write was accepted: ${toolResults(worker.at(-1)!)[10]}`);
 	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n');
 	assert.doesNotMatch(answer, /progress watchdog limit/);
@@ -1527,7 +1534,7 @@ test('resolving at Research suggestions launches the AMENDMENT investigator; its
 	const [committed] = writeCalls(worker.at(-1)!);
 	assert.ok(committed[0].startsWith('commit-'), committed[0]);
 	assert.equal(committed[1], 'data/research-suggestions.json');
-	assert.match(committed[2], /wrote data\/research-suggestions\.json/);
+	assert.match(committed[2], /wrote data\/research-suggestions\.json.*Code set inputs in data\/research-suggestions\.json/);
 	assert.equal(toolResults(worker[6]).length, 7, 'the commit step answered turn 7; the next request is the worker\'s own');
 	assert.equal(worker.length, 16);
  });
@@ -3563,7 +3570,8 @@ test('at Report resolve names the offer before a draft and open_review after it;
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'analyst')) {
 			const skeleton = JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
-			const draft = { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] };
+			// B14, B23(c) (K2-13, K5-4): an invented model field and a bare quote id; code repairs both, the check passes and the page opens.
+			const draft = { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, model: 'lfm3', title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments.map((row) => ({ ...row, quote_selections: ['SX1'] })) }) } }] };
 			if (isWriteCommit(request)) return draft;
 			const done = toolResults(request).length;
 			// B28: after the committed draft passes its check, a second write is never run.
@@ -3590,8 +3598,9 @@ test('at Report resolve names the offer before a draft and open_review after it;
 	assert.notEqual((JSON.parse(seam(['status', '--json', caseDir])) as { phase?: string }).phase, 'report', 'the member\'s decision moved the case on');
 	const [written] = writeCalls(fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && !isWriteCommit(request)).at(-1)!);
 	assert.ok(written[0].startsWith('commit-') && written[1] === 'data/report-draft.json', JSON.stringify(written));
-	assert.match(written[2], /wrote data\/report-draft\.json/);
+	assert.match(written[2], /wrote data\/report-draft\.json.*Code dropped the top-level model field.*Code set F1's quote_selections to SX1/);
 	assert.equal(JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8')).title, REPORT_DRAFT.title, 'the second write never ran');
+	assert.deepEqual(JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8')).finding_treatments[0].quote_selections, [{ expression_id: 'SX1' }]);
 });
 
 test('the fact-checker is not started after the Investigation gate', async (t) => {
