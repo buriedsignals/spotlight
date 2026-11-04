@@ -84,30 +84,31 @@ test('the third identical tool call in a row is blocked with the loop reason', a
 // characters, and four reads in one turn 66,000, each past the 12b's 40,960
 // tokens. On the 12b (the default tier) one turn's reads share 30,000.
 test('on the 12b the reads of one turn share 30,000 characters, and the next turn starts afresh', async (t) => {
-	const page = 'x'.repeat(99).concat('\n').repeat(250);
+	// Each page fits one read_file page on the 12b (simp-read: 11,776
+	// characters at its fold); three of them pass the turn's 30,000.
+	const page = 'x'.repeat(99).concat('\n').repeat(110);
 	const turns: Reply[] = [
-		{ toolCalls: [{ name: 'read_file', arguments: { path: 'research/a.md.raw' } }, { name: 'read_file', arguments: { path: 'research/b.md.raw' } }] },
-		{ toolCalls: [{ name: 'read_file', arguments: { path: 'research/b.md.raw' } }] },
+		{ toolCalls: ['a', 'b', 'c'].map((name) => ({ name: 'read_file', arguments: { path: `research/${name}.md.raw` } })) },
+		{ toolCalls: [{ name: 'read_file', arguments: { path: 'research/c.md.raw' } }] },
 		{ text: 'Read.' },
 	];
-	const fake = await startFakeOpenAI((request) => turns[toolResults(request).length === 0 ? 0 : toolResults(request).length === 2 ? 1 : 2]);
+	const fake = await startFakeOpenAI((request) => turns[toolResults(request).length === 0 ? 0 : toolResults(request).length === 3 ? 1 : 2]);
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'research'), { recursive: true });
-	await writeFile(join(caseDir, 'research/a.md.raw'), page);
-	await writeFile(join(caseDir, 'research/b.md.raw'), page);
+	for (const name of ['a', 'b', 'c']) await writeFile(join(caseDir, `research/${name}.md.raw`), page);
 	const chat = launch(t, baseEnv(space, fake.baseURL));
 
 	await settledPrompt(chat, 'Read the pages.');
 
-	const [first, second] = toolResults(fake.requests.find((request) => toolResults(request).length === 2)!);
-	const next = toolResults(fake.requests.find((request) => toolResults(request).length === 3)!)[2];
+	const reads = toolResults(fake.requests.find((request) => toolResults(request).length === 3)!);
+	const next = toolResults(fake.requests.find((request) => toolResults(request).length === 4)!)[3];
 	const notice = '\n[truncated: use offset and limit to read the rest]';
-	const kept = [first, second].map((text) => (text.endsWith(notice) ? text.slice(0, -notice.length) : text));
-	assert.equal(page.length, 25_000);
-	assert.equal(kept[0].length + kept[1].length, 30_000);
-	assert.ok([first, second].some((text) => text.endsWith(notice)), 'the read past the turn budget carries the truncation notice');
+	const kept = reads.map((text) => (text.endsWith(notice) ? text.slice(0, -notice.length) : text));
+	assert.equal(page.length, 11_000);
+	assert.equal(kept.reduce((sum, text) => sum + text.length, 0), 30_000);
+	assert.ok(reads.some((text) => text.endsWith(notice)), 'the read past the turn budget carries the truncation notice');
 	assert.equal(next, page);
 });
 
