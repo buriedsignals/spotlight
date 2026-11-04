@@ -2261,12 +2261,17 @@ test('with the Research switch off, the methodology check refuses a research pla
 		const methodology = research === 'content-only' ? CONTENT_ONLY_PLAN : sample;
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
-				if (toolResults(request).length) return { text: 'Plan written.' };
-				if (research !== 'content-navigator') return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] };
+				const done = toolResults(request).length;
+				if (research !== 'content-navigator') return done ? { text: 'Plan written.' } : { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] };
 				// The planner picks a tool from the lookup code ran, by its receipt.
+				// K2 Eurostat P1 (TUNE K2-10): it also writes code-owned fields wrong,
+				// status "used", a query with no receipt fields and a query with no
+				// receipt at all, then an edit_file correction sets status "used" again.
 				const receipt = /research\/navigator\/[0-9a-f-]{36}-receipt\.json/.exec(userText(request))?.[0];
-				const plan = { ...JSON.parse(CONTENT_ONLY_PLAN), navigator: { required: false, used: true, queries: [{ receipt_path: receipt, selected_tools: ['WhiteIntel'] }] } };
-				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: JSON.stringify(plan) } }] };
+				const plan = { ...JSON.parse(CONTENT_ONLY_PLAN), navigator: { required: false, used: true, status: 'used', queries: [{ receipt_path: receipt, selected_tools: ['WhiteIntel'] }, { direction: 'Eurostat table lookup', interface: 'cli', query: 'Eurostat unemployment', selected_tools: ['Invented tool'] }] } };
+				if (done === 0) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: JSON.stringify(plan) } }] };
+				if (done === 1) return { toolCalls: [{ name: 'edit_file', arguments: { path: 'data/methodology.json', old_string: '"outcome": "used"', new_string: '"status": "used"' } }] };
+				return { text: 'Plan written.' };
 			}
 			return toolResults(request).length === 0
 				? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
@@ -2302,6 +2307,12 @@ test('with the Research switch off, the methodology check refuses a research pla
 			const written = JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'));
 			assert.equal(written.navigator.used, true);
 			assert.match(written.navigator.queries[0].response_sha256, /^[0-9a-f]{64}$/);
+			// Code wrote the block from the receipts, after the write and after the edit.
+			assert.deepEqual(Object.keys(written.navigator).sort(), ['outcome', 'queries', 'required', 'used']);
+			assert.equal(written.navigator.outcome, 'used');
+			assert.ok(written.navigator.queries.every((query: { receipt_path?: string; retrieved_at?: string }) => query.receipt_path && query.retrieved_at), 'every query is a receipt\'s');
+			assert.deepEqual(written.navigator.queries[0].selected_tools, ['WhiteIntel']);
+			assert.ok(!JSON.stringify(written.navigator).includes('Invented tool'), 'a query with no receipt is dropped');
 			assert.deepEqual(written.tools_required, ['fetch', 'WhiteIntel']);
 			assert.match(delegated, /validate-methodology-navigator\.py: PASSED/, delegated);
 			continue;

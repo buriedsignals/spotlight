@@ -45,8 +45,13 @@ export function recordNavigatorLookup(context: ToolContext, input: { action: 'fi
 	return path;
 }
 
-// The file-write boundary owns these fields, while any model-chosen selection
-// and direction remain judgments. Skip states are untouched when no lookup ran.
+// The file-write boundary owns the whole block once a lookup ran (C13, TUNE
+// K2-10: every K2 Navigator FAIL was on a code-owned field the model edited,
+// such as status "used" or a query without its receipt fields). Code writes
+// required, used, outcome and one query per receipt; the model's only part is
+// selected_tools on a query that names its receipt. A query with no receipt
+// is dropped. Skip states are untouched when no lookup ran (the model's
+// fallback_reason stands).
 export function completeNavigatorMetadata(caseDir: string, proposed: string): string {
 	const folder = join(caseDir, FOLDER);
 	if (!existsSync(folder)) return proposed;
@@ -65,16 +70,15 @@ export function completeNavigatorMetadata(caseDir: string, proposed: string): st
 			throw new FileRefused(`refused: Navigator receipt ${path} is invalid; do not invent lookup provenance`);
 		}
 		const chosen = supplied.find((query) => query && (query.receipt_path === path || query.response_path === path));
+		// Never manufacture selection decisions from results: only the model's own picks.
+		const selected = Array.isArray(chosen?.selected_tools) ? (chosen.selected_tools as unknown[]).filter((tool): tool is string => typeof tool === 'string' && tool.trim() !== '') : [];
 		return {
-			...(chosen ?? {}), interface: 'cli', mode: 'tool_discovery', query: receipt.query,
+			interface: 'cli', mode: 'tool_discovery', query: receipt.query,
 			command: JSON.stringify(receipt.argv), retrieved_at: receipt.retrieved_at,
 			response_path: path, receipt_path: path, response_sha256: receipt.response_sha256,
-			selected_tools: chosen?.selected_tools ?? [],
+			selected_tools: selected,
 		};
 	});
-	// Keep historical/manual queries: only records claiming one of our actual
-	// receipts are replaced. Never manufacture selection decisions from results.
-	const historical = supplied.filter((query) => query && !queries.some((actual) => query.receipt_path === actual.receipt_path || query.response_path === actual.response_path));
-	document.navigator = { ...nav, required: nav.required === true, used: true, outcome: 'used', queries: [...historical, ...queries] };
+	document.navigator = { required: nav.required === true, used: true, outcome: 'used', queries };
 	return JSON.stringify(document, null, 2);
 }
