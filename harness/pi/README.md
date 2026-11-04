@@ -46,7 +46,7 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_MODEL_CONTEXT_WINDOW` | no | Context window in tokens (default 32768). Each request's output cap is a quarter of it, never below 8192. |
 | `SPOTLIGHT_MODEL_TIER` | no | `12b` (default), `26b`, `31b` or `frontier`. Sets where the conversation is folded (see [Conversation folding](#conversation-folding)). Any other value stops the launcher. |
 | `SPOTLIGHT_COMPACT_AT`, `SPOTLIGHT_COMPACT_KEEP` | no | Override the local tier's fold point and the recent tokens kept verbatim. The fold point must be below the context window, and the kept tokens below the fold point. |
-| `SPOTLIGHT_FC_BATCH_SIZE` | no | Experimental fact-check unit: `3` (default) or `1`. A smaller unit keeps the same worker call limit, so it increases the maximum allowance per finding. Global budgets and validators stay unchanged. |
+| `SPOTLIGHT_FC_BATCH_SIZE` | no | Experimental fact-check unit: `3` (default) or `1`. A smaller unit keeps the same worker call limit, so it increases the maximum allowance per finding. Global budgets and validators stay unchanged. On a local tier with a fold point of 32,768 or less, code also shortens a batch to what fits under the fold point (always at least one finding). |
 | `SPOTLIGHT_HELPER_URL` | no | Base URL of the helper model. |
 | `SPOTLIGHT_SEARCH_URL` | no | Base URL of the search service. There is no default. |
 | `SPOTLIGHT_CASES_ROOT` | yes | Absolute path of the cases folder. |

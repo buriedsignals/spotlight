@@ -27,7 +27,8 @@ import {
 import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { createHash, randomUUID } from 'node:crypto';
-import { LEGACY_MARKERS, writeConfined } from './tools/case-files.ts';
+import { LEGACY_MARKERS, readPageChars, writeConfined } from './tools/case-files.ts';
+import { typedTools } from './tools/index.ts';
 import { NAVIGATOR_PRE_STEP } from './tools/methodology-paperwork.ts';
 import { programTools } from './tools/programs.ts';
 import { newsroomData } from './tools/editorial.ts';
@@ -40,7 +41,7 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, analystTask, allowedTools, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt, taskMode } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, PACKET_OVERFLOW, agentSpec, analystTask, allowedTools, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt, taskMode } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
@@ -796,12 +797,48 @@ function withRespawn(harness: Harness, role: string, message: string, owed: Deli
 // Operator experiment; the production default remains three findings.
 const FC_BATCH = Number(process.env.SPOTLIGHT_FC_BATCH_SIZE ?? '3');
 if (![1, 3].includes(FC_BATCH)) throw new Error('SPOTLIGHT_FC_BATCH_SIZE must be 1 or 3');
+// B26 (K3 Eurostat P3, window 40,960): a first prompt under the fold point
+// crossed it on one read, and the fold left it above the watchdog's limit. At
+// a fold point bounded reads apply to, a batch is the longest run of its
+// findings whose task leaves room for the fixed prompt and two read pages under
+// the fold point plus the runner's margin (stop_runaway.py WATCH_FOLD_MARGIN).
+// An estimate, not a count: 3 sits between the recorded 3.75 characters a token
+// for a whole prompt and 2.8 for a read page, and a re-check's status lines are
+// not known yet. Only case passages are measured: finalTask's wiki step saves
+// notes into the case in sensitive mode, so it runs once, for the real task.
+// A packet that overflows to a file costs reads, so it never
+// fits; one finding always goes, and any failure here leaves the run to report it.
+const FOLD_WATCH_MARGIN = 3000;
+const BATCH_READS = 2;
+const BATCH_CHARS_PER_TOKEN = 3;
+async function fittingBatch(harness: Harness, task: string, docs: ReturnType<typeof readCheckDocs>, ids: string[], signal: AbortSignal): Promise<string[]> {
+	const { config, active: { caseDir } } = harness;
+	const page = readPageChars({ SPOTLIGHT_MODEL_TIER: config.modelTier, SPOTLIGHT_FOLD_AT: String(config.fold?.at) });
+	if (page === undefined || ids.length < 2) return ids;
+	try {
+		const allowed = allowedTools(agentSpec(harness.composition, 'fact-checker'), config.sensitive, config.edition).filter((name) => name !== 'record_assessment');
+		const tools = typedTools({ caseDir, writeRoot: caseDir, python: config.python, configPath: config.spotlightConfig, env: { ...process.env, SPOTLIGHT_ROLE: 'fact-checker' } })
+			.filter((tool) => allowed.includes(tool.name)).map(({ name, description, parameters }) => ({ name, description, parameters }));
+		const fixed = systemPrompt(harness.composition, 'fact-checker', config.modelTier, config.edition, config.research, workerContext(harness, 'fact-checker', task, '')).length + JSON.stringify(tools).length;
+		const room = (config.fold!.at + FOLD_WATCH_MARGIN) * BATCH_CHARS_PER_TOKEN - fixed - BATCH_READS * page;
+		for (let size = ids.length; size > 1; size -= 1) {
+			const due = batchDeliverable(caseDir, docs, ids.slice(0, size), {}, undefined, true);
+			const text = await withCasePassages('fact-checker', `${task}\n\n${due.line}\n${due.start}`, { caseDir, casesRoot: harness.active.casesRoot, python: config.python, env: process.env, log: harness.log, signal, findings: due.packet });
+			if (text.length <= room && !text.includes(PACKET_OVERFLOW)) return ids.slice(0, size);
+		}
+		return ids.slice(0, 1);
+	} catch (error) {
+		signal.throwIfAborted();
+		harness.log(`fact-checker: batch not sized (${(error as Error).message})`);
+		return ids;
+	}
+}
 async function factCheckBatches(harness: Harness, task: string, signal: AbortSignal, run: (task: string, due: Deliverable, ids: string[]) => Promise<string>, validatedBatch: (ids: string[]) => void): Promise<string> {
 	const caseDir = harness.active.caseDir;
 	const answers: string[] = [];
 	for (let left = nextCheckBatch(readCheckDocs(caseDir)).left; left > 0 && !signal.aborted; ) {
 		const docs = readCheckDocs(caseDir);
-		const ids = nextCheckBatch(docs, FC_BATCH).batch.map((item) => item.id);
+		const ids = await fittingBatch(harness, task, docs, nextCheckBatch(docs, FC_BATCH).batch.map((item) => item.id), signal);
 		const future = nextCheckBatch(docs, left).batch.map((item) => item.id).filter((id) => !ids.includes(id));
 		const recheck = await recheckSources(harness, docs, ids, signal);
 		const due = batchDeliverable(caseDir, docs, ids, recheck.sources, recheck.path, harness.config.modelTier !== 'frontier');

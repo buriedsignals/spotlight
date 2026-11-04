@@ -3141,6 +3141,37 @@ test('fact-checks retain the final whole-case check at default and experimental 
 	assert.equal(delegated.match(/validate-fact-check\.py/g)?.length, 1, 'the unfiltered final check is still reported once');
 	assert.match(delegated, new RegExp(`Every finding has a claim \\(${count} of ${count}\\)\\.`));
  });
+ // B26: every finding still gets its claim when the batch is sized. 4,500-character claims overflow a
+ // three-finding packet (12,000), which leaves a short task, so an overflow must count as not fitting.
+ for (const [name, env, sizes] of [
+	['fold 28,672 takes the longest run that fits', { SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_COMPACT_AT: '28672' }, [2, 2, 1]],
+	['fold 20,480 still takes one finding', { SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_COMPACT_AT: '20480' }, [1, 1, 1, 1, 1]],
+	['a fold point above 32,768 keeps batches of three', { SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '98304', SPOTLIGHT_COMPACT_AT: '32769' }, [3, 2]],
+	['frontier keeps batches of three', { SPOTLIGHT_MODEL_TIER: 'frontier' }, [3, 2]],
+] as const) await t.test(name, async (t) => {
+	const findings = Array.from({ length: 5 }, (_, i) => ({ id: `F${i + 1}`, claim: `On ${i + 1} May the fixture company filed report ${i + 1}. ${'Its annex lists the same figure. '.repeat(136)}` }));
+	const assigned = (request: ChatRequest) => userText(request).match(/the claims for (.*?) in data\/fact-check\.json/)![1].match(/F\d+/g)!;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			if (toolResults(request).length > 0) return { text: 'Checked.' };
+			const claims = assigned(request).map((id) => ({ finding_id: id, claim_text: findings.find((finding) => finding.id === id)!.claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] }));
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'case-a', claims }) } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await factCheckCase(space, findings);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), ...env });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const starts = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 0);
+	assert.deepEqual(starts.map((request) => assigned(request).length), sizes);
+	const file = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	assert.deepEqual(file.claims.map((claim: { finding_id: string }) => claim.finding_id), findings.map((finding) => finding.id));
+	assert.match(toolResults(fake.requests.at(-1)!).join('\n'), /Every finding has a claim \(5 of 5\)\./);
+ });
 });
 
 test('invalid investigation inputs are routed for repair before any fact-check worker starts', async (t) => {
@@ -3695,7 +3726,8 @@ test('in sensitive mode the investigator\'s and fact-checker\'s tasks carry the 
 		const space = await workspace(t);
 		// A brief as members write them: long, with instructions. Like Engine, the
 		// stand-in finds nothing for a query that long (gold sens3 marlow, calder).
-		const caseDir = await factCheckCase(space, [{ id: 'F1', claim: 'Fixture company ownership' }]);
+		// Two findings: sizing the batch (B26) must not run the wiki step, which saves notes into the case.
+		const caseDir = await factCheckCase(space, [{ id: 'F1', claim: 'Fixture company ownership' }, { id: 'F2', claim: 'Fixture company address' }]);
 		await writeFile(join(caseDir, 'brief-directions.txt'), 'Identify who owns the fixture company now, the date it changed hands, and what could not be checked, using only the case folder and the wiki.');
 		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-08-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir]);
 		const wiki = join(space.root, 'wiki');
