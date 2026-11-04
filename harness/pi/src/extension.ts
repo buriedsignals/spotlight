@@ -1272,10 +1272,19 @@ export function replyObject(text: string): Record<string, unknown> | undefined {
 }
 function registerReplyDeliverable(pi: ExtensionAPI, write: ToolDefinition, file: string): void {
 	const offered = new Set<string>();
+	// Once the deliverable is accepted a later reply never replaces it (Codex
+	// review of simp-stack, P2). Not reset on agent_start: a fold's continuation
+	// is the same task.
+	let accepted = false;
+	pi.on('tool_execution_end', (event) => {
+		if ((event.toolName !== 'write_file' && event.toolName !== 'edit_file') || event.isError) return;
+		const said: string = event.result?.content?.[0]?.text ?? '';
+		if (/^(?:wrote|edited) /.test(said) && said.replace(/\\/g, '/').split(/\s/)[1]?.endsWith(file)) accepted = true;
+	});
 	pi.on('message_end', async (event) => {
 		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
 		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
-		if (message.role !== 'assistant' || message.stopReason !== 'stop' || parts.some((part) => part.type === 'toolCall')) return undefined;
+		if (accepted || message.role !== 'assistant' || message.stopReason !== 'stop' || parts.some((part) => part.type === 'toolCall')) return undefined;
 		const object = replyObject(parts.filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n'));
 		if (!object) return undefined;
 		const content = `${JSON.stringify(object, null, 2)}\n`;
@@ -1288,6 +1297,7 @@ function registerReplyDeliverable(pi: ExtensionAPI, write: ToolDefinition, file:
 			pi.sendUserMessage(replyRefused(file, (error as Error).message), { deliverAs: 'followUp' });
 			return undefined;
 		}
+		accepted = true;
 		log(`the ${file} JSON in a worker's reply was written`);
 		return { message: { ...event.message, content: [...parts, { type: 'text', text: `\n${replyTaken(file)}` }] } as typeof event.message };
 	});

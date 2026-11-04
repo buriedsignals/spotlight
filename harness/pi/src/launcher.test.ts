@@ -2554,13 +2554,16 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
  // analyst only reads; the write commit step writes the invalid proposal, its
  // refusal reaches the analyst, and the analyst's own route writes the valid one.
  // B21 (K4 Tor P5): reply, the analyst puts the proposal in its reply as JSON instead of writing it.
- for (const route of ['own', 'committed', 'reply'] as const) await t.test(route, async (t) => {
+ // Codex review of simp-stack: reply-after, a valid reply after an accepted write replaces nothing.
+ for (const route of ['own', 'committed', 'reply', 'reply-after'] as const) await t.test(route, async (t) => {
 	const invalid = { ...PROPOSAL, claims: [{ ...PROPOSAL.claims[0], statement: { ...PROPOSAL.claims[0].statement, object: { text: 7 } } }] };
+	const another = { ...PROPOSAL, claims: [{ ...PROPOSAL.claims[0], statement: { ...PROPOSAL.claims[0].statement, object: { text: 'A different object' } } }] };
 	const write = (proposal: unknown) => ({ toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(proposal) } }] });
 	const fake = await startFakeOpenAI(
 		delegateToAnalyst((request) => {
 			if (isWriteCommit(request)) return write(invalid);
 			const done = toolResults(request).length;
+			if (route === 'reply-after') return done === 0 ? write(PROPOSAL) : { text: `Here is the proposal again.\n\n\`\`\`json\n${JSON.stringify(another, null, 2)}\n\`\`\`` };
 			if (route === 'reply') return { text: `Here is the proposal.\n\n\`\`\`json\n${JSON.stringify(JSON.stringify(request.messages).includes('Your reply held JSON') ? PROPOSAL : invalid, null, 2)}\n\`\`\`` };
 			const first = route === 'own' ? 0 : 6;
 			if (route === 'committed' && done < first) return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/findings.json', offset: done + 1, limit: 1 } }] };
@@ -2578,6 +2581,13 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
 
 	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && !isWriteCommit(request));
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
+	if (route === 'reply-after') {
+		const kept = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-proposal.json'), 'utf8'));
+		assert.deepEqual(kept.claims, PROPOSAL.claims, 'the accepted proposal stands');
+		assert.doesNotMatch(toolResults(orchestrator.at(-1)!).join('\n'), /\[Harness: the JSON in this reply was written/);
+		assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the harness built the batch after the analyst ended');
+		return;
+	}
 	if (route === 'reply') {
 		// The invalid object is refused with the validator's text as the next prompt; the valid one is written as it was sent.
 		assert.equal(analyst.length, 2);
