@@ -603,6 +603,8 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 	const local = localTier(context.env);
 	for (const item of itemsOf(after)) {
 		const old = was.get(item.id);
+		// A fact-checker's write leaves items it did not change as stored: any repair here reads as the fact-checker changing them, and refuseBundleRewrites then refuses its add for good (gold-asf on 3767f400).
+		if (old && context.env.SPOTLIGHT_ROLE === 'fact-checker' && isDeepStrictEqual(item, old)) continue;
 		const path = item.raw_path;
 		const fromLeads = local && typeof path === 'string' && isLeadFile(context.caseDir, path) && !!registeredCapture(context, `${path}.raw`);
 		if (fromLeads) {

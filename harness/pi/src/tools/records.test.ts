@@ -352,6 +352,27 @@ test('a verified item whose quote is in the fact-checker\'s own capture counts e
 // evidence item with the capture's sha256 (seq 23); at seq 24 the investigator rewrote data/evidence-bundle.json and the merge took its
 // version of that item without sha256 and with an invented accessed time, so passage D1-Q1 no longer matched its item. Every later cite
 // then saved its finding but not its passage, and the refusal told the model to correct the cite it had just made.
+// gold-asf on 3767f400 (fact-checker-9, seq 70-79): the receipt repair ran over every merged item, so a fact-checker's add
+// "changed" investigator items it never touched, and the bundle guard refused it for good: the finding stayed unjudged.
+test('a fact-checker\'s bundle add leaves investigator items it did not touch, even when their accessed differs from the receipt', async t => {
+	const { caseDir, context, call, json } = await fixture(t, 'fact-checker');
+	const capture = 'research/asf-leadership.md.raw';
+	await writeFile(join(caseDir, capture), 'Officers\nPresident: Ruth Suehle\n');
+	registerCapture(context.env.SPOTLIGHT_HARNESS_DATA!, caseDir, capture, 'https://www.apache.org/foundation/leadership', 'investigator');
+	const receipt = JSON.parse(readFileSync(join(context.env.SPOTLIGHT_HARNESS_DATA!, 'work', 'fetched', readdirSync(join(context.env.SPOTLIGHT_HARNESS_DATA!, 'work', 'fetched'))[0]), 'utf8'))[capture];
+	const bundle = await json('evidence-bundle.json');
+	const stale = { ...bundle.items[0], id: 'D3-E1', created_by: 'investigator', raw_path: capture, sha256: receipt.sha256, accessed: '2026-11-04T22:16:17Z' };
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ ...bundle, items: [...bundle.items, stale] }));
+	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...bundle.items[0], id: 'FC-E9', created_by: 'fact-checker', claim_links: [] }] }) });
+	const after = (await json('evidence-bundle.json')).items;
+	assert.ok(after.some((entry: { id: string }) => entry.id === 'FC-E9'), 'the fact-checker\'s item is saved');
+	assert.equal(after.find((entry: { id: string }) => entry.id === 'D3-E1').accessed, '2026-11-04T22:16:17Z', 'an item this write did not touch stays as stored');
+	// Continuity: the next add goes through too, and an item a write does change still gets the receipt's values, so B24 holds.
+	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...bundle.items[0], id: 'FC-E10', created_by: 'fact-checker', claim_links: [] }] }) });
+	assert.ok((await json('evidence-bundle.json')).items.some((entry: { id: string }) => entry.id === 'FC-E10'));
+	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...stale, raw_path: 'research/other.md' }] }) }), /changes or removes D3-E1/);
+});
+
 test('a worker\'s bundle write keeps the receipt fields of a cited capture\'s item, and a passage refusal names the passage that is actually broken', async t => {
 	const { caseDir, context, call, live, json } = await fixture(t, 'investigator');
 	const capture = 'research/eurostat-aug.md.raw';
