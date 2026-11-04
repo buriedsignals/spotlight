@@ -2551,6 +2551,7 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 		assert.match(results[3], /refused: data\/methodology\.json is outside/);
 		assert.match(results[4], /origin_candidates[\s\S]*SX1/);
 		assert.match(results[5], /refused: data\/findings\.json is not a file this agent may write/);
+		assert.doesNotMatch(results[5], /spawn_agent/, 'a worker is not told to spawn (Codex review of simp-text)');
 		assert.match(results[6], /wrote data\/knowledge-proposal\.json/);
 
 		// The analyst's one write is the proposal; the builder the harness ran

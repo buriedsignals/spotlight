@@ -273,7 +273,9 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	if (!inScope(writes, caseRelative(caseDir, target))) {
 		// overnight-summary.md H-K2c: the orchestrator's write of the analyst's
 		// proposal was refused without naming the analyst or the next step.
-		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})${ownerNext(caseRelative(caseDir, target)) ? `.${ownerNext(caseRelative(caseDir, target))}` : ''}`);
+		// Only the orchestrator can spawn; a worker is not told to (Codex review of simp-text).
+		const next = process.env.SPOTLIGHT_ROLE === 'orchestrator' ? ownerNext(caseRelative(caseDir, target)) : '';
+		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})${next ? `.${next}` : ''}`);
 	}
 	const parts = relative(root, target).split(sep);
 	let current = root;
