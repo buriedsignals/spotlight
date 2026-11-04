@@ -1,6 +1,6 @@
 # Spotlight
 
-> An investigation workflow for AI agents, built for journalists. Spotlight takes a reporting lead through an approved methodology, evidence gathering, independent fact-checking, and editorial review, keeping the work in a local case folder.
+> An investigation workflow for AI agents. Spotlight takes a reporting lead through an approved methodology, evidence gathering, independent fact-checking, and editorial review, keeping the work in a local case folder.
 
 ## When to use it
 
