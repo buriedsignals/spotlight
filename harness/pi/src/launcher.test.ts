@@ -1057,7 +1057,8 @@ test('a repeated unit trips the stream guard and a long, key-repetitive JSON doe
 });
 
 test('on the 12b a turn repeating itself or streaming nothing visible is stopped with an honest line, and a turn that ran to the cap is nudged once', async (t) => {
-	for (const [name, first] of [
+	// At once: the two stalled cases each wait the real 60 s clock.
+	await Promise.all(([
 		['channel', { text: DEGENERATE_SAMPLES.channel }],
 		['sentences', { text: DEGENERATE_SAMPLES.sentences }],
 		['length', { text: 'A long summary that ran out of room', finish: 'length' as const }],
@@ -1070,7 +1071,7 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 		['stalled after calls', { toolCalls: [{ name: 'list_files', arguments: { pattern: 'data/*.json' } }], stall: true }],
 		// A full context slot: cut after one token. No nudge would help.
 		['slot full', { text: '<channel|>', finish: 'length' as const, usage: { prompt_tokens: 40959, completion_tokens: 1, total_tokens: 40960 } }],
-	] as const) {
+	] as const).map(async ([name, first]) => {
 		const fake = await startFakeOpenAI((_request, index) => (index === 0 ? first : { text: 'Done.' }));
 		t.after(() => fake.close());
 		const space = await workspace(t);
@@ -1102,7 +1103,7 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 			const unit = name === 'channel' ? '<|channel>thought' : name === 'sentences' ? 'Wait, I\'ll start.' : '\u0000';
 			assert.ok(settled.split(unit).length - 1 < 5, `${name}: the repeated text is gone from what the member sees`);
 		}
-	}
+	}));
 });
 
 // A stopped orchestrator must leave the case as it was: every case file
