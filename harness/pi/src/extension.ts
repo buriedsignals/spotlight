@@ -46,6 +46,11 @@ function caseForModel(active: ActiveCase, runAdapter: AdapterRunner): Promise<Re
 	return resolveCase(active, runAdapter).then((state) => withPlanCheck(state, gateCheck(active, runAdapter, context)));
 }
 
+// Consecutive watchdog-stopped dispatches of one worker task
+// (STALLED_DISPATCHES). Process memory, read by the dispatches (toolsFor) and
+// the text-turn nudge (spotlightExtension): declared inside toolsFor it was out
+// of the nudge's scope, so every nudge threw a ReferenceError from a811d655 on.
+const stall: DispatchStall = { key: '', count: 0, digest: '' };
 function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	const composition = loadComposition();
 	const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
@@ -73,8 +78,6 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	// Newsroom edition: the Editorial MCP tools, served by the launcher. The
 	// allowlist below keeps only the ones this role's swaps grant.
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
-	// Consecutive watchdog-stopped dispatches of one worker task (STALLED_DISPATCHES).
-	const stall: DispatchStall = { key: '', count: 0, digest: '' };
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
