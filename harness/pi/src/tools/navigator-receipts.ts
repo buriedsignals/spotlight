@@ -72,11 +72,14 @@ export function completeNavigatorMetadata(caseDir: string, proposed: string): st
 		const chosen = supplied.find((query) => query && (query.receipt_path === path || query.response_path === path));
 		// Never manufacture selection decisions from results: only the model's own picks.
 		const selected = Array.isArray(chosen?.selected_tools) ? (chosen.selected_tools as unknown[]).filter((tool): tool is string => typeof tool === 'string' && tool.trim() !== '') : [];
+		// rejected_tools is the model's judgment too (Codex review of simp-nav).
+		const rejected = Array.isArray(chosen?.rejected_tools) ? (chosen.rejected_tools as unknown[]).filter((item) => item && typeof item === 'object' && !Array.isArray(item)) : [];
 		return {
 			interface: 'cli', mode: 'tool_discovery', query: receipt.query,
 			command: JSON.stringify(receipt.argv), retrieved_at: receipt.retrieved_at,
 			response_path: path, receipt_path: path, response_sha256: receipt.response_sha256,
 			selected_tools: selected,
+			...(rejected.length ? { rejected_tools: rejected } : {}),
 		};
 	});
 	document.navigator = { required: nav.required === true, used: true, outcome: 'used', queries };

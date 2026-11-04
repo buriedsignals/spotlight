@@ -2268,7 +2268,7 @@ test('with the Research switch off, the methodology check refuses a research pla
 				// status "used", a query with no receipt fields and a query with no
 				// receipt at all, then an edit_file correction sets status "used" again.
 				const receipt = /research\/navigator\/[0-9a-f-]{36}-receipt\.json/.exec(userText(request))?.[0];
-				const plan = { ...JSON.parse(CONTENT_ONLY_PLAN), navigator: { required: false, used: true, status: 'used', queries: [{ receipt_path: receipt, selected_tools: ['WhiteIntel'] }, { direction: 'Eurostat table lookup', interface: 'cli', query: 'Eurostat unemployment', selected_tools: ['Invented tool'] }] } };
+				const plan = { ...JSON.parse(CONTENT_ONLY_PLAN), navigator: { required: false, used: true, status: 'used', queries: [{ receipt_path: receipt, selected_tools: ['WhiteIntel'], rejected_tools: [{ tool: 'Other', reason: 'Paid only.' }] }, { direction: 'Eurostat table lookup', interface: 'cli', query: 'Eurostat unemployment', selected_tools: ['Invented tool'] }] } };
 				if (done === 0) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: JSON.stringify(plan) } }] };
 				if (done === 1) return { toolCalls: [{ name: 'edit_file', arguments: { path: 'data/methodology.json', old_string: '"outcome": "used"', new_string: '"status": "used"' } }] };
 				return { text: 'Plan written.' };
@@ -2312,6 +2312,7 @@ test('with the Research switch off, the methodology check refuses a research pla
 			assert.equal(written.navigator.outcome, 'used');
 			assert.ok(written.navigator.queries.every((query: { receipt_path?: string; retrieved_at?: string }) => query.receipt_path && query.retrieved_at), 'every query is a receipt\'s');
 			assert.deepEqual(written.navigator.queries[0].selected_tools, ['WhiteIntel']);
+			assert.deepEqual(written.navigator.queries[0].rejected_tools, [{ tool: 'Other', reason: 'Paid only.' }]);
 			assert.ok(!JSON.stringify(written.navigator).includes('Invented tool'), 'a query with no receipt is dropped');
 			assert.deepEqual(written.tools_required, ['fetch', 'WhiteIntel']);
 			assert.match(delegated, /validate-methodology-navigator\.py: PASSED/, delegated);

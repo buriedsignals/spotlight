@@ -853,13 +853,6 @@ function artifactEnvelope(caseDir: string, target: string, submitted: string, me
 		} catch { return undefined; }
 	};
 	const input = object(submitted), document = object(name === 'data/methodology.json' ? completeNavigatorMetadata(caseDir, merged) : merged);
-	// An edit_file correction submits a fragment, not an object: the methodology
-	// still gets its code-owned Navigator block (TUNE K2-10: correction 1 set
-	// navigator.status "used" through an edit and nothing refilled it).
-	if (!input && name === 'data/methodology.json' && document) {
-		const refilled = `${JSON.stringify(document, null, 2)}\n`;
-		return JSON.stringify(document) === JSON.stringify(object(merged)) ? merged : refilled;
-	}
 	if (!input || !document) return merged;
 	const before = JSON.stringify(object(merged));
 	const contract = object(currentText(join(caseDir, 'data/case-contract.json')));
