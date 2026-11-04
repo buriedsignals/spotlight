@@ -571,6 +571,40 @@ function refuseLeadsEvidence(caseDir: string, target: string, content: string): 
 	throw new FileRefused(`refused: data/evidence-bundle.json records fetch's distilled leads as evidence for ${leads.join(', ')}; the file is unchanged. Record the page as fetched instead: raw_path "<that file>.raw" with the raw_sha256 the fetch returned for it.`);
 }
 
+// B24 (K3 Eurostat P3 rerun on 40b77272, seq 24): the investigator rewrote the item the cite route had written for its capture, without
+// sha256 and with an invented accessed time, the merge took it, and the passage recorded from that capture no longer matched its item.
+// For an item whose capture is a harness fetch, unchanged since, and whose sha256 matches that receipt, sha256 and accessed are code's:
+// while the item keeps its raw_path, a merge keeps them as they were and reports which ones it kept. A changed raw_path is left to the
+// write checks (refuseLeadsEvidence names the .raw, refuseBundleRewrites refuses moving a cited item), which refuse it with a reason
+// instead of undoing it silently. Every other field stays the worker's.
+const RECEIPT_FIELDS = ['sha256', 'accessed'] as const;
+function keepReceiptFields(context: ToolContext, current: string | undefined, merged: string): { text: string; kept: string[] } {
+	type Item = Record<string, unknown>;
+	const itemsOf = (doc: unknown): Item[] => (doc && typeof doc === 'object' && Array.isArray((doc as { items?: unknown }).items) ? ((doc as { items: unknown[] }).items.filter((item) => item && typeof item === 'object') as Item[]) : []);
+	let before: unknown;
+	let after: unknown;
+	try {
+		before = JSON.parse(current ?? '');
+		after = JSON.parse(merged);
+	} catch {
+		return { text: merged, kept: [] };
+	}
+	const was = new Map(itemsOf(before).filter((item) => typeof item.id === 'string').map((item) => [item.id, item]));
+	const kept: string[] = [];
+	for (const item of itemsOf(after)) {
+		const old = was.get(item.id);
+		if (!old || typeof old.raw_path !== 'string' || item.raw_path !== old.raw_path) continue;
+		const receipt = registeredCapture(context, old.raw_path);
+		if (!receipt || receipt.sha256 !== old.sha256) continue;
+		// The values come from the receipt itself, never from the item, so a time a worker once wrote is not kept as the receipt's (Codex P2).
+		const fields = RECEIPT_FIELDS.filter((field) => !isDeepStrictEqual(item[field], receipt[field]));
+		if (fields.length === 0) continue;
+		for (const field of fields) item[field] = receipt[field];
+		kept.push(`${String(item.id)}'s ${fields.join(' and ')}`);
+	}
+	return kept.length ? { text: `${JSON.stringify(after, null, 2)}\n`, kept } : { text: merged, kept };
+}
+
 // A bundle write keeps what others rely on (12B r3 ia: the fact-checker
 // rewrote investigator item E1 to another file, and every passage already
 // anchored to it failed validation from then on). A fact-checker changes only
@@ -1167,7 +1201,17 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	};
 	// The investigator's and the fact-checker's writes to the files they build
 	// merge by id, so each write may carry a few entries (directions.ts mergeByKey).
+	// B24: the receipt fields code wrote stay through a worker's bundle merge (keepReceiptFields); keptReceipt says which, for the reply.
+	let keptReceipt: string[] = [];
 	const whole = (target: string, content: string, exactEdit = false) => {
+		keptReceipt = [];
+		const merged = mergedWrite(target, content, exactEdit);
+		if (caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return merged;
+		const { text, kept } = keepReceiptFields(context, currentText(target), merged);
+		keptReceipt = kept;
+		return text;
+	};
+	const mergedWrite = (target: string, content: string, exactEdit: boolean) => {
 		const name = split(target);
 		if (name) return mergeDirection(name, currentText(target), content, direction!);
 		const relative = caseRelative(caseDir, target);
@@ -1176,6 +1220,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 		if (exactEdit && removesAnonymousRows(role!, relative, current, content)) return content;
 		return mergeByKey(role!, relative, current, content);
 	};
+	const receiptNote = () => (keptReceipt.length ? ` Code kept ${keptReceipt.join('; ')} as the fetch receipt of the capture has them: recorded passages are checked against them.` : '');
 	// What a merged write did, so a writer that left entries out learns they stay.
 	const LISTS: Record<string, string> = { 'data/findings.json': 'findings', 'data/evidence-bundle.json': 'items', 'data/fact-check.json': 'claims', 'data/investigation-log.json': 'cycles' };
 	const keptNote = (target: string, written: string, merged: string) => {
@@ -1314,7 +1359,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				const before = currentText(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				const wrote = writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites);
-				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, input.content)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${nextToCheck(wrote, input.content)}`);
+				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, input.content)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${receiptNote()}${nextToCheck(wrote, input.content)}`);
 			},
 		},
 		{
@@ -1355,7 +1400,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseUnanchoredVerdicts(context, target, updated);
 				refuseUnacquiredArchiveDocument(context, target, updated);
 				await refuseInvalidProposal(context, target, updated);
-				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
+				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}${receiptNote()}`);
 			},
 		},
 		{
@@ -1739,9 +1784,40 @@ async function citePassages(context: ToolContext, sourceExpressions: ToolDefinit
 	try {
 		await sourceExpressions.execute(`${id}-cite-passages`, proposal, signal, undefined, undefined as never);
 	} catch (error) {
-		throw new Error(`record_finding: finding ${String(finding.id)} is recorded, but its cited passage was not: ${(error as Error).message} Call record_finding again with the same claim and a corrected cite, omitting id; the finding keeps its id.`);
+		const message = (error as Error).message;
+		const repair = olderPassageRepair(context, message, new Set(expressions.map((expression) => expression.id)));
+		throw new Error(`record_finding: finding ${String(finding.id)} is recorded, but its cited passage was not: ${message} ${repair ?? 'Call record_finding again with the same claim and a corrected cite, omitting id; the finding keeps its id.'}`);
 	}
 	return `Passage(s) ${expressions.map((expression) => expression.id).join(', ')} recorded from the cited lines.`;
+}
+
+// B25 (K3 Eurostat P3 rerun on 40b77272, seq 39-46): the passage writer validates every recorded passage, so an older passage whose
+// evidence item was changed refuses each new cite, and "a corrected cite" sent the model round the same refusal. When every expression
+// the writer names is an earlier one, not this call's, the refusal names that passage, its item and the repair instead.
+function olderPassageRepair(context: ToolContext, message: string, mine: Set<string>): string | undefined {
+	const named = [...new Set([...message.matchAll(/expression '([^']+)'/g)].map((match) => match[1]))];
+	if (named.length === 0 || named.some((passageId) => mine.has(passageId))) return undefined;
+	const passages = recordRows(recordDocument(context, 'data/source-expressions.json').expressions);
+	const items = recordRows(recordDocument(context, 'data/evidence-bundle.json').items);
+	const shaFor = new Map<string, Set<string>>();
+	for (const passageId of named) {
+		const passage = passages.find((row) => String(row.id) === passageId);
+		if (passage && typeof passage.original_artifact_sha256 === 'string') shaFor.set(String(passage.original_evidence_bundle_id ?? ''), (shaFor.get(String(passage.original_evidence_bundle_id ?? '')) ?? new Set()).add(passage.original_artifact_sha256));
+	}
+	const repairs = named.map((passageId) => {
+		const passage = passages.find((row) => String(row.id) === passageId);
+		const itemId = passage ? String(passage.original_evidence_bundle_id ?? '') : '';
+		const item = items.find((row) => String(row.id) === itemId);
+		const sha = typeof passage?.original_artifact_sha256 === 'string' ? passage.original_artifact_sha256 : undefined;
+		// The hash repair only when the item's file still has the bytes the passage recorded (a harness capture, unchanged since) and the
+		// named passages agree on that item's hash; otherwise the writer's own message stands (Codex P2).
+		const intact = typeof item?.raw_path === 'string' && registeredCapture(context, item.raw_path)?.sha256 === sha;
+		if (item && sha && intact && shaFor.get(itemId)?.size === 1 && message.includes(`expression '${passageId}': original_artifact_sha256 does not match evidence bundle`)) {
+			return `recorded passage ${passageId} no longer matches its evidence item ${itemId}, whose sha256 is ${typeof item.sha256 === 'string' ? item.sha256 : 'missing'}; put back "sha256": "${sha}" on item ${itemId} in data/evidence-bundle.json (the hash of ${String(item.raw_path ?? 'its capture')} that ${passageId} recorded) and leave its raw_path as it is`;
+		}
+		return `recorded passage ${passageId}${itemId ? ` (evidence item ${itemId})` : ''} is the invalid one; repair it as the writer's message says`;
+	});
+	return `This cite is not the cause: ${repairs.join('; ')}. Then call record_finding again with the same claim and cite, omitting id; the finding keeps its id.`;
 }
 
 // step2-design.md section 3 (TUNE W1-W4 for the fact-checker): one question

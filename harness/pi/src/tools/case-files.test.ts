@@ -824,6 +824,13 @@ test('a fact-checker changes only its own bundle items, and no role moves the fi
 		} else {
 			await call('write_file', { path: 'data/evidence-bundle.json', content: moved });
 			await call('write_file', { path: 'data/evidence-bundle.json', content: bundle(investigatorItem, kept) });
+			// B24 keeps receipt fields only for an item whose capture is a harness fetch; E1's file has no receipt,
+			// so the investigator's own change to its sha256 and accessed stands, as before.
+			const changed = await call('write_file', { path: 'data/evidence-bundle.json', content: bundle({ ...investigatorItem, sha256: 'b'.repeat(64), accessed: '2026-11-04T10:44:37Z' }, kept) });
+			const e1 = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).items.find((item: { id: string }) => item.id === 'E1');
+			assert.deepEqual([e1.sha256, e1.accessed], ['b'.repeat(64), '2026-11-04T10:44:37Z']);
+			assert.doesNotMatch(changed, /Code kept/);
+			await call('write_file', { path: 'data/evidence-bundle.json', content: bundle(investigatorItem, kept) });
 		}
 		await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
 			{ id: 'P1', original_evidence_bundle_id: 'E2', lifecycle_events: [{ event: 'activated' }] },

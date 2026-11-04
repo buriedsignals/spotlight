@@ -341,3 +341,40 @@ test('a verified item whose quote is in the fact-checker\'s own capture counts e
 		assert.deepEqual(checked.evidence_for[0].source_expression_refs.slice(0,passages.length).map((ref:any)=>typeof ref==='string'?ref:ref.expression_id),passages);
 	});
 });
+
+// K3 Eurostat P3 rerun on 40b77272 (records e2e-eurostat-unemployment-s0-resume, B24/B25): a cite saved D1-F1 and code wrote its
+// evidence item with the capture's sha256 (seq 23); at seq 24 the investigator rewrote data/evidence-bundle.json and the merge took its
+// version of that item without sha256 and with an invented accessed time, so passage D1-Q1 no longer matched its item. Every later cite
+// then saved its finding but not its passage, and the refusal told the model to correct the cite it had just made.
+test('a worker\'s bundle write keeps the receipt fields of a cited capture\'s item, and a passage refusal names the passage that is actually broken', async t => {
+	const { caseDir, context, call, live, json } = await fixture(t, 'investigator');
+	const capture = 'research/eurostat-aug.md.raw';
+	await writeFile(join(caseDir, capture), 'Euro indicators\nIn August 2026 the euro area unemployment rate was 6.4%.\nThe EU rate was 6.1%.\n');
+	registerCapture(context.env.SPOTLIGHT_HARNESS_DATA!, caseDir, capture, 'https://ec.europa.eu/eurostat/x', 'investigator');
+	const cited = await live('record_finding', { finding: { claim: 'The August 2026 euro area unemployment rate was 6.4%.', confidence: 'medium' }, cite: [{ path: capture, line_start: 2, line_end: 2 }] });
+	const text = (result: { content: { type: string; text?: string }[] }) => result.content.map((part) => part.text ?? '').join('\n');
+	assert.match(text(cited), /Passage\(s\) \S+ recorded/);
+	const item = (await json('evidence-bundle.json')).items.find((entry: { raw_path?: string }) => entry.raw_path === capture);
+	assert.match(item.sha256, /^[a-f0-9]{64}$/);
+	// seq 24: the worker's own version of the item, without sha256 and with another accessed time.
+	const { sha256: _dropped, ...rest } = item;
+	const rewritten = await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...rest, acquisition_method: 'fetch', accessed: '2026-11-04T10:44:37Z' }] }) });
+	const after = (await json('evidence-bundle.json')).items.find((entry: { id: string }) => entry.id === item.id);
+	assert.equal(after.sha256, item.sha256, 'the capture\'s sha256 stays');
+	assert.equal(after.accessed, item.accessed, 'the receipt\'s accessed time stays');
+	assert.equal(after.raw_path, capture);
+	assert.equal(after.acquisition_method, 'fetch', 'fields the worker owns are still its to change');
+	assert.match(text(rewritten), new RegExp(`kept ${item.id}'s sha256 and accessed`));
+	// An older case already broken that way (written before this fix): the next cite's passage is refused because of the
+	// earlier passage, and the refusal names that passage, its item and the sha256 to put back, not this cite.
+	const bundle = await json('evidence-bundle.json');
+	bundle.items = bundle.items.map((entry: { id: string; sha256?: string }) => (entry.id === item.id ? { ...entry, sha256: undefined } : entry));
+	await writeFile(join(caseDir, 'data/evidence-bundle.json'), JSON.stringify(bundle, null, 2));
+	const broken = (await json('source-expressions.json')).expressions.find((passage: { original_evidence_bundle_id?: string }) => passage.original_evidence_bundle_id === item.id);
+	// As in K3 (D2-F1 cited another capture), the next cite is on a different page, so the broken item is not the one this cite writes.
+	const other = 'research/eurostat-oct.md.raw';
+	await writeFile(join(caseDir, other), 'Euro indicators\nIn September 2026 the euro area unemployment rate was 6.5%.\n');
+	registerCapture(context.env.SPOTLIGHT_HARNESS_DATA!, caseDir, other, 'https://ec.europa.eu/eurostat/y', 'investigator');
+	await assert.rejects(live('record_finding', { finding: { claim: 'The September 2026 euro area unemployment rate was 6.5%.', confidence: 'medium' }, cite: [{ path: other, line_start: 2, line_end: 2 }] }),
+		(error: Error) => error.message.includes(`passage ${broken.id}`) && error.message.includes(`item ${item.id}`) && error.message.includes(item.sha256) && !error.message.includes('a corrected cite'));
+});
