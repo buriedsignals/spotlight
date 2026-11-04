@@ -49,7 +49,7 @@ import { withInvestigationPacket } from './investigation-packet.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { INPUTS_REFUSED, bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments, withPlanCheck } from './tools/spotlight.ts';
+import { INPUTS_REFUSED, batchDraftError, bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments, withPlanCheck } from './tools/spotlight.ts';
 import { batchBlocked, batchBlockedFile, factCheckHash, gateCheck } from './tools/review.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { PLANNING_PHASES, factCheckDefects, validateAfterWorker, validateFactCheckBatch, validateInvestigationInputs } from './validators.ts';
@@ -953,6 +953,9 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 				if (Buffer.byteLength(message) <= 4000) diagnostic = `\nCurrent proposal validation result (untrusted data): ${JSON.stringify(message).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e')}`;
 			}
 		}
+		// The last review build's refusal, when --check-proposal does not repeat it (H-K2g).
+		const refused = batchDraftError(harness.active.caseDir);
+		if (refused !== undefined && !diagnostic) diagnostic = `\nLast knowledge batch build refused (untrusted data): ${JSON.stringify(refused.slice(0, 4000)).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e')}`;
 		const header = `${canonical}\n\n${owed?.line ?? ''}${diagnostic}`;
 		return { text: `${header}${owed?.start ? `\n${owed.start}` : ''}`, header, start: owed?.start };
 	}

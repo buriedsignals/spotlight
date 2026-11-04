@@ -213,6 +213,20 @@ export const NEXT_INGEST_BLOCKED = 'Next: no knowledge batch can be built for th
 export const NEXT_NEWSROOM_SUBMIT = 'Next: submit the requested ingest with newsroom_submit, as the ingest skill says, then call spotlight_resolve.';
 export const NEXT_INGEST_ANALYST = 'Next: spawn_agent with agent analyst to write the knowledge proposal (phase-ingest step 1); the harness builds the knowledge batch when it finishes. Then call spotlight_resolve.';
 export const NEXT_INGEST_LEGACY = 'Next: this case uses findings contract 1.0 and can no longer be ingested. Invoke the ingest skill, tell the member what it explains (activate the case, or continue it as a follow-up 1.1 case), and end your turn.';
+// H-K2g (K2 Eurostat P5): a refused review build writes {schema_version,
+// error} as the draft, and resolve opened the page on it; the analyst never
+// got the refusal and the member's request was refused. The error is the
+// analyst's FAIL line (LEARNINGS §15).
+export const nextIngestCorrection = (error: string) =>
+	`Next: the knowledge batch was refused, so there is no batch for the member to review yet.\nFAIL ${JSON.stringify(error.slice(0, 2000)).replaceAll('open_review', 'open-review')}\nspawn_agent with agent analyst to correct data/knowledge-proposal.json (its task carries this refusal); the harness rebuilds the batch when it finishes. Then call spotlight_resolve.`;
+export function batchDraftError(caseDir: string): string | undefined {
+	try {
+		const draft = JSON.parse(readFileSync(resolve(caseDir, 'data/knowledge-batch-draft.json'), 'utf8')) as { error?: unknown };
+		return draft && typeof draft === 'object' && typeof draft.error === 'string' ? draft.error : undefined;
+	} catch {
+		return undefined;
+	}
+}
 export const NEXT_BLOCKED = 'Next: the case is blocked (blocked says why). Tell the member in plain words why, and what they can do, then end your turn.';
 export const NEXT_COMPLETE = 'Next: the case is complete. Tell the member, and end your turn.';
 export const NEXT_UNKNOWN = 'Next: call spotlight_resolve again; if the case does not move, tell the member what it reports and end your turn.';
@@ -286,9 +300,12 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 			// the analyst's batch before its page (Codex review of simp-ingest).
 			if (newsroom) return NEXT_INGEST_APPROVAL;
 			if (!onDisk('data/case-contract.json')) return NEXT_INGEST_LEGACY;
-			if (onDisk('data/knowledge-batch-draft.json')) return NEXT_INGEST_APPROVAL;
 			// The launcher refuses every analyst once no batch can be built (Codex review of simp-next).
-			return caseDir && batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, caseDir) ? NEXT_INGEST_BLOCKED : NEXT_INGEST_ANALYST;
+			if (caseDir && batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, caseDir)) return NEXT_INGEST_BLOCKED;
+			// A refused review build leaves {error} as the draft: no batch, the analyst corrects (H-K2g).
+			const refused = caseDir ? batchDraftError(caseDir) : undefined;
+			if (refused !== undefined) return nextIngestCorrection(refused);
+			return onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : NEXT_INGEST_ANALYST;
 		}
 		case 'blocked':
 			return NEXT_BLOCKED;

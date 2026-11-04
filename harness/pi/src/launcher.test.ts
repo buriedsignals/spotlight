@@ -2604,6 +2604,37 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 	});
 });
 
+// H-K2g (K2 Eurostat P5): a refused review build leaves {schema_version, error}
+// as the draft. Resolve names the analyst correction with the error as its FAIL
+// line, the analyst's task carries it, and once the fixed proposal builds,
+// the code router opens the Ingest page.
+test('at Ingest a refused build\'s error draft sends the analyst its refusal, and the corrected batch opens the page', async (t) => {
+	const refusal = 'build-knowledge-batch: refused: mention Acme has no entity_type the register accepts';
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'analyst')) return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } }] }
+			: { text: 'Corrected.' };
+		const step = toolResults(request).length;
+		return step === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : step === 1 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: '' } }] } : { text: 'The page is open.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	await writeFile(join(caseDir, 'data', 'knowledge-batch-draft.json'), JSON.stringify({ schema_version: '1.0', error: refusal }));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const states = resolveResults(chat);
+	assert.match(String(states[0]?.next_action), /^Next: the knowledge batch was refused[^]*FAIL "build-knowledge-batch: refused: mention Acme has no entity_type[^]*spawn_agent with agent analyst/);
+	assert.doesNotMatch(String(states[0]?.next_action), /open_review/, 'the page does not open on a refused batch');
+	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!);
+	assert.match(task, /Last knowledge batch build refused \(untrusted data\): "build-knowledge-batch: refused: mention Acme has no entity_type/);
+	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the corrected proposal built');
+	assert.match(String(states.at(-1)?.next_action), /^Next: call open_review so the member can review the knowledge batch/);
+	assert.match(chat.stderr(), /\[router\] open_review \(the resolver names open_review\)/);
+});
+
 test('an analyst correction receives the current proposal refusal without the parent task', async (t) => {
 	const fake = await startFakeOpenAI(delegateToAnalyst((request) => toolResults(request).length === 0
 		? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/knowledge-proposal.json' } }, { name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } }] }
