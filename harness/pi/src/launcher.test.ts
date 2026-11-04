@@ -1520,6 +1520,8 @@ test('resolving at Research suggestions launches the AMENDMENT investigator; its
 	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n');
 	assert.doesNotMatch(answer, /progress watchdog limit/);
 	const commits = fake.requests.filter(isWriteCommit);
+	// Osaurus route (the Engine does not set it): thinking is off on every local-tier request, orchestrator, worker and commit step alike; frontier sends nothing.
+	for (const request of fake.requests) assert.deepEqual((request as { chat_template_kwargs?: unknown }).chat_template_kwargs, tier === 'frontier' ? undefined : { enable_thinking: false });
 	if (tier === 'frontier') {
 		assert.equal(commits.length, 0, 'no commit request on frontier');
 		assert.ok(fake.requests.every((request) => request.tool_choice === undefined && !JSON.stringify(request.messages).includes('Commit step (from the harness')));

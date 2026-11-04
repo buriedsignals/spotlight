@@ -33,6 +33,16 @@ export function parseFixedRequestBody(raw: string | undefined): JSONRecord | und
 	return parsed;
 }
 
+// The Osaurus route (Engine sets no request body, and SPOTLIGHT_MODEL_ID may be
+// 'default', so the tier decides, never the model's name): the local tiers run
+// with thinking off, the shipped decision (qwen-base.md). It rides the fixed
+// body, so every request carries it, the checkpoint's too. An operator's own
+// chat_template_kwargs win; frontier is untouched.
+export function withLocalThinkingOff(fixed: JSONRecord | undefined, tier: string | undefined): JSONRecord | undefined {
+	if (tier?.trim() === 'frontier') return fixed;
+	return mergeRequestBody({ chat_template_kwargs: { enable_thinking: false } }, fixed ?? {});
+}
+
 export type PolicyOutcome = { payload: unknown; blocked: boolean };
 
 // Fixed fields win over SDK-generated fields, so nothing upstream can downgrade

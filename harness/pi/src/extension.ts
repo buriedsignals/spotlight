@@ -13,7 +13,7 @@ import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, 
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
-import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
+import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinkingOff, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, canonicalWriteCall, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
@@ -337,7 +337,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		log('case material on a route the operator does not run; refusing to start');
 		process.exit(78);
 	}
-	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
+	const fixedBody = withLocalThinkingOff(parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY), process.env.SPOTLIGHT_MODEL_TIER);
 	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
 		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : (role === 'investigator' || role === 'analyst') && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' ? { streamSimple: commitStream } : {}),
