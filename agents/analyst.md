@@ -140,7 +140,9 @@ parts that need judgment:
 - `events` and `story_arcs`, with their memberships (`claim_keys`,
   `event_keys`). Both are optional. A story arc's `event_keys` name events in
   this file, never claim keys; with no events, leave `story_arcs` out.
-- `model` and `interface_version` are filled by code from the runtime; you need not write them.
+- `model` and `interface_version`: in the Pi harness code fills both from the
+  runtime, so leave them out. In other runtimes write `interface_version: "1"`
+  and the exact model id your runtime reports.
 
 Check the proposal against `schemas/knowledge-proposal.schema.json` before you
 finish. Keys are your own handles (`c1`, `e1`, `a1`); record ids never appear. Write
