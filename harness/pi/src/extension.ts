@@ -24,7 +24,7 @@ import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
-import type { ActiveCase, AdapterRunner } from './tools/spotlight.ts';
+import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
@@ -76,15 +76,18 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
+		const stall: DispatchStall = { key: '', count: 0, digest: '' };
 		pi.on('before_agent_start', (event) => {
 			if (event.messageType !== 'user') return;
 			resetFactCheckerCycle(cycle);
+			// A member turn lets code start a stalled worker again (STALLED_DISPATCHES).
+			Object.assign(stall, { key: '', count: 0, digest: '' });
 			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
 			// on a member's message.
 			process.send?.({ kind: 'spotlight-member-turn' });
 		});
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context))));
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
 		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));

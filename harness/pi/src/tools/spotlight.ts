@@ -1,11 +1,13 @@
 // Resolver and transition tools, bound by the harness to the active case and
 // backed by the product orchestration module (scripts/spotlight-orchestration.py).
 import { execFile } from 'node:child_process';
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { PROGRESS_STOP } from './run.ts';
 
 const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 
@@ -179,6 +181,15 @@ export const NEXT_RESEARCH_APPROVAL = 'Next: call open_review so the member can 
 // named no move, so the router handed the turn to the model and the member
 // was asked in chat. The member's decision is the ingest page.
 export const NEXT_INGEST_APPROVAL = 'Next: call open_review so the member can review the knowledge batch and request or decline ingestion, then end your turn and wait for their decision.';
+// k2-tor.md P1: code started PLANNING 11 times after identical progress
+// watchdog stops, with no bound and no member exit. After this many
+// consecutive dispatches of the same worker task, each stopped by the watchdog
+// with no change to the case's records, code does not start it again and the
+// member is told (LEARNINGS §15: every cap has an exit). A member turn or a
+// change to the records resets the count.
+export const STALLED_DISPATCHES = 2;
+export const nextWorkerStalled = (stalled: { step?: unknown; attempts?: unknown }) =>
+	`Next: code started the ${String(stalled.step)} ${String(stalled.attempts)} times in a row, and each time the progress watchdog stopped it with no change to the case files, so code does not start it again. Tell the member in plain words that it made no progress, and what they can do: amend the brief (they tell you what to change), or ask you to retry. Then end your turn; resolving again before the member answers only repeats this stop.`;
 export const NEXT_METHODOLOGY_APPROVAL =
 	'Next: call open_review so the member can approve the methodology, then end your turn and wait for their decision.';
 
@@ -196,6 +207,7 @@ function writerOf(item: string): 'investigator' | 'fact-checker' | undefined {
 
 export function nextAction(resolved: Record<string, unknown>, onDisk: (relative: string) => boolean): string | undefined {
 	const missing = Array.isArray(resolved.missing) ? resolved.missing.map(String) : [];
+	if (resolved.worker_stalled && typeof resolved.worker_stalled === 'object') return nextWorkerStalled(resolved.worker_stalled as { step?: unknown; attempts?: unknown });
 	switch (resolved.phase) {
 		case 'brief':
 			return NEXT_BRIEF;
@@ -326,7 +338,32 @@ export type DispatchRunner = {
 	methodologyCheck: () => Promise<string | undefined>;
 	// The owner phase skill's text, once per process.
 	phaseSkill?: (skill: string) => Promise<string | undefined>;
+	// Consecutive watchdog-stopped dispatches of one task (STALLED_DISPATCHES);
+	// the orchestrator's extension owns it and clears it on a member turn.
+	stall?: DispatchStall;
 };
+export type DispatchStall = { key: string; count: number; digest: string };
+
+// The case's records: the brief and data/, without what code writes around a
+// spawn (its checks, and the Anomaly decision made before each PLANNING task).
+// Captures under research/ and evidence/ are not a record of progress.
+const NOT_RECORDS = new Set(['data/harness-checks', 'data/anomaly-decision.json']);
+export function recordsDigest(caseDir: string): string {
+	const hash = createHash('sha256');
+	const add = (relativePath: string) => {
+		const path = resolve(caseDir, relativePath);
+		let stat;
+		try { stat = lstatSync(path); } catch { return; }
+		if (stat.isDirectory()) {
+			for (const name of readdirSync(path).sort()) if (!NOT_RECORDS.has(`${relativePath}/${name}`)) add(`${relativePath}/${name}`);
+		} else if (stat.isFile()) {
+			hash.update(relativePath).update('\0').update(readFileSync(path)).update('\0');
+		}
+	};
+	add('brief-directions.txt');
+	add('data');
+	return hash.digest('hex');
+}
 export const AUTO_SPAWNS_PER_RESOLVE = 4;
 
 // e2e r8 on comb: resolve reported methodology_approval and "call open_review"
@@ -430,6 +467,8 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 	let repair: Dispatch | undefined;
 	// An inputs repair that comes back with the same errors made no progress.
 	const repaired = new Set<string>();
+	let stalled: { step: string; attempts: number } | undefined;
+	const stall = runner.stall;
 	for (let spawned = 0; spawned < AUTO_SPAWNS_PER_RESOLVE; spawned++) {
 		const failure = state.phase === 'methodology_approval' ? await runner.methodologyCheck() : undefined;
 		const dispatch = repair ?? dispatchAt(state, failure);
@@ -438,9 +477,20 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 		const key = JSON.stringify([dispatch?.step, state.phase, state.missing, failure, (state.research as { problems?: unknown } | undefined)?.problems]);
 		if (!dispatch || key === previous) break;
 		previous = key;
+		const task = `${dispatch.agent}\n${dispatch.task}`;
+		const before = stall ? recordsDigest(active.caseDir) : '';
+		if (stall && stall.key === task && stall.digest === before && stall.count >= STALLED_DISPATCHES) {
+			stalled = { step: `${dispatch.agent} (${dispatch.step})`, attempts: stall.count };
+			break;
+		}
 		try {
 			const answer = await runner.spawn(dispatch.agent, dispatch.task, signal);
 			receipts.push({ step: `spawn ${dispatch.step}`, ok: true, output: receiptOutput(answer) });
+			if (stall) {
+				const after = recordsDigest(active.caseDir);
+				if (answer.includes(PROGRESS_STOP) && after === before) Object.assign(stall, { key: task, count: stall.key === task && stall.digest === before ? stall.count + 1 : 1, digest: after });
+				else Object.assign(stall, { key: '', count: 0, digest: '' });
+			}
 		} catch (error) {
 			receipts.push({ step: `spawn ${dispatch.step}`, ok: false, output: (error as Error).message.slice(0, 1200) });
 			signal?.throwIfAborted();
@@ -453,7 +503,7 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 		state = await resolveCase(active, runAdapter, signal);
 	}
 	const skill = typeof state.owner === 'string' && runner.phaseSkill ? await runner.phaseSkill(state.owner) : undefined;
-	return { ...state, ...(receipts.length ? { fixed_steps: receipts } : {}), ...(skill ? { phase_skill: { name: state.owner, text: skill } } : {}) };
+	return { ...state, ...(receipts.length ? { fixed_steps: receipts } : {}), ...(stalled ? { worker_stalled: stalled } : {}), ...(skill ? { phase_skill: { name: state.owner, text: skill } } : {}) };
 }
 
 // Code runs the round while the resolver waits for merged lanes or their

@@ -2201,6 +2201,40 @@ test('after a planning task the harness runs the methodology check, not the find
 	assert.doesNotMatch(delegated, /validate-case\.py/);
 });
 
+// k2-tor.md P1: code started PLANNING 11 times after identical progress
+// watchdog stops. After two such dispatches with no change to the case's
+// records, resolve starts no third and names the member's options; a member
+// turn lets code start it again.
+test('a PLANNING investigator stopped twice by the progress watchdog with no change is not started a third time; resolve names the member\'s options, and a member turn retries', async (t) => {
+	let wanted = 3;
+	let resolves = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return search(toolResults(request).length);
+		if (resolves < wanted) { resolves += 1; return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] }; }
+		return { text: 'The planner made no progress.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	const threads = () => fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0 && /MODE: PLANNING/.test(userText(request))).length;
+
+	await settledPrompt(chat, 'Continue.', 120_000);
+
+	assert.equal(threads(), 2, 'two PLANNING dispatches, no third');
+	const held = lastResolution(chat) as { worker_stalled?: unknown; next_action?: unknown; fixed_steps?: unknown };
+	assert.deepEqual(held.worker_stalled, { step: 'investigator (investigator PLANNING)', attempts: 2 });
+	assert.equal(held.fixed_steps, undefined, 'the held resolve starts nothing');
+	assert.match(String(held.next_action), /2 times in a row, and each time the progress watchdog stopped it with no change to the case files, so code does not start it again\. Tell the member [^]*amend the brief[^]*retry/);
+
+	// Continuity: the member's turn lets code start the planner again.
+	wanted = resolves + 1;
+	await settledPrompt(chat, 'Please retry.', 120_000);
+	assert.equal(threads(), 3, 'the member turn retried the planner');
+});
+
 // step2-design.md section 4: with Research on, an investigator that writes
 // only the plan's content (directions, steps, topics on d1) gets the
 // paperwork from code: the brief, IDs, mode, keys, egress, consent, budgets,
