@@ -461,7 +461,7 @@ Canonical summary-left / actions-right footer shared by the landing pages.
 <section id="footer" data-nav-theme="dark">
   <div class="footer-simple">
     <p class="footer-summary">
-      An open-source investigative system for AI agents, built for journalists.
+      An open-source investigative system for AI agents.
       One agent reports, one agent checks, and you stay the editor.
       Local when the case is too sensitive for the cloud.
     </p>
