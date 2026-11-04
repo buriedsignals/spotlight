@@ -48,6 +48,20 @@ const ALL_ON = Object.fromEntries(PERSONA_CONDITIONS.map((name) => [name, true])
 const spawned = (phase: string, task: string, conditions = ALL_ON): WorkerContext => ({ phase, task, conditions });
 const MODES = ['PLANNING', 'EXECUTION', 'AMENDMENT'];
 
+// H-K2h (K2 Tor P4): the analyst's last mode block (INGEST) ended the trimmed
+// persona without a newline and was never cut, so the Report analyst wrote the
+// proposal's model field into its draft. Each phase gets only its own block.
+test('the analyst gets only its phase\'s contract: no Ingest proposal section at the Investigation gate or Report', () => {
+	const composition = loadComposition();
+	for (const tier of ['12b', 'frontier'] as const) {
+		for (const [phase, own] of [['investigation_gate_approval', /## Investigation gate summary/], ['report', /## Report draft/], ['ingest', /## Ingest knowledge proposal/]] as const) {
+			const prompt = systemPrompt(composition, 'analyst', tier, 'solo', false, spawned(phase, ''));
+			assert.match(prompt, own, `${tier}/${phase}`);
+			if (phase !== 'ingest') assert.doesNotMatch(prompt, /## Ingest knowledge proposal|exact model id|knowledge-proposal\.json/, `${tier}/${phase}`);
+		}
+	}
+});
+
 test('every Pi role and tier receives the current UTC date, and with Research on the investigator gets the research_plan rules', () => {
  const composition = loadComposition();
  const before = new Date().toISOString().slice(0,10);

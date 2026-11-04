@@ -838,6 +838,15 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 // so an explicit repair of a stale 1.0 header otherwise cannot take effect.
 function artifactEnvelope(caseDir: string, target: string, submitted: string, merged: string, env: Record<string, string | undefined> = {}): string {
 	const name = caseRelative(caseDir, target);
+	// H-K2h (C13): the proposal's envelope is the runtime's, filled by code.
+	if (name === 'data/knowledge-proposal.json') {
+		let proposal: unknown;
+		try { proposal = JSON.parse(merged); } catch { return merged; }
+		const model = env.SPOTLIGHT_MODEL_ID ?? process.env.SPOTLIGHT_MODEL_ID;
+		if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal) || !model) return merged;
+		const filled = { ...(proposal as Record<string, unknown>), interface_version: '1', model };
+		return JSON.stringify(filled) === JSON.stringify(proposal) ? merged : `${JSON.stringify(filled, null, 2)}\n`;
+	}
 	if (name === 'data/methodology-amendment.json') {
 		let fragment: unknown;
 		try { fragment = JSON.parse(submitted); } catch { return merged; }

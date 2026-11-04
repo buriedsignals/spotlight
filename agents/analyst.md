@@ -140,7 +140,7 @@ parts that need judgment:
 - `events` and `story_arcs`, with their memberships (`claim_keys`,
   `event_keys`). Both are optional. A story arc's `event_keys` name events in
   this file, never claim keys; with no events, leave `story_arcs` out.
-- `model`: the exact model id you run on.
+- `model` and `interface_version` are filled by code from the runtime; you need not write them.
 
 Check the proposal against `schemas/knowledge-proposal.schema.json` before you
 finish. Keys are your own handles (`c1`, `e1`, `a1`); record ids never appear. Write

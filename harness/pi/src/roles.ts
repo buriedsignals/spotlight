@@ -805,7 +805,10 @@ export function slicePersona(persona: string, mode: string, conditions: Record<P
 	const sized = owned.replace(/^<!-- \[FULL: ([\w-]+)\] -->\n([\s\S]*?)^<!-- \[\/FULL: \1\] -->\n/gm, (_block, name: string, body: string) =>
 		compact ? readFileSync(join(COMPACT_DIR, `${name}.md`), 'utf8') : body,
 	);
-	const modes = sized.replace(/^## \[MODE: (\w+)\]\n[\s\S]*?^## \[\/MODE: \1\]\n/gm, (block, name: string) => (name === mode ? block : ''));
+	// The closing marker may end the file: stripFrontmatter trims the trailing
+	// newline, and the analyst's last block (INGEST) then reached every phase
+	// (H-K2h: the Report analyst wrote the proposal's model field into its draft).
+	const modes = sized.replace(/^## \[MODE: (\w+)\]\n[\s\S]*?^## \[\/MODE: \1\](?:\n|$)/gm, (block, name: string) => (name === mode ? block : ''));
 	return modes.replace(/^<!-- \[IF: (\w+)\] -->\n([\s\S]*?)^<!-- \[\/IF: \1\] -->\n/gm, (_block, name: string, body: string) => {
 		if (!(PERSONA_CONDITIONS as readonly string[]).includes(name)) throw new Error(`unknown persona condition: ${name}`);
 		return conditions[name as PersonaCondition] ? body : '';

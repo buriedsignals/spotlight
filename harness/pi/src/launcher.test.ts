@@ -2532,7 +2532,8 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 								{ name: 'read_file', arguments: { path: 'data/methodology.json' } },
 								{ name: 'read_file', arguments: { path: 'data/harness-checks/analyst/context.json', json_pointer: '/findings/0' } },
 								{ name: 'write_file', arguments: { path: 'data/findings.json', content: '{}' } },
-								{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } },
+								// H-K2h: no model or interface_version; code fills the envelope.
+								{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify({ ...PROPOSAL, model: undefined, interface_version: undefined }) } },
 							],
 						}
 					: { text: 'Proposed one claim.' },
