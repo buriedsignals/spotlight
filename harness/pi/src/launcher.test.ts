@@ -1576,7 +1576,7 @@ m.StandIn(Path(sys.argv[2]))`;
 	return home;
 }
 
-async function fakeDecisions(probability: number, choice = 'other') {
+async function fakeDecisions(probability: number, choose: string | ((message: string) => string) = 'other') {
 	const { createServer } = await import('node:http');
 	const states: unknown[] = [];
 	const server = createServer((request, response) => {
@@ -1585,6 +1585,7 @@ async function fakeDecisions(probability: number, choice = 'other') {
 		request.on('end', () => {
 			const parsed = JSON.parse(body) as { state: unknown; questions: Record<string, unknown> };
 			states.push(parsed.state);
+			const choice = typeof choose === 'string' ? choose : choose(String((parsed.state as { member_message?: unknown }).member_message ?? ''));
 			const answers = Object.fromEntries(Object.entries(parsed.questions).map(([key, question]) => [key, (question as { type?: string }).type === 'choice' ? { choice, probabilities: { [choice]: probability } } : { noul: probability }]));
 			response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ model: 'd1-test', answers }));
 		});
@@ -5825,7 +5826,9 @@ const resolveResults = (chat: Chat) => chat.lines
 test('a scripted orchestrator that only resolves, answers the member and opens the review reaches Investigation and the fact-checker; code spawns every worker; with the code router, a model that only writes text does too', async (t) => {
  for (const route of ['scripted', 'router'] as const) await t.test(route, async (t) => {
 	const space = await workspace(t);
-	const decisions = route === 'router' ? await fakeDecisions(0.9, 'approval_talk') : undefined;
+	// K5 Tor P1: the member's change at the methodology review reaches the plan.
+	const asked = 'Before I approve, add a research topic on the registry\'s board today: which sources confirm the current members?';
+	const decisions = route === 'router' ? await fakeDecisions(0.9, (message) => (message === asked ? 'change_request' : 'approval_talk')) : undefined;
 	if (decisions) t.after(() => decisions.close());
 	const source = join(space.root, 'outputs');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate', '--activated', '--clean']);
@@ -5839,6 +5842,11 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 		if (isWorkerRequest(request, 'investigator')) {
 			const text = userText(request);
 			if (/MODE: PLANNING/.test(text) && done === 0) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] };
+			if (/MODE: METHODOLOGY CORRECTION/.test(text) && text.includes(asked) && done === 0) {
+				const plan = JSON.parse(methodology);
+				plan.investigation_plan[0].questions.push(asked);
+				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: JSON.stringify(plan) } }] };
+			}
 			if (/MODE: EXECUTION/.test(text) && !investigated) {
 				// The worker's investigation, as the fixture's outputs.
 				investigated = true;
@@ -5863,12 +5871,18 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 	if (decisions) await writeFile(config, JSON.stringify({ ...JSON.parse(await readFile(config, 'utf8')), integrations: { ...JSON.parse(await readFile(config, 'utf8')).integrations, decisions: { endpoint: { url: decisions.url, api: 'openrouter-decisions' } } } }));
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, ...(route === 'router' ? { SPOTLIGHT_CODE_ROUTER: 'on' } : {}) });
 	await settledPrompt(chat, 'Go ahead with that direction.');
+	if (route === 'router') {
+		await settledPrompt(chat, asked);
+		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'investigator') && /^MODE: METHODOLOGY CORRECTION\n/.test(userText(request)) && userText(request).includes(`\n${asked}\n`)), 'the investigator got the member\'s words verbatim');
+		assert.ok((await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')).includes('registry\'s board today'), 'the plan carries the change');
+		assert.match(chat.stderr(), /\[router\] spawn_agent \(member change_request at the methodology review\) \[D1 change_request[^\n]*\n(?:[^\n]*\n)*?[^\n]*\[router\] spotlight_resolve[^\n]*\n(?:[^\n]*\n)*?[^\n]*\[router\] open_review \(the resolver names open_review\)/);
+	}
 	execFileSync(PYTHON, [SEAM, 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-08-23T12:00:00Z', caseDir]);
 	await settledPrompt(chat, 'I approved the plan.');
 
 	const orchestrator = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'));
 	const called = new Set(orchestrator.flatMap((request) => request.messages.filter((message) => message.role === 'assistant').flatMap((message) => ((message.tool_calls ?? []) as Array<{ function: { name: string } }>).map((call) => call.function.name))));
-	assert.deepEqual([...called].sort(), ['open_review', 'spotlight_resolve']);
+	assert.deepEqual([...called].sort(), route === 'router' ? ['open_review', 'spawn_agent', 'spotlight_resolve'] : ['open_review', 'spotlight_resolve']);
 	if (route === 'router') {
 		// Every routing call in the history the model is sent is code-made: its id carries the router marker on the wire.
 		const ids = orchestrator.flatMap((request) => request.messages.filter((message) => message.role === 'assistant').flatMap((message) => ((message.tool_calls ?? []) as Array<{ id: string }>).map((call) => call.id)));

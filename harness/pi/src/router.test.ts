@@ -39,6 +39,21 @@ test('a member message: approval talk writes the brief only while the Brief reso
 	assert.equal(routerState([...brief, member('Your last turn was empty. Please also add the 2019 filing.')]).member, 'Your last turn was empty. Please also add the 2019 filing.');
 });
 
+// K5 Tor P1: the member's research topic at the methodology review was only
+// answered in prose and the plan was approved without it.
+test('a member change at the methodology review goes to the investigator as a correction in their words; elsewhere, and questions, stay the model\'s', () => {
+	const asked = 'Before I approve, add a research topic on the Tor Project\'s board of directors today.';
+	const review = [call('spotlight_resolve', true), resolved({ phase: 'methodology_approval', next_action: 'Next: call open_review.' }), call('open_review', true), result('open_review'), member(asked)];
+	const move = routeMember(routerState(review), 'change_request') as { tool?: string; arguments?: { agent: string; task: string } };
+	assert.equal(move.tool, 'spawn_agent');
+	assert.equal(move.arguments?.agent, 'investigator');
+	assert.match(move.arguments!.task, /^MODE: METHODOLOGY CORRECTION\n/);
+	assert.ok(move.arguments!.task.includes(`\n${asked}\n`), 'the member\'s words go verbatim');
+	assert.equal(routeMember(routerState(review), 'question').kind, 'model');
+	const later = [call('spotlight_resolve', true), resolved({ phase: 'investigation' }), member(asked)];
+	assert.equal(routeMember(routerState(later), 'change_request').kind, 'model');
+});
+
 test('the router hands the turn to the model rather than repeat its own call with nothing new, and is on for the local tiers only', () => {
 	// A refused resolve leaves no new state: a second router resolve is not made.
 	const refused = [call('spotlight_resolve', true), { role: 'toolResult', toolName: 'spotlight_resolve', content: [{ type: 'text', text: 'resolver failed' }] }];

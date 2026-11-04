@@ -2,8 +2,9 @@
 // local tiers code makes the orchestrator's routing moves. It reads the
 // request's transcript the way the d1route and step3a replays did (the last
 // spotlight_resolve result, the calls since it, a pending member message) and
-// either names a move code makes (spotlight_resolve or open_review only: never
-// a transition or an approval) or hands the request to the model, which keeps
+// either names a move code makes (spotlight_resolve, open_review, or the
+// investigator's correction carrying a member's change at the methodology
+// review: never a transition or an approval) or hands the request to the model, which keeps
 // every member-facing word. A member message is read by the decision model
 // (stock D1, intent only); when it cannot answer, the model decides, as before.
 // The router never refuses and never stops; it adds no cap.
@@ -14,7 +15,7 @@ export const ROUTER_MODEL = 'spotlight-code-router';
 export const ROUTER_CALL_PREFIX = 'router-';
 
 export type Intent = 'change_request' | 'question' | 'approval_talk' | 'other';
-export type RouterMove = { kind: 'call'; tool: 'spotlight_resolve' | 'open_review'; reason: string } | { kind: 'model'; reason: string };
+export type RouterMove = { kind: 'call'; tool: 'spotlight_resolve' | 'open_review'; reason: string } | { kind: 'call'; tool: 'spawn_agent'; arguments: { agent: 'investigator'; task: string }; reason: string } | { kind: 'model'; reason: string };
 export type RouterState = {
 	resolved?: Record<string, unknown>;
 	// Tool calls since the last spotlight_resolve result (all calls when there is none).
@@ -81,9 +82,21 @@ export function routeWithoutMember(state: RouterState): RouterMove {
 // (step3a-routing.md resolve:r6:29: a stale phase sent it to write_file).
 export function routeMember(state: RouterState, intent: Intent | undefined): RouterMove {
 	if (!intent) return { kind: 'model', reason: 'no intent from the decision model' };
+	// K5 Tor P1 (overnight-summary.md): at the methodology review the member
+	// asked twice for a research topic, the model only answered in prose, and
+	// the plan was approved without it. A change before the approval goes to
+	// the investigator in the member's own words (phase-methodology step 5);
+	// the model still answers questions.
+	if (intent === 'change_request' && state.resolved?.phase === 'methodology_approval' && state.member) return { kind: 'call', tool: 'spawn_agent', arguments: { agent: 'investigator', task: methodologyRelay(state.member) }, reason: 'member change_request at the methodology review' };
 	if (intent === 'question' || intent === 'change_request') return { kind: 'model', reason: `member ${intent}` };
 	if (intent === 'approval_talk' && state.resolved?.phase === 'brief' && state.callsSince === 0) return { kind: 'model', reason: 'member approves the brief' };
 	return noLoop(state, { kind: 'call', tool: 'spotlight_resolve', reason: `member ${intent}` });
+}
+
+// The correction task for a member's change at the methodology review: their
+// message verbatim, and the research rule phase-methodology step 5 gives.
+export function methodologyRelay(member: string): string {
+	return `MODE: METHODOLOGY CORRECTION\nThe member asked for this change at the methodology review, before approving. Their words, verbatim:\n<<<MEMBER>>>\n${member}\n<<<END MEMBER>>>\nMake that change in data/methodology.json. When it asks for research (a topic, a lane, more research on a direction), write it as a research_plan per the PLANNING example.`;
 }
 
 // Two router moves of the same tool in a row with no new event hand the turn

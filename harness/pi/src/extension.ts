@@ -183,7 +183,7 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 		}
 		// The call id carries the marker on the wire too (ROUTER_CALL_PREFIX): the
 		// request history a capture records keeps tool-call ids, not responseModel.
-		const call = { type: 'toolCall' as const, id: `${ROUTER_CALL_PREFIX}${Date.now().toString(36)}`, name: move.tool, arguments: {} };
+		const call = { type: 'toolCall' as const, id: `${ROUTER_CALL_PREFIX}${Date.now().toString(36)}`, name: move.tool, arguments: move.tool === 'spawn_agent' ? move.arguments : {} };
 		const message = {
 			role: 'assistant' as const, content: [call], api: model.api, provider: model.provider, model: model.id,
 			responseModel: ROUTER_MODEL, responseId: `router: ${move.reason}`,
