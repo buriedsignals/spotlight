@@ -163,7 +163,7 @@ def test_always_joins_both_engines_and_a_firecrawl_failure_keeps_searxng():
         assert urls(search("Acme filing")) == [HIT.url]
 
 
-def test_off_never_uses_firecrawl_on_search():
+def test_off_never_uses_firecrawl_on_either_seam_even_when_asked_for():
     with Box({"firecrawl_mode": "off"}) as box:
         assert search("Acme filing") == []
         box.down = True
@@ -172,6 +172,13 @@ def test_off_never_uses_firecrawl_on_search():
             raise AssertionError("searxng's failure must surface")
         except SearchError:
             pass
+        attempts(box)
+        assert box.calls() == []
+
+
+def test_a_named_config_that_is_missing_counts_as_sensitive():
+    with Box(None) as box:   # SPOTLIGHT_CONFIG names a file that is not there
+        attempts(box)
         assert box.calls() == []
 
 

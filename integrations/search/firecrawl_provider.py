@@ -16,18 +16,18 @@ if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
 from integrations._cli import run_captured, strip_ansi  # noqa: E402
 from integrations._credentials import executable, redact, subprocess_env  # noqa: E402
-from integrations._firecrawl_policy import SENSITIVE_REFUSAL, sensitive  # noqa: E402
+from integrations._firecrawl_policy import refusal  # noqa: E402
 
 from .search_types import SearchError, SearchHit
 
 
 def available() -> bool:
-    return not sensitive() and executable("firecrawl") is not None
+    return refusal() is None and executable("firecrawl") is not None
 
 
 def search(query: str, *, limit: int = 10) -> list[SearchHit]:
-    if sensitive():
-        raise SearchError(SENSITIVE_REFUSAL)
+    if reason := refusal():
+        raise SearchError(reason)
     binary = executable("firecrawl")
     if binary is None:
         raise SearchError("firecrawl CLI not on PATH")

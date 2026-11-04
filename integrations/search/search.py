@@ -53,7 +53,7 @@ def search(
         return firecrawl_provider.search(query, limit=limit)
 
     chosen = mode()
-    usable = chosen != "off" and firecrawl_provider.available()
+    usable = firecrawl_provider.available()
     keyed = usable and bool(credential("FIRECRAWL_API_KEY"))
 
     # SearXNG (sovereign default).

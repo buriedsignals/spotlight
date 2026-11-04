@@ -21,6 +21,7 @@ from ._credentials import ROOT, config_path
 
 MODES = ("backup", "always", "off")
 SENSITIVE_REFUSAL = "sensitive mode: nothing from this case goes to Firecrawl"
+OFF_REFUSAL = "Firecrawl is off for this install (firecrawl_mode)"
 
 
 def _config() -> dict | None:
@@ -28,7 +29,7 @@ def _config() -> dict | None:
     try:
         path = config_path(ROOT)
         if not path.is_file():
-            return {}
+            return None if os.environ.get("SPOTLIGHT_CONFIG") else {}  # a named config that is missing cannot say "not sensitive"
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, RuntimeError):
         return None
@@ -54,3 +55,10 @@ def sensitive() -> bool:
 def mode() -> str:
     value = (_config() or {}).get("firecrawl_mode")
     return value if value in MODES else "backup"
+
+
+def refusal() -> str | None:
+    """Why Firecrawl may not run now, or None. The providers ask this themselves, so an explicit provider is covered too."""
+    if sensitive():
+        return SENSITIVE_REFUSAL
+    return OFF_REFUSAL if mode() == "off" else None
