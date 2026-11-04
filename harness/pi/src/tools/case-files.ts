@@ -12,7 +12,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
-import { factCheckerAlternative, factCheckerCapture, fetchedFile, registeredCapture } from './fetch.ts';
+import { factCheckerAlternative, factCheckerCapture, factCheckerSourceURLs, fetchedFile, registeredCapture } from './fetch.ts';
 import { flatText, sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
@@ -1898,6 +1898,22 @@ function refetchedSupport(context: ToolContext, findingId: string): { item?: Rec
 	}
 	if (!statuses.length) return { status: passages.length ? 'no harness re-fetch of its sources' : 'no recorded supporting passage to compare' };
 	return { status: statuses.join('; ') };
+}
+
+// B20 (K4 Tor P3: 13 record_assessment calls, 0 judge_finding, every
+// verified row refused for want of a passage ref): on the local tiers a
+// fact-checker gets judge_finding only, and record_assessment once it has a
+// second source, a capture of its own of a URL none of its batch's findings
+// cites, made since this worker started (the registry keeps earlier workers'
+// captures; Codex review of simp-b20). The harness re-fetch of a cited source is not one.
+export function secondSourceFetched(context: ToolContext, batch: string[], since: number): boolean {
+	const findings = recordRows(recordDocument(context, 'data/findings.json').findings).filter((row) => batch.includes(String(row.id)));
+	const refs = new Set(findings.flatMap((row) => Array.isArray(row.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []));
+	const cited = new Set(recordRows(recordDocument(context, 'data/evidence-bundle.json').items)
+		.filter((item) => refs.has(String(item.id)) || recordRows(item.claim_links).some((link) => batch.includes(String(link.finding_id))))
+		.map((item) => item.source_url ?? item.url).filter((url): url is string => typeof url === 'string'));
+	const rechecks = new Set(Object.values(taskRecheck(context)).map((check) => typeof check === 'object' ? check.acquisition?.path : undefined).filter((path): path is string => typeof path === 'string'));
+	return factCheckerSourceURLs(context, rechecks, since).some((url) => !cited.has(url));
 }
 
 function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[], filled: string | undefined): ToolDefinition {

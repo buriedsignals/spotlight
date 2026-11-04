@@ -733,7 +733,7 @@ function checkContext(harness: Harness) {
 async function deliverable(harness: Harness, role: string, task: string, status: Record<string, unknown>): Promise<Deliverable | undefined> {
 	if (role === 'analyst' && status.phase === 'ingest') return analystDeliverable(harness.active.caseDir, routeFor(harness.config).model);
 	if (role === 'fact-checker') {
-		const correction = correctionDeliverable(harness.active.caseDir, readCheckDocs(harness.active.caseDir), task);
+		const correction = correctionDeliverable(harness.active.caseDir, readCheckDocs(harness.active.caseDir), task, harness.config.modelTier !== 'frontier');
 		if (correction) return correction;
 	}
 	const step = (status.research as { resume_at?: unknown } | undefined)?.resume_at;
@@ -804,7 +804,7 @@ async function factCheckBatches(harness: Harness, task: string, signal: AbortSig
 		const ids = nextCheckBatch(docs, FC_BATCH).batch.map((item) => item.id);
 		const future = nextCheckBatch(docs, left).batch.map((item) => item.id).filter((id) => !ids.includes(id));
 		const recheck = await recheckSources(harness, docs, ids, signal);
-		const due = batchDeliverable(caseDir, docs, ids, recheck.sources, recheck.path);
+		const due = batchDeliverable(caseDir, docs, ids, recheck.sources, recheck.path, harness.config.modelTier !== 'frontier');
 		harness.log(`fact-checker: batch ${ids.join(', ')} (${left} findings without a claim)`);
 		let answer: string;
 		let workerFailed = false;

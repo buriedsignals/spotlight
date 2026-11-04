@@ -16,7 +16,7 @@ import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
-import { READ_TRUNCATED, canonicalWriteCall, readTarget, writeConfined } from './tools/case-files.ts';
+import { READ_TRUNCATED, canonicalWriteCall, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { dispatchRunner } from './tools/review.ts';
 import { fixedStepRunner } from './tools/programs.ts';
@@ -350,6 +350,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerUnproductiveBound(pi, async () => nextAction(await caseForModel(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative)), active.caseDir));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
+	const ownFiles = (process.env.SPOTLIGHT_DELIVERABLE_FILES ?? '').split(',').filter(Boolean);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
@@ -359,16 +360,38 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	registerToolOwners(pi, role);
 	if (process.env.SPOTLIGHT_CALL_BUDGET) registerCallBudget(pi, Number(process.env.SPOTLIGHT_CALL_BUDGET));
 	const tools = toolsFor(role, pi).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi)).map(factCheckDue);
-	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi, tools.map((tool) => tool.name));
+	const offered = localAssessmentGate(role, caseDir, assigned);
+	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi, tools.map((tool) => tool.name), offered);
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	registerSchemaHints(pi, tools);
+	const write = tools.find((tool) => tool.name === 'write_file');
+	if (role !== ORCHESTRATOR && write && ownFiles.length === 1 && REPLY_DELIVERABLES.includes(ownFiles[0])) registerReplyDeliverable(pi, write, ownFiles[0]);
 	if (role === ORCHESTRATOR && tier12b) {
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
 		registerTextTurnNudge(pi, () => caseForModel(active, runAdapter), () => stall.count >= STALLED_DISPATCHES);
 	}
-	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
+	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name).filter(offered)));
+}
+
+// B20 (case-files.ts secondSourceFetched): a local-tier batch fact-checker is
+// offered record_assessment only once it has fetched a second source; until
+// then judge_finding writes its claims. The frontier tier and every other
+// role keep all their tools.
+export const ASSESSMENT_HELD = 'record_assessment opens once you have fetched a second source, a page none of your findings cites. Until then answer each finding with judge_finding {finding_id, answer: supports, partly, doesnt or cant_tell, reason: one line}; code writes its claim.';
+const assessmentHeld = { held: false };
+function localAssessmentGate(role: string, caseDir: string, batch: string[]): (tool: string) => boolean {
+	if (role !== 'fact-checker' || !batch.length || (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === 'frontier') return () => true;
+	const context = { caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`, env: process.env };
+	const started = Date.now();
+	let open = false;
+	return (tool) => {
+		if (tool !== 'record_assessment') return true;
+		open ||= secondSourceFetched(context, batch, started);
+		assessmentHeld.held = !open;
+		return open;
+	};
 }
 
 // The 12b serves 40,960 tokens per slot, and Pi cannot fold a turn's own tool
@@ -1111,7 +1134,7 @@ export const PROPOSAL_DONE = 'The analyst wrote data/knowledge-proposal.json and
 export const FC_BATCH_DUE = 15;
 export const FC_BATCH_STOP = 30;
 export const FC_BATCH_DONE = 'Wrote the claims for this batch.';
-export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Use the available local file tools to inspect saved evidence and record_assessment to finish; new source acquisition is closed for this batch. Write ONLY this batch’s claims to data/fact-check.json; the harness merges by finding_id and preserves omitted claims. Do not reconstruct the file or write probe files. Then finish.';
+export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Use the available local file tools to inspect saved evidence and judge_finding (or record_assessment, where offered) to finish; new source acquisition is closed for this batch. Write ONLY this batch’s claims to data/fact-check.json; the harness merges by finding_id and preserves omitted claims. Do not reconstruct the file or write probe files. Then finish.';
 export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its claims; the batch is incomplete.';
 // What a call to a tool the batch has closed gets, in place of Pi's "not
 // found" (fz2 on comb: "invoke_skill ... belongs to the fact-checker", said to
@@ -1122,8 +1145,8 @@ export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its c
 // search and fetch are missing from the first call for another reason).
 const batchTools = { narrowed: false };
 export const fcBatchClosed = (tool: string) =>
-	`${tool} is closed for the rest of this batch because the batch's call budget is spent; source_expressions, invoke_skill and new sources are closed until the batch ends. Next: write this batch's claims with record_assessment (or write_file to data/fact-check.json). read_file, grep_files, list_files and hash_files stay open for saved evidence. Then finish.`;
-function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
+	`${tool} is closed for the rest of this batch because the batch's call budget is spent; source_expressions, invoke_skill and new sources are closed until the batch ends. Next: write this batch's claims with judge_finding (or record_assessment where offered, or write_file to data/fact-check.json). read_file, grep_files, list_files and hash_files stay open for saved evidence. Then finish.`;
+function registerBatchEnd(pi: ExtensionAPI, tools: string[], offered: (tool: string) => boolean): void {
 	const writingTools = tools.filter((name) => ['write_file', 'record_assessment', 'judge_finding', 'read_file', 'grep_files', 'list_files', 'hash_files'].includes(name));
 	let done = false;
 	let calls = 0;
@@ -1131,7 +1154,7 @@ function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 		done = false;
 		calls = 0;
 		batchTools.narrowed = false;
-		pi.setActiveTools(tools);
+		pi.setActiveTools(tools.filter(offered));
 	});
 	// Reserve each call before execution: a model can emit many in one response.
 	pi.on('tool_call', (event) => {
@@ -1141,10 +1164,10 @@ function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 		if (calls > FC_BATCH_DUE && !writingTools.includes(event.toolName)) return { block: true, reason: fcBatchClosed(event.toolName) };
 		return undefined;
 	});
+	// A fetch may have brought the second source that opens record_assessment.
 	pi.on('tool_execution_end', () => {
-		if (calls < FC_BATCH_DUE) return;
-		batchTools.narrowed = true;
-		pi.setActiveTools(writingTools);
+		if (calls >= FC_BATCH_DUE) batchTools.narrowed = true;
+		pi.setActiveTools((batchTools.narrowed ? writingTools : tools).filter(offered));
 	});
 	pi.on('tool_result', async (event) => {
 		const text = event.content.map((part) => part.type === 'text' ? part.text : '').join('\n');
@@ -1171,6 +1194,53 @@ function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 		if (calls < FC_BATCH_STOP) return undefined;
 		log(`the fact-checker made ${FC_BATCH_STOP} calls on one batch; its turn was ended`);
 		return { message: { ...event.message, content: [{ type: 'text', text: `The fact-checker ${FC_BATCH_SPENT}` }] } as typeof event.message };
+	});
+}
+
+// B21 (K4 Tor P5: the analyst put its knowledge proposal in its final reply
+// as JSON, three times, and never wrote it). When a worker's final reply holds
+// one JSON object and its deliverable is one file whose write runs the full
+// validator, code writes that object, as it is, through the worker's own
+// write_file: the same refusals, and the same envelope a direct write gets.
+// Nothing is added to the model's fields. Accepted: the answer says so.
+// Refused: the refusal goes back to the worker as its next prompt, once per
+// distinct object; the worker's own write route is unchanged.
+// Other deliverables wait for a write-time check as complete as the proposal's.
+export const REPLY_DELIVERABLES = ['data/knowledge-proposal.json'];
+export const replyTaken = (file: string) => `[Harness: the JSON in this reply was written to ${file} through write_file, which accepted it.]`;
+export const replyRefused = (file: string, reason: string) => `Your reply held JSON for ${file}, not a write. The harness offered it to write_file, which refused it: ${reason} Fix what it names and write ${file} with write_file; then finish.`;
+// The one JSON object a reply holds: the whole reply, or its one fenced block.
+export function replyObject(text: string): Record<string, unknown> | undefined {
+	const blocks = [...text.matchAll(/```(?:json)?[ \t]*\n([\s\S]*?)\n```/g)].map((match) => match[1]);
+	const candidates = blocks.length ? blocks : [text.trim()];
+	if (candidates.length !== 1) return undefined;
+	try {
+		const value = JSON.parse(candidates[0]) as unknown;
+		return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+	} catch {
+		return undefined;
+	}
+}
+function registerReplyDeliverable(pi: ExtensionAPI, write: ToolDefinition, file: string): void {
+	const offered = new Set<string>();
+	pi.on('message_end', async (event) => {
+		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
+		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
+		if (message.role !== 'assistant' || message.stopReason !== 'stop' || parts.some((part) => part.type === 'toolCall')) return undefined;
+		const object = replyObject(parts.filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n'));
+		if (!object) return undefined;
+		const content = `${JSON.stringify(object, null, 2)}\n`;
+		if (offered.has(content)) return undefined;
+		offered.add(content);
+		try {
+			await write.execute(`reply-deliverable-${offered.size}`, { path: file, content }, undefined, undefined, undefined as never);
+		} catch (error) {
+			log(`the ${file} JSON in a worker's reply was refused`);
+			pi.sendUserMessage(replyRefused(file, (error as Error).message), { deliverAs: 'followUp' });
+			return undefined;
+		}
+		log(`the ${file} JSON in a worker's reply was written`);
+		return { message: { ...event.message, content: [...parts, { type: 'text', text: `\n${replyTaken(file)}` }] } as typeof event.message };
 	});
 }
 
@@ -1435,6 +1505,7 @@ function registerToolOwners(pi: ExtensionAPI, role: string): void {
 			.filter(([, spec]) => spec.tools.includes(name ?? ''))
 			.map(([owner]) => owner);
 		if (!name || owners.length === 0) return undefined;
+		if (role === 'fact-checker' && name === 'record_assessment' && assessmentHeld.held) return { message: { ...event.message, content: [{ type: 'text', text: ASSESSMENT_HELD }] } as typeof event.message };
 		// The batch fact-checker's own tool is missing only because the batch closed it.
 		if (role === 'fact-checker' && batchTools.narrowed && owners.includes(role)) return { message: { ...event.message, content: [{ type: 'text', text: fcBatchClosed(name) }] } as typeof event.message };
 		const next = role === ORCHESTRATOR ? 'Delegate that step with spawn_agent.' : 'Leave that step to them and say so in your answer.';

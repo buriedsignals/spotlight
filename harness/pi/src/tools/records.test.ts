@@ -117,7 +117,8 @@ for (const mode of ['budget closeout','rejected repair'] as const) test(`native 
 		return results.length<(mode==='rejected repair'?2:1) ? {toolCalls:[{name:'spawn_agent',arguments:{agent:'fact-checker',task:'Check the assigned findings.'}}]} : {text:'Done.'};
 	});
 	t.after(()=>fake.close());
-	const chat=launch(t,{...baseEnv(space,fake.baseURL),SPOTLIGHT_MODEL_TIER:'12b',SPOTLIGHT_FC_BATCH_SIZE:'1'});
+	// record_assessment from the first call is the frontier tier's; a local tier offers judge_finding until a second source (B20).
+	const chat=launch(t,{...baseEnv(space,fake.baseURL),SPOTLIGHT_MODEL_TIER:'frontier',SPOTLIGHT_FC_BATCH_SIZE:'1'});
 	await settledPrompt(chat,'Continue.');
 	const saved=JSON.parse(await readFile(join(caseDir,'data/fact-check.json'),'utf8'));
 	assert.equal(saved.claims[0].verdict,'unverified');

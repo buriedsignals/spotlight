@@ -20,7 +20,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, FACT_CHECK_TASK, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { FC_BATCH_DONE, FC_BATCH_DUE, FC_BATCH_NOTICE, FC_BATCH_STOP, registerFetchedPages } from './extension.ts';
+import { ASSESSMENT_HELD, FC_BATCH_DONE, FC_BATCH_DUE, FC_BATCH_NOTICE, FC_BATCH_STOP, registerFetchedPages } from './extension.ts';
 import { CONTINUE_AFTER_FOLD } from './subagents.ts';
 import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL, NEXT_METHODOLOGY_APPROVAL, NEXT_METHODOLOGY_FAILING } from './tools/spotlight.ts';
@@ -942,7 +942,7 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	assert.doesNotMatch(text, /TASK-MARKER/);
 	if (!correction) assert.match(after, /re-check: re-fetched/, 'source recheck outcomes survive the fold');
 	if (!correction) assert.match(after, /Your deliverable: the claims for F1 in data\/fact-check\.json/);
- else { assert.match(after,/write ONLY the named corrected claims/); assert.doesNotMatch(after,/- F4:/, 'the fold never assigns future work to this correction'); }
+ else { assert.match(after,/judge each named finding again with judge_finding/, 'the 12b correction line names its route (B20)'); assert.doesNotMatch(after,/- F4:/, 'the fold never assigns future work to this correction'); }
 	assert.match(after, /- F1: \\"Acme paid Doe\.\\"/, 'the batch packet comes back while data/fact-check.json is not written');
 	const kept = /Case passages for this task: (\/[^;]+\/work\/fact-checker\/passages\/fact-checker-[^;]+\.md); read it if you need them again\./.exec(after)?.[1];
 	assert.ok(kept, after.slice(0, 2000));
@@ -2025,6 +2025,7 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		// inv-retest-def8674f.md: LFM3 answered with two record_finding calls; the first that passes is kept, the other named.
 		const second = { name: 'record_finding', arguments: { finding: { claim: 'The licence allows redistribution.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } };
 		const commits: ChatRequest[] = [];
+		const checks: ChatRequest[] = [];
 		// The cycle's log as the investigator keeps it (the review fixture's), written on its last turn.
 		const outputs = join(tmpdir(), `commit-log-${process.pid}-${tier}`);
 		execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), outputs, 'investigation_gate', '--activated', '--clean']);
@@ -2043,7 +2044,16 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 				return done < 13 ? { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/*${done}*` } }] } : { text: 'Investigator finished.' };
 			}
 			// inv-retest-def8674f.md: the fact-checker answers on the committed finding; code verifies it from the re-fetch.
-			if (isWorkerRequest(request, 'fact-checker')) return toolResults(request).length === 0 ? { toolCalls: [{ name: 'judge_finding', arguments: { answer: 'supports', reason: 'The licence page says modification is allowed.' } }] } : { text: 'Checked.' };
+			// B20 (K4 Tor P3): first it tries record_assessment, a verified row with no passage ref,
+			// then fetches a second source, which opens record_assessment, then answers judge_finding.
+			if (isWorkerRequest(request, 'fact-checker')) {
+				checks.push(request);
+				const done = toolResults(request).length;
+				return done === 0 ? { toolCalls: [{ name: 'record_assessment', arguments: { assessment: { verdict: 'verified', confidence: 'high', evidence_for: [{ description: 'The licence page says so.', source: 'https://docs.example.org/licence' }], evidence_against: [] } } }] }
+					: done === 1 ? { toolCalls: [{ name: 'fetch', arguments: { url: 'https://mirror.example.net/licence-faq', save_as: 'fc-faq.md' } }] }
+					: done === 2 ? { toolCalls: [{ name: 'judge_finding', arguments: { answer: 'supports', reason: 'The licence page says modification is allowed.' } }] }
+					: { text: 'Checked.' };
+			}
 			const step = toolResults(request).length;
 			return step === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
 				: step === 1 && tier !== 'frontier' ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
@@ -2093,6 +2103,14 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		} catch (error) {
 			assert.fail(`validate-fact-check.py: ${String((error as { stdout?: string }).stdout ?? error)}`);
 		}
+		// B20: on a local tier the fact-checker is offered judge_finding and not record_assessment, its task
+		// names judge_finding with no record_assessment templates, a record_assessment call is answered
+		// with the route, and a fetched second source opens record_assessment.
+		assert.ok(toolNames(checks[0]).includes('judge_finding') && !toolNames(checks[0]).includes('record_assessment'), toolNames(checks[0]).join(','));
+		assert.match(userText(checks[0]), /judge_finding \{finding_id, answer/);
+		assert.doesNotMatch(userText(checks[0]), /record_assessment argument templates/);
+		assert.equal(toolResults(checks[1])[0], ASSESSMENT_HELD);
+		assert.ok(toolNames(checks[2]).includes('record_assessment'), 'the second source opened record_assessment');
 		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), `the fact-checker started: ${toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n').slice(0, 800)}`);
 		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined);
 		const recordCall = worker.flatMap((request) => request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)).find((call) => call.function.name === 'record_finding')!;
@@ -2437,10 +2455,13 @@ function delegateToAnalyst(analyst: (request: ChatRequest) => Reply, task = 'Pro
 // LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst's proposal failed
 // interface 1, which it never saw, and it read and grepped until stopped.
 test('an analyst proposal that fails interface 1 is refused when written, and after a valid one the analyst\'s turn ends and the batch is built', async (t) => {
+ // B21 (K4 Tor P5): reply, the analyst puts the proposal in its reply as JSON instead of writing it.
+ for (const route of ['write', 'reply'] as const) await t.test(route, async (t) => {
 	const invalid = { ...PROPOSAL, claims: [{ ...PROPOSAL.claims[0], statement: { ...PROPOSAL.claims[0].statement, object: { text: 7 } } }] };
 	const fake = await startFakeOpenAI(
 		delegateToAnalyst((request) => {
 			const done = toolResults(request).length;
+			if (route === 'reply') return { text: `Here is the proposal.\n\n\`\`\`json\n${JSON.stringify(JSON.stringify(request.messages).includes('Your reply held JSON') ? PROPOSAL : invalid, null, 2)}\n\`\`\`` };
 			if (done === 0) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(invalid) } }] };
 			if (done === 1) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } }] };
 			return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/findings.json' } }] };
@@ -2454,13 +2475,25 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
 	await settledPrompt(chat, 'Continue.');
 
 	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst'));
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
+	if (route === 'reply') {
+		// The invalid object is refused with the validator's text as the next prompt; the valid one is written as it was sent.
+		assert.equal(analyst.length, 2);
+		assert.match(JSON.stringify(analyst[1].messages.at(-1)), /Your reply held JSON for data\/knowledge-proposal\.json, not a write\. The harness offered it to write_file, which refused it: refused: data\/knowledge-proposal\.json does not match interface 1: \$\.claims\[0\]\.statement\.object\.text: must be string/);
+		const written = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-proposal.json'), 'utf8'));
+		assert.deepEqual(written.claims, PROPOSAL.claims, 'no field added to or changed in the model\'s claims');
+		// Continuity: the analyst's answer says what code did and the batch is built.
+		assert.ok(toolResults(orchestrator.at(-1)!).join('\n').includes('[Harness: the JSON in this reply was written to data/knowledge-proposal.json through write_file, which accepted it.]'));
+		assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the harness built the batch after the analyst ended');
+		return;
+	}
 	assert.equal(analyst.length, 3, 'no analyst request after the one that went on past a valid proposal');
 	const results = toolResults(analyst[analyst.length - 1]);
 	assert.match(results[0], /^refused: data\/knowledge-proposal\.json does not match interface 1: \$\.claims\[0\]\.statement\.object\.text: must be string/);
 	assert.match(results[1], /wrote data\/knowledge-proposal\.json/);
-	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
 	assert.ok(toolResults(orchestrator.at(-1)!).join('\n').includes(PROPOSAL_DONE), 'the orchestrator gets the stop line as the analyst\'s answer');
 	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the harness built the batch after the analyst ended');
+ });
 });
 
 // LFM3 r3 kde stage 3 on Osaurus (ecbcd23e): a schema-valid proposal broke the
@@ -2867,12 +2900,15 @@ test('a first fact-check task carries the structure, one claim per finding; and 
 	await unlink(join(caseDir, 'data', 'fact-check.json'));
 	const before = await caseDigests(caseDir);
 
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	// The templates are the frontier tier's; a local tier's task names judge_finding (B20).
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
 	await settledPrompt(chat, 'Continue.');
 	chat.process.stdin.end();
 	await chat.exited;
 
-	const first = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
+	const firstRequest = fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!;
+	assert.ok(toolNames(firstRequest).includes('record_assessment') && toolNames(firstRequest).includes('judge_finding'), 'the frontier tier keeps both');
+	const first = userText(firstRequest);
 	assert.match(first, /The findings in this batch:\n[\s\S]*\n- F1: "Acme paid Doe\."\n/);
 	const start = JSON.parse(first.split('record_assessment argument templates: submit one complete assessment as it becomes ready; never submit unfinished templates.\n')[1]);
 	// The finding's passage on record starts evidence_for (arms on 8699f11d, item D).
@@ -4444,11 +4480,11 @@ test('a batch fact-checker ends once its batch has claims, and one that never wr
 				const done = toolResults(request).length;
 				// review-fix7 B1: in sensitive mode search is missing from the first
 				// call, for a reason other than the batch.
-				if (mode === 'sensitive') return done === 0 ? { toolCalls: [{ name: 'search', arguments: { query: 'Acme Doe payment' } }] } : { toolCalls: [{ name: 'record_assessment', arguments: { assessment: { finding_id: 'F1', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] } } }] };
+				if (mode === 'sensitive') return done === 0 ? { toolCalls: [{ name: 'search', arguments: { query: 'Acme Doe payment' } }] } : { toolCalls: [{ name: 'judge_finding', arguments: { finding_id: 'F1', answer: 'cant_tell', reason: 'No source settles it.' } }] };
 				if (mode === 'narrowed' && done >= FC_BATCH_DUE) {
 					if (done === FC_BATCH_DUE) return { toolCalls: [{ name: 'source_expressions', arguments: { action: 'write', cycle: 1, proposal: {} } }] };
 					if (done === FC_BATCH_DUE + 1) return { toolCalls: [{ name: 'invoke_skill', arguments: { skill: 'content-access' } }] };
-					return { toolCalls: [{ name: 'record_assessment', arguments: { assessment: { finding_id: 'F1', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] } } }] };
+					return { toolCalls: [{ name: 'judge_finding', arguments: { finding_id: 'F1', answer: 'cant_tell', reason: 'No source settles it.' } }] };
 				}
 				if (writes && done === 0) {
 					const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };

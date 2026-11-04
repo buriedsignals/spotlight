@@ -248,6 +248,16 @@ export function factCheckerCapture(context: ToolContext, relative: string): Fetc
 	return capture?.acquired_by === 'fact-checker' ? capture : undefined;
 }
 
+// The source URLs of the fact-checker's own captures made since `since` (ms),
+// each unchanged since its fetch, leaving out the given paths.
+export function factCheckerSourceURLs(context: ToolContext, skip: Set<string>, since: number): string[] {
+	const registry = fetchedPath(context);
+	if (!registry) return [];
+	let captures: Record<string, Fetched>;
+	try { captures = JSON.parse(readFileSync(registry, 'utf8')) as Record<string, Fetched>; } catch { return []; }
+	return Object.keys(captures).filter((path) => !skip.has(path)).map((path) => factCheckerCapture(context, path)).filter((capture) => capture && Date.parse(capture.accessed) >= since).map((capture) => capture!.url);
+}
+
 // A file a harness fetch saved, unchanged since: any role's capture.
 export function registeredCapture(context: ToolContext, relative: string): Fetched | undefined {
 	const capture = fetchedFile(context, relative);
