@@ -3,8 +3,9 @@
 // writes stay inside the caller's write folder, never follow a symlink, and
 // never touch the files only the resolver and the review page may write.
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, constants, existsSync, globSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
+import { closeSync, constants, existsSync, globSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeSync } from 'node:fs';
 import type { Stats } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
@@ -1335,6 +1336,38 @@ function withdrawnRefs(caseDir: string, name: string, written: string): string {
 	return lines.join('');
 }
 
+// A held lock is a folder outside the case, so no worker lists it and no case artifact changes. Waiting is bounded and never refuses: after MERGE_WAIT_MS the write
+// goes ahead as it did before this lock, and a lock left by a dead worker is taken over after MERGE_LOCK_STALE_MS.
+const MERGE_WAIT_MS = 5_000;
+const MERGE_LOCK_STALE_MS = 30_000;
+export async function oneMergeAtATime<T>(target: string, job: () => Promise<T>): Promise<T> {
+	const root = join(tmpdir(), 'spotlight-merge-locks');
+	try {
+		mkdirSync(root, { recursive: true });
+	} catch {
+		return job();
+	}
+	const lock = join(root, createHash('sha256').update(target).digest('hex'));
+	const deadline = Date.now() + MERGE_WAIT_MS;
+	let held = false;
+	while (!held && Date.now() < deadline) {
+		try {
+			mkdirSync(lock);
+			held = true;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'EEXIST') break;
+			const age = Date.now() - (lstatOrUndefined(lock)?.mtimeMs ?? Date.now());
+			if (age > MERGE_LOCK_STALE_MS) rmSync(lock, { recursive: true, force: true });
+			else await new Promise((wake) => setTimeout(wake, 5));
+		}
+	}
+	try {
+		return await job();
+	} finally {
+		if (held) rmSync(lock, { recursive: true, force: true });
+	}
+}
+
 export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'> & Partial<Pick<ToolContext, 'env'>>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
 	const role = context.env?.SPOTLIGHT_ROLE;
@@ -1442,7 +1475,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 		].join('; ');
 		return ` (0 claims added: ${why || 'no claim had a finding_id'})`;
 	};
-	return [
+	const tools: ToolDefinition[] = [
 		{
 			name: 'read_file',
 			label: 'Read file',
@@ -1656,6 +1689,23 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			},
 		},
 	];
+	// Parallel direction workers are separate processes that merge into one file: one merge at a time, or a write built on a file another worker is replacing
+	// loses that worker's entries or fails on a half-written file ('parallel explicitly scoped tasks', 2 of 5 runs on dcb40e08).
+	for (const tool of tools.filter(({ name }) => name === 'write_file' || name === 'edit_file')) {
+		const run = tool.execute;
+		tool.execute = (id, params, ...rest) => {
+			let target: string | undefined;
+			try {
+				const path = (params as { path?: unknown }).path;
+				target = typeof path === 'string' ? writeTarget(caseDir, writeRoot, path, writes, denyWrites) : undefined;
+			} catch {
+				// The tool itself refuses this path, with its reason.
+			}
+			const merges = target !== undefined && (!!split(target) || mergesByKey(role, caseRelative(caseDir, target)));
+			return merges ? oneMergeAtATime(target!, () => run(id, params, ...rest)) : run(id, params, ...rest);
+		};
+	}
+	return tools;
 }
 
 // Canonical write identity shared by budget/completion hooks and the worker's

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -192,6 +192,23 @@ test('an explicit edit can remove legacy anonymous evidence without changing key
 	const forged = { ...after, items: after.items.filter((item: { notes: string }) => item.notes !== 'keep me').map((item: { id?: string; notes: string }) => item.id === 'E1' ? { ...item, notes: 'changed' } : item) };
 	await assert.rejects(edit.execute('call', { path, old_text: text, new_text: JSON.stringify(forged, null, 2) }, undefined, undefined, undefined as never), /did not create|refus/i);
 	assert.equal(await readFile(file, 'utf8'), text);
+});
+
+// Parallel direction workers are separate processes (launcher.ts processLaunch, up to MAX_CONCURRENT_WORKERS): both merged into the file they had
+// read, so one worker's finding could vanish ('parallel explicitly scoped tasks' failed 2 of 5 runs on dcb40e08, D2-F1 lost).
+test('direction workers in separate processes writing at once lose no entry, and each still gets its reply', async (t) => {
+	const { caseDir } = await fixture(t);
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ project: 'p', findings: [] }));
+	const worker = `
+		import { caseFileTools } from ${JSON.stringify(new URL('./case-files.ts', import.meta.url).href)};
+		const [caseDir, tag, count] = process.argv.slice(1);
+		const write = caseFileTools({ caseDir, writeRoot: caseDir, env: { SPOTLIGHT_ROLE: 'investigator', SPOTLIGHT_DIRECTION: tag } }).find((tool) => tool.name === 'write_file');
+		for (let n = 1; n <= Number(count); n++) await write.execute('call', { path: 'data/findings.json', content: JSON.stringify({ project: 'p', findings: [{ id: tag + '-F' + n, claim: tag + ' ' + n }] }) });
+	`;
+	const run = (tag: string) => new Promise<void>((done, failed) => execFile(process.execPath, ['--input-type=module', '-e', worker, caseDir, tag, '40'], (error) => (error ? failed(error) : done())));
+	await Promise.all([run('D1'), run('D2')]);
+	const ids = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')).findings.map((each: { id: string }) => each.id);
+	assert.equal(ids.length, 80, `kept ${ids.length} of 80`);
 });
 
 test('a direction\'s worker writing an id without its tag is refused and the file is unchanged', async (t) => {

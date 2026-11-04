@@ -15,7 +15,7 @@ import { engineEnv } from '../case-search.ts';
 import { redactor } from '../log.ts';
 import { recordNavigatorLookup } from './navigator-receipts.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { FileRefused, readTarget, writeConfined } from './case-files.ts';
+import { FileRefused, oneMergeAtATime, readTarget, writeConfined, writeTarget } from './case-files.ts';
 import { NAVIGATOR_ENV } from './hosted-skill.ts';
 import { HARNESS_PROPOSALS, ToolArgumentError, RETURNED_CHARS, capped, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
@@ -405,7 +405,8 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 			}
 			const writer = script('scripts/write-source-expressions.py');
 			if (input.action === 'fingerprint_findings') {
-				const result = await runPython(context, [writer, context.caseDir, '--fingerprint-findings'], { signal });
+				// It republishes data/findings.json under a flock Node cannot share, so it takes the merge lock too (Codex P2).
+				const result = await oneMergeAtATime(writeTarget(context.caseDir, context.writeRoot, 'data/findings.json'), () => runPython(context, [writer, context.caseDir, '--fingerprint-findings'], { signal }));
 				return textResult(programOutput('source_expressions', result));
 			}
 			if (input.cycle === undefined || input.proposal === undefined) {
