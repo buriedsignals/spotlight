@@ -337,7 +337,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerBlockedStop(pi);
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-		registerUnproductiveBound(pi, async () => nextAction(await caseForModel(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
+		registerUnproductiveBound(pi, async () => nextAction(await caseForModel(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative)), active.caseDir));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;

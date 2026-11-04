@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
-import { NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_ROUND, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 
 const PYTHON = process.env.SPOTLIGHT_PYTHON ?? 'python3';
@@ -287,9 +287,9 @@ test('resolve names the next step at the brief, the methodology and each investi
 		assert.match(repair.next_action, new RegExp(`spawn the ${owner} `));
 		assert.ok(!repair.next_action.includes(`spawn the ${owner === 'investigator' ? 'fact-checker' : 'investigator'} `));
 	}
-	// Every other phase resolves exactly as the resolver wrote it.
+	// Report names its step too (simp-next): before a draft, the member's offer.
 	const report = { next_phase: 'report', phase: 'report', status: 'pending' };
-	assert.equal(await resolveWith(report), JSON.stringify(report));
+	assert.deepEqual(JSON.parse(await resolveWith(report)), { ...report, next_action: NEXT_REPORT_OFFER });
 });
 
 // review-fix4 A3: a fresh fact-check after the investigator's update is a plain
@@ -314,7 +314,7 @@ test('a long methodology correction keeps the research checks\' rule lines ahead
 // Codex review of simp-triage2: the triage-hold step is given only when the round's triage failed, never for a triage still owed.
 test('the triage hold names the member options only after a failed triage', () => {
 	const held = { phase: 'research', research: { resume_at: 'triage' } };
-	assert.equal(nextAction(held, () => false), undefined);
+	assert.equal(nextAction(held, () => false), NEXT_TRIAGE, 'a triage still owed is code\'s step, not a hold');
 	assert.equal(nextAction({ ...held, research_round: { triage: { ok: false, error: 'research triage: research needs a decision model' } } }, () => false), NEXT_TRIAGE_HELD);
 });
 
@@ -327,4 +327,59 @@ test('the Research steps name their next move, and code launches the investigato
 	assert.deepEqual(dispatchAt({ phase: 'research', status: 'active', research: { resume_at: 'round_topics' } }), { agent: 'investigator', task: 'MODE: AMENDMENT\nTASK: ROUND', step: 'investigator AMENDMENT ROUND' });
 	assert.deepEqual(dispatchAt({ phase: 'research', status: 'active', research: { resume_at: 'amendment' } }), { agent: 'investigator', task: 'MODE: AMENDMENT\nTASK: AMEND', step: 'investigator AMENDMENT AMEND' });
 	assert.equal(dispatchAt({ phase: 'research_approval', status: 'active' }), undefined, 'the gate is the member\'s');
+});
+
+// simp-next (k2-tor.md P4, P5): every state resolve can return names a code
+// move, open_review (the member's decision), a model task, or an honest wait.
+// Each row: a resolved state, what is on disk, and which kind of line it gets.
+test('every state the resolver can return names a next step, and only member decisions name open_review', async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), 'next-'));
+	t.after(() => rm(dir, { recursive: true, force: true }));
+	const drafted = join(dir, 'drafted');
+	await mkdir(join(drafted, 'data'), { recursive: true });
+	await writeFile(join(drafted, 'data', 'report-draft.json'), JSON.stringify({ title: 'T', deck: '', finding_treatments: [] }));
+	type Row = [label: string, state: Record<string, unknown>, onDisk: string[], kind: 'member' | 'other', caseDir?: string, edition?: string];
+	const rows: Row[] = [
+		['brief', { phase: 'brief' }, [], 'other'],
+		['methodology', { phase: 'methodology' }, [], 'other'],
+		['methodology failing', { phase: 'methodology', methodology_check: 'FAIL' }, [], 'other'],
+		['methodology_approval', { phase: 'methodology_approval' }, [], 'member'],
+		['research lanes', { phase: 'research', research: { resume_at: 'lanes' } }, [], 'other'],
+		['research triage owed', { phase: 'research', research: { resume_at: 'triage' } }, [], 'other'],
+		['research triage failed', { phase: 'research', research: { resume_at: 'triage' }, research_round: { triage: { ok: false } } }, [], 'other'],
+		['research suggestions', { phase: 'research', research: { resume_at: 'suggestions' } }, [], 'other'],
+		['research amendment', { phase: 'research', research: { resume_at: 'amendment' } }, [], 'other'],
+		['research round_topics', { phase: 'research', research: { resume_at: 'round_topics' } }, [], 'other'],
+		['research off', { phase: 'research', research: { resume_at: 'research_off' } }, [], 'other'],
+		['research_approval', { phase: 'research_approval' }, [], 'member'],
+		['investigation, findings owed', { phase: 'investigation', missing: ['data/findings.json'] }, [], 'other'],
+		['investigation, fact-check owed', { phase: 'investigation', missing: ['data/fact-check.json'] }, [], 'other'],
+		['investigation, other', { phase: 'investigation', missing: ['something else'] }, [], 'other'],
+		['investigation, nothing listed', { phase: 'investigation', missing: [] }, [], 'other'],
+		['gate approval', { phase: 'investigation_gate_approval', missing: ['Investigation gate approval'] }, [], 'member'],
+		['gate, summary owed', { phase: 'investigation_gate_approval', missing: ['summary.md'] }, [], 'other'],
+		...(['provenance', 'review', 'seal'] as const).map((step): Row => [`finalization ${step}`, { phase: 'investigation_gate_finalization', investigation_gate: { resume_at: step }, missing: [step] }, [], 'other']),
+		['report, no draft', { phase: 'report', missing: ['report decision'] }, [], 'other', dir],
+		['report, draft written', { phase: 'report', missing: ['report decision'] }, [], 'member', drafted],
+		['ingest decision, no batch (P5)', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/case-contract.json'], 'other'],
+		['ingest decision, batch built', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/case-contract.json', 'data/knowledge-batch-draft.json'], 'member'],
+		['ingest decision, legacy', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/knowledge-batch-draft.json'], 'other'],
+		['ingest decision, newsroom', { phase: 'ingest', ingest: { resume_at: 'decision' } }, [], 'member', undefined, 'newsroom'],
+		['ingest requested', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other'],
+		['ingest requested, newsroom', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other', undefined, 'newsroom'],
+		['ingest seal', { phase: 'ingest', ingest: { resume_at: 'seal' } }, [], 'other'],
+		['blocked', { phase: 'blocked', status: 'blocked' }, [], 'other'],
+		['complete', { phase: 'complete', status: 'completed' }, [], 'other'],
+		['worker stalled', { phase: 'methodology', worker_stalled: { step: 'investigator (investigator PLANNING)', attempts: 2 } }, [], 'other'],
+	];
+	const edition = process.env.SPOTLIGHT_EDITION;
+	t.after(() => { if (edition === undefined) delete process.env.SPOTLIGHT_EDITION; else process.env.SPOTLIGHT_EDITION = edition; });
+	for (const [label, state, files, kind, caseDir, rowEdition] of rows) {
+		if (rowEdition) process.env.SPOTLIGHT_EDITION = rowEdition; else delete process.env.SPOTLIGHT_EDITION;
+		const next = nextAction(state, (relative) => files.includes(relative), caseDir);
+		assert.equal(typeof next, 'string', `${label}: no next step`);
+		assert.match(next!, /(^|\. )Next: /, label);
+		// The router opens the page whenever the line names open_review.
+		assert.equal(next!.includes('open_review'), kind === 'member', `${label}: ${next}`);
+	}
 });

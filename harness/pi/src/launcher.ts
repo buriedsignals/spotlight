@@ -1104,7 +1104,7 @@ async function refusalFor(harness: Harness, role: string, task: string, status: 
 	// refusal now carries the step the case is waiting on.
 	// As every orchestrator-facing path, through the plan check (review-fix6 F1).
 	const adapter = pythonAdapter(harness.config.python, resolverEnv({ ...process.env, ...researchEnv(harness.config) }, harness.composition, harness.config.routes));
-	const next = refusal ? nextAction(await withPlanCheck(status, gateCheck(harness.active, adapter, checkContext(harness))), (relative) => existsSync(resolve(harness.active.caseDir, relative))) : undefined;
+	const next = refusal ? nextAction(await withPlanCheck(status, gateCheck(harness.active, adapter, checkContext(harness))), (relative) => existsSync(resolve(harness.active.caseDir, relative)), harness.active.caseDir) : undefined;
 	return refusal && next ? `${refusal}. ${next}` : refusal;
 }
 

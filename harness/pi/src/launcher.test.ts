@@ -3249,6 +3249,40 @@ test('at Report the analyst gets the draft\'s structure; one that writes no pros
 	assert.match(opened[0].result!.content[0].text, /review page is open[\s\S]*No report draft is written yet, so the member can only decline the report on the page/);
 });
 
+// k2-tor.md P4: at Report the resolver named no move. Before a draft, resolve
+// names the member's offer; once the analyst writes the prose it names
+// open_review, the code router opens the page, and the member decides there.
+test('at Report resolve names the offer before a draft and open_review after it; with the code router the page opens and the member\'s decision moves the case on', async (t) => {
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'report', '--activated', '--clean']);
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'analyst')) {
+			const skeleton = JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] }
+				: { text: 'Drafted.' };
+		}
+		const step = toolResults(request).length;
+		return step === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : step === 1 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: '' } }] } : { text: 'The page is open.' };
+	});
+	t.after(() => fake.close());
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const states = resolveResults(chat);
+	assert.match(String(states[0]?.next_action), /^Next: ask the member whether to draft the public-facing report/);
+	assert.doesNotMatch(String(states[0]?.next_action), /open_review/, 'the offer names no move the router makes before the member answers');
+	assert.match(String(states.at(-1)?.next_action), /^Next: call open_review so the member can review the report draft/);
+	assert.match(chat.stderr(), /\[router\] open_review \(the resolver names open_review\)/);
+	const seam = (args: string[]) => execFileSync(PYTHON, [SEAM, ...args], { encoding: 'utf8' });
+	const view = JSON.parse(seam(['review-view', 'report', caseDir])) as { digest: string };
+	const nonce = (JSON.parse(seam(['issue-review-nonce', 'report', caseDir])) as { nonce: string }).nonce;
+	seam(['decide-report', 'completed', '--nonce', nonce, '--digest', view.digest, '--decided-by', 'journalist:fixture', '--decided-at', '2026-10-23T12:00:00Z', caseDir]);
+	assert.notEqual((JSON.parse(seam(['status', '--json', caseDir])) as { phase?: string }).phase, 'report', 'the member\'s decision moved the case on');
+});
+
 test('the fact-checker is not started after the Investigation gate', async (t) => {
 	const fake = await startFakeOpenAI((request) =>
 		toolResults(request).length === 0

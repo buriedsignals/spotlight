@@ -190,6 +190,27 @@ export const NEXT_INGEST_APPROVAL = 'Next: call open_review so the member can re
 export const STALLED_DISPATCHES = 2;
 export const nextWorkerStalled = (stalled: { step?: unknown; attempts?: unknown }) =>
 	`Next: code started the ${String(stalled.step)} ${String(stalled.attempts)} times in a row, and each time the progress watchdog stopped it with no change to the case files, so code does not start it again. Tell the member in plain words that it made no progress, and what they can do: amend the brief (they tell you what to change), or ask you to retry. Then end your turn; resolving again before the member answers only repeats this stop.`;
+// k2-tor.md P4: at Report the resolver named no move, so the router handed
+// the turn to the model. With the draft's prose written, the member's decision
+// is the page; before that, the member is asked whether to draft (phase-report).
+export const NEXT_REPORT_APPROVAL = 'Next: call open_review so the member can review the report draft and complete or decline the report, then end your turn and wait for their decision.';
+export const NEXT_REPORT_OFFER = 'Next: ask the member whether to draft the public-facing report (phase-report), then end your turn. If they want it, spawn_agent with agent analyst to write the draft\'s prose; if not, open the review page so they can decline the report there. (This line names no code move: the member answers first.)';
+// k2-tor.md P5 and the simp-next sweep: every state resolve can return names
+// a code move, open_review (the member's decision), a model task, or an honest
+// wait for the member. Only the lines meant for the router say "open_review".
+export const NEXT_SUGGEST = 'Next: call spotlight_resolve: code starts the investigator to suggest the marks for the Research page (AMENDMENT, TASK: SUGGEST). Do not write data/research-suggestions.json yourself.';
+export const NEXT_TRIAGE = 'Next: call spotlight_resolve: code triages the research round\'s leads.';
+export const NEXT_LANES = 'Next: the research round has not finished (research_round says why, when it ran). Tell the member in plain words what stopped it and what they can do, then end your turn. When they ask to retry, call spotlight_resolve with retry_research set to true.';
+export const NEXT_RESEARCH_OFF = 'Next: Research is off for this case (missing says so). Tell the member their options in plain words: turn Research on in the app, or go back to the Methodology gate and approve the plan without research. Then end your turn.';
+export const NEXT_GATE_APPROVAL = 'Next: call open_review so the member can review the investigation and approve the Investigation gate or request a follow-up, then end your turn and wait for their decision.';
+export const NEXT_GATE_OWED = 'Next: the Investigation gate still needs what missing lists. Call spotlight_resolve: code starts the analyst for the gate summary. Do not open the review page yet.';
+export const nextFixedStep = (step: string) => `Next: code's ${step || 'mechanical'} step has not finished (fixed_steps says why, when it ran). Call spotlight_resolve once to run it again; if it still does not finish, tell the member in plain words what fixed_steps reports and end your turn.`;
+export const NEXT_NEWSROOM_SUBMIT = 'Next: submit the requested ingest with newsroom_submit, as the ingest skill says, then call spotlight_resolve.';
+export const NEXT_INGEST_ANALYST = 'Next: spawn_agent with agent analyst to write the knowledge proposal (phase-ingest step 1); the harness builds the knowledge batch when it finishes. Then call spotlight_resolve.';
+export const NEXT_INGEST_LEGACY = 'Next: this case uses findings contract 1.0 and can no longer be ingested. Invoke the ingest skill, tell the member what it explains (activate the case, or continue it as a follow-up 1.1 case), and end your turn.';
+export const NEXT_BLOCKED = 'Next: the case is blocked (blocked says why). Tell the member in plain words why, and what they can do, then end your turn.';
+export const NEXT_COMPLETE = 'Next: the case is complete. Tell the member, and end your turn.';
+export const NEXT_UNKNOWN = 'Next: call spotlight_resolve again; if the case does not move, tell the member what it reports and end your turn.';
 export const NEXT_METHODOLOGY_APPROVAL =
 	'Next: call open_review so the member can approve the methodology, then end your turn and wait for their decision.';
 
@@ -205,7 +226,22 @@ function writerOf(item: string): 'investigator' | 'fact-checker' | undefined {
 	return undefined;
 }
 
-export function nextAction(resolved: Record<string, unknown>, onDisk: (relative: string) => boolean): string | undefined {
+// Whether any of the report draft's prose is written; the skeleton the
+// harness writes at Report has none (review.py report_draft_written).
+export function draftWritten(caseDir: string): boolean {
+	let draft: { title?: unknown; deck?: unknown; finding_treatments?: unknown };
+	try {
+		draft = JSON.parse(readFileSync(resolve(caseDir, 'data/report-draft.json'), 'utf8'));
+	} catch {
+		return false;
+	}
+	if (draft === null || typeof draft !== 'object') return false;
+	const treatments = Array.isArray(draft.finding_treatments) ? draft.finding_treatments : [];
+	const prose = [draft.title, draft.deck, ...treatments.flatMap((item) => (item && typeof item === 'object' ? [item.headline, item.summary, item.why_it_matters] : []))];
+	return prose.some((text) => typeof text === 'string' && text.trim() !== '');
+}
+
+export function nextAction(resolved: Record<string, unknown>, onDisk: (relative: string) => boolean, caseDir?: string): string | undefined {
 	const missing = Array.isArray(resolved.missing) ? resolved.missing.map(String) : [];
 	if (resolved.worker_stalled && typeof resolved.worker_stalled === 'object') return nextWorkerStalled(resolved.worker_stalled as { step?: unknown; attempts?: unknown });
 	switch (resolved.phase) {
@@ -219,25 +255,44 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 			const step = (resolved.research as { resume_at?: unknown } | undefined)?.resume_at;
 			if (step === 'round_topics') return NEXT_ROUND;
 			if (step === 'amendment') return NEXT_AMENDMENT;
-			// Only a round whose triage failed is a hold; a triage still owed is code's next step (Codex review of simp-triage2).
-			return step === 'triage' && (resolved.research_round as { triage?: { ok?: unknown } } | undefined)?.triage?.ok === false ? NEXT_TRIAGE_HELD : undefined;
+			if (step === 'suggestions') return NEXT_SUGGEST;
+			if (step === 'research_off') return NEXT_RESEARCH_OFF;
+			// Only a round whose triage failed is a hold (Codex review of simp-triage2).
+			if (step === 'triage') return (resolved.research_round as { triage?: { ok?: unknown } } | undefined)?.triage?.ok === false ? NEXT_TRIAGE_HELD : NEXT_TRIAGE;
+			return NEXT_LANES;
 		}
 		case 'research_approval':
 			return NEXT_RESEARCH_APPROVAL;
-		case 'ingest':
-			// Only in an activated case whose review draft is built (the page reads
-			// the draft): before that the analyst's proposal is owed, and a legacy
-			// case is not ingested (Codex review of simp-ingest). The newsroom
-			// edition, with no local batch, is not named here.
-			return (resolved.ingest as { resume_at?: unknown } | undefined)?.resume_at === 'decision' && onDisk('data/case-contract.json') && onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : undefined;
+		case 'investigation_gate_approval':
+			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : NEXT_GATE_OWED;
+		case 'investigation_gate_finalization':
+			return nextFixedStep(String((resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at ?? missing[0] ?? ''));
+		case 'report':
+			return caseDir && draftWritten(caseDir) ? NEXT_REPORT_APPROVAL : NEXT_REPORT_OFFER;
+		case 'ingest': {
+			const ingest = resolved.ingest as { resume_at?: unknown } | undefined;
+			const newsroom = process.env.SPOTLIGHT_EDITION === 'newsroom';
+			if (ingest?.resume_at === 'ingest') return newsroom ? NEXT_NEWSROOM_SUBMIT : nextFixedStep('wiki');
+			if (ingest?.resume_at === 'seal') return nextFixedStep('seal');
+			// The decision. The newsroom edition has no local batch: its page is the
+			// decision. A legacy case is not ingested. An activated solo case needs
+			// the analyst's batch before its page (Codex review of simp-ingest).
+			if (newsroom) return NEXT_INGEST_APPROVAL;
+			if (!onDisk('data/case-contract.json')) return NEXT_INGEST_LEGACY;
+			return onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : NEXT_INGEST_ANALYST;
+		}
+		case 'blocked':
+			return NEXT_BLOCKED;
+		case 'complete':
+			return NEXT_COMPLETE;
 		case 'investigation':
 			break;
 		default:
-			return undefined;
+			return NEXT_UNKNOWN;
 	}
 	if (missing.length === 1 && missing[0] === 'data/fact-check.json') return NEXT_FACT_CHECKER;
 	if (missing.includes('data/findings.json')) return NEXT_INVESTIGATOR;
-	if (missing.length === 0) return undefined;
+	if (missing.length === 0) return NEXT_UNKNOWN;
 	const present = INVESTIGATION_FILES.filter(onDisk);
 	const writers = [...new Set(missing.map(writerOf).filter((writer) => writer !== undefined))];
 	const order = writers.includes('investigator') ? ['investigator', 'fact-checker'].filter((writer) => writers.includes(writer as never)) : writers;
@@ -250,7 +305,7 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 // The resolved state with next_action in its sorted place among the
 // resolver's sorted keys.
 function withNextAction(resolved: Record<string, unknown>, caseDir: string): Record<string, unknown> {
-	const next = nextAction(resolved, (relative) => existsSync(resolve(caseDir, relative)));
+	const next = nextAction(resolved, (relative) => existsSync(resolve(caseDir, relative)), caseDir);
 	const merged: Record<string, unknown> = { ...resolved, ...(next ? { next_action: next } : {}) };
 	// The saved brief is case data, not instructions. Keep a bounded reminder
 	// available on later turns without opening a path outside the active case.

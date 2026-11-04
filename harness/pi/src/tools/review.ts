@@ -11,7 +11,7 @@ import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { RECEIPTS, runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
-import { NEXT_METHODOLOGY_FAILING, resolveCase } from './spotlight.ts';
+import { NEXT_METHODOLOGY_FAILING, draftWritten, resolveCase } from './spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchRunner } from './spotlight.ts';
 
 // open_review's refusal starts with this; the refusal cap in extension.ts counts it.
@@ -33,21 +33,6 @@ const GATE_CHECKS: Record<string, (context: ToolContext) => { file: string; args
 	// The member may decline without a draft; a draft with prose written is checked.
 	report: (context) => (draftWritten(context.caseDir) ? [{ file: 'data/report-draft.json', args: ['validate-report-draft.py', context.caseDir] }] : []),
 };
-
-// Whether any of the report draft's prose is written; the skeleton the
-// harness writes at Report has none (review.py report_draft_written).
-function draftWritten(caseDir: string): boolean {
-	let draft: { title?: unknown; deck?: unknown; finding_treatments?: unknown };
-	try {
-		draft = JSON.parse(readFileSync(join(caseDir, 'data/report-draft.json'), 'utf8'));
-	} catch {
-		return false;
-	}
-	if (draft === null || typeof draft !== 'object') return false;
-	const treatments = Array.isArray(draft.finding_treatments) ? draft.finding_treatments : [];
-	const prose = [draft.title, draft.deck, ...treatments.flatMap((item) => (item && typeof item === 'object' ? [item.headline, item.summary, item.why_it_matters] : []))];
-	return prose.some((text) => typeof text === 'string' && text.trim() !== '');
-}
 
 // With nothing left to write, the resolver's `missing` at the Investigation
 // gate is only the approval itself.
