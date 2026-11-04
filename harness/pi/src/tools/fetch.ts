@@ -92,10 +92,12 @@ export function rlmContext(env: ToolContext['env'], baseURL: string): Promise<nu
 	return knownContext;
 }
 
-// One chat completion from the RLM; its answer text, trimmed.
-export async function rlmComplete(baseURL: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+// One chat completion from the RLM; its answer text, trimmed. A helper that
+// never answers is cut off after SPOTLIGHT_RLM_TIMEOUT_MS, else RLM_TIMEOUT_MS.
+export async function rlmComplete(env: ToolContext['env'], baseURL: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
 	const url = baseURL.endsWith('/v1') ? `${baseURL}/chat/completions` : `${baseURL}/v1/chat/completions`;
-	const timeout = AbortSignal.timeout(RLM_TIMEOUT_MS);
+	const set = Number(env.SPOTLIGHT_RLM_TIMEOUT_MS);
+	const timeout = AbortSignal.timeout(Number.isInteger(set) && set > 0 ? set : RLM_TIMEOUT_MS);
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
@@ -128,7 +130,7 @@ async function distill(baseURL: string, env: ToolContext['env'], markdown: strin
 			next++;
 		}
 		if (next === start) break;
-		const answer = await rlmComplete(baseURL, { model: rlmModel(env), messages: [{ role: 'user', content: scope + request.prompt + numbered }], response_format: request.response_format, max_tokens: request.max_tokens, temperature: request.temperature }, signal);
+		const answer = await rlmComplete(env, baseURL, { model: rlmModel(env), messages: [{ role: 'user', content: scope + request.prompt + numbered }], response_format: request.response_format, max_tokens: request.max_tokens, temperature: request.temperature }, signal);
 		const fenced = answer.trim().match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
 		const parsed: unknown = JSON.parse(fenced ? fenced[1] : answer);
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).join() !== 'ranges') throw new Error('RLM returned invalid line selections');

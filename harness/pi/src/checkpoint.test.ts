@@ -149,10 +149,10 @@ test('an RLM error on the checkpoint falls back to the session model, and the co
 });
 
 // Constellation G4b: a helper that takes the checkpoint request and never
-// answers. An abort cancels the fold by design, so only the helper's own 120 s
-// timeout (RLM_TIMEOUT_MS) can hand the checkpoint to the session model; this
-// test therefore waits it out for real instead of adding a test-only knob.
-test('a helper that never answers the checkpoint request times out and the session model writes it', { timeout: 300_000 }, async (t) => {
+// answers. An abort cancels the fold by design, so only the helper's own
+// timeout can hand the checkpoint to the session model; SPOTLIGHT_RLM_TIMEOUT_MS
+// shortens the real 120 s wait here.
+test('a helper that never answers the checkpoint request times out and the session model writes it', async (t) => {
 	const sockets = new Set<import('node:net').Socket>();
 	const asked: string[] = [];
 	const rlm = createServer((request, response) => {
@@ -165,7 +165,7 @@ test('a helper that never answers the checkpoint request times out and the sessi
 	rlm.on('connection', (socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
 	await new Promise<void>((resolve) => rlm.listen(0, '127.0.0.1', resolve));
 	t.after(() => new Promise<void>((resolve) => { for (const socket of sockets) socket.destroy(); rlm.close(() => resolve()); }));
-	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: `http://127.0.0.1:${(rlm.address() as AddressInfo).port}/v1` }, WELL_FORMED, 200_000);
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: `http://127.0.0.1:${(rlm.address() as AddressInfo).port}/v1`, SPOTLIGHT_RLM_TIMEOUT_MS: '500' });
 	assert.equal(asked.length, 1, 'the helper was asked once');
 	assert.equal(fake.requests.filter(isSummaryRequest).length, 1, 'the session model writes the checkpoint');
 	assert.equal(compactions(chat).length, 1, 'the conversation folded');

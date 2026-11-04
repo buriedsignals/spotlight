@@ -64,6 +64,7 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_BROWSE_CHROMIUM`, `PLAYWRIGHT_BROWSERS_PATH` | no | The Chromium `browse` starts: an explicit executable, or where Playwright (and so `dev-browser install`) keeps its browsers. Default: the Chromium `dev-browser install` downloads. |
 | `SPOTLIGHT_RLM_OPENAI_BASE_URL` | no | OpenAI-compatible base URL of the RLM, the small resident model that distills every `fetch` (see **Lead distillation** under [Tools](#tools)) and that `run_rlm` uses. It reads case material, so it must be an endpoint you run yourself: a loopback address in the solo edition, an `own` route in the newsroom edition. Anything else stops the launcher (exit code 2). |
 | `SPOTLIGHT_RLM_OPENAI_MODEL`, `SPOTLIGHT_RLM_MODE`, `SPOTLIGHT_RLM_MODEL` | no | RLM model and `run_rlm` settings. |
+| `SPOTLIGHT_RLM_TIMEOUT_MS` | no | How long a request to the RLM may wait, in milliseconds; 120000 by default. |
 | `ANOMALY_HOME` | no | Absolute path of an Anomaly checkout ([Anomaly detectors](../../integrations/anomaly/integration.md)). Read by `anomaly_methods` (the lookup) and `anomaly_run` (the investigator's runner). |
 | `SPOTLIGHT_RESEARCH_SWARMS` | no | Engine's Research switch: `on` turns on the whole Research phase (the swarm still needs a key). Off, D1 refuses any research plan; the harness passes the value to its Python checks. Default `off`. |
 | `OPENROUTER_API_KEY` | swarm | The member's key for the swarm route (solo). Never logged. |

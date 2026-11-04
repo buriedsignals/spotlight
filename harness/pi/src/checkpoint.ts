@@ -182,7 +182,7 @@ function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.
 				const needed = Math.ceil(text.length / 3) + RLM_CHECKPOINT_ANSWER;
 				try {
 					if (context !== undefined && needed > context) log(`checkpoint: rlm skipped, the conversation needs about ${needed} tokens of its ${context}`);
-					else written = checkpointSections((await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal)) ?? '');
+					else written = checkpointSections((await rlmComplete(env, rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal)) ?? '');
 				} catch (error) {
 					if (signal?.aborted) throw error;
 					log(`checkpoint: rlm error, ${(error as Error).message}`);
