@@ -239,6 +239,11 @@ const FILE_OWNERS: Record<string, { role: string; task: string }> = {
 	'summary.md': { role: 'analyst', task: 'at the Investigation gate (the harness builds it)' },
 	'data/summary.json': { role: 'analyst', task: 'at the Investigation gate (the harness builds it)' },
 	'data/report-draft.json': { role: 'analyst', task: 'at Report (the harness builds it)' },
+	'data/knowledge-proposal.json': { role: 'analyst', task: 'at Ingest (the harness builds it, and builds the knowledge batch when the analyst finishes)' },
+};
+const ownerNext = (relativePath: string) => {
+	const owner = FILE_OWNERS[relativePath];
+	return owner ? ` It is the ${owner.role}'s file: to change it, call spawn_agent with agent "${owner.role}" and a task ${owner.task}.` : '';
 };
 
 export function writeTarget(caseDir: string, root: string, path: string, writes?: string[], denyWrites?: string[]): string {
@@ -258,8 +263,7 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 		const own = deliverableFor(process.env.SPOTLIGHT_ROLE ?? '', '', '')?.files;
 		// fc-stall scan: 93 orchestrator writes to workers' files in 48 runs;
 		// the refusal names the owner and the spawn that changes the file.
-		const owner = FILE_OWNERS[caseRelative(caseDir, target)];
-		const next = !own && owner ? ` It is the ${owner.role}'s file: to change it, call spawn_agent with agent "${owner.role}" and a task ${owner.task}.` : '';
+		const next = own ? '' : ownerNext(caseRelative(caseDir, target));
 		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it${own ? `. Your own file is ${own.join(' and ')}.` : '.'}${next}`);
 	}
 	// Checked before any parent folder is created, after the denylist so a
@@ -267,7 +271,9 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	// brief, whose refusal names the right path.
 	refuseMisplacedBrief(caseDir, target);
 	if (!inScope(writes, caseRelative(caseDir, target))) {
-		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})`);
+		// overnight-summary.md H-K2c: the orchestrator's write of the analyst's
+		// proposal was refused without naming the analyst or the next step.
+		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})${ownerNext(caseRelative(caseDir, target)) ? `.${ownerNext(caseRelative(caseDir, target))}` : ''}`);
 	}
 	const parts = relative(root, target).split(sep);
 	let current = root;

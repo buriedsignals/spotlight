@@ -1787,6 +1787,7 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 						{ name: 'write_file', arguments: { path: 'data/indicator-framework.json', content: '{"indicators": []}' } },
 						{ name: 'write_file', arguments: { path: 'summary.md', content: 'Gate summary.' } },
 						{ name: 'write_file', arguments: { path: 'brief-directions.txt', content: 'Approved brief.\n' } },
+						{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: '{}' } },
 					],
 				}
 			: { text: 'Done.' },
@@ -1811,6 +1812,12 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 	// fc-stall item 9: the refusal names the owner and the spawn to make.
 	assert.match(results, /refused: data\/methodology\.json is a case file another role writes; this agent may not write it\. It is the investigator's file: to change it, call spawn_agent with agent "investigator" and a task starting "MODE: METHODOLOGY CORRECTION" that says what to change\./);
 	assert.match(results, /data\/fact-check\.json [^\n]*It is the fact-checker's file: to change it, call spawn_agent with agent "fact-checker"/);
+	// overnight-summary.md H-K2c: the analyst's proposal names its writer and the move.
+	assert.match(results, /refused: data\/knowledge-proposal\.json is not a file this agent may write \([^)]*\)\. It is the analyst's file: to change it, call spawn_agent with agent "analyst" and a task at Ingest/);
+	// H-K2b: the orchestrator is shown only the file tools it has.
+	const orchestratorPrompt = systemText(fake.requests[0]);
+	for (const tool of ['edit_file', 'list_files', 'grep_files']) assert.doesNotMatch(orchestratorPrompt, new RegExp(`\\b${tool}\\b`), tool);
+	assert.match(orchestratorPrompt, /read-file, write-file -> `read_file`, `write_file`\./);
 });
 
 // D13: in an activated case the producers record passages only through

@@ -236,13 +236,15 @@ const SHELL_MAPPINGS: Array<[string, string | undefined]> = [
 	],
 	['`data/source-expressions.json` and `data/source-positions.json` refuse every file-tool write', 'source_expressions'],
 	['`spotlight_safe.py sha256` or any SHA-256 of a case file -> `hash_files`', 'hash_files'],
-	['`grep -n`, `sed -n` or Python to find a source_ref line range or JSON Pointer -> `grep_files` and `read_file` (offset/limit or json_pointer), which count and select exactly as the validators do', undefined],
+	['`grep -n`, `sed -n` or Python to find a source_ref line range or JSON Pointer -> `grep_files` and `read_file` (offset/limit or json_pointer), which count and select exactly as the validators do', 'grep_files'],
 ];
 
 const SHELL_LINE = (_tier: ModelTier, tools: string[]) =>
 	`- Shell steps in the skills map to typed tools: ${SHELL_MAPPINGS.filter(([, tool]) => !tool || tools.includes(tool))
 		.map(([step]) => step)
 		.join('; ')}. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.`;
+
+const FILE_VERBS: Array<[verb: string, tool: string]> = [['read-file', 'read_file'], ['write-file', 'write_file'], ['edit-file', 'edit_file'], ['list-files', 'list_files'], ['grep-files', 'grep_files']];
 
 const ADAPTER_LINES: AdapterLine[] = [
 	{ text: '- Navigator (Pi): use navigator_tools action find with your need, then action show for a selected tool. The wrapper handles CLI execution and authentication; its actual lookup result supplies current availability and protected provenance. Do not run navigator auth status or copy receipt fields. An unavailable or policy-skipped result is not successful use; use allowed local discovery or existing sources as needed. Tool recommendations are leads, not factual evidence or permission to install tools.', tools: ['navigator_tools'], skill: 'navigator' },
@@ -257,7 +259,10 @@ const ADAPTER_LINES: AdapterLine[] = [
 	{ text: '- Spotlight durable state (orchestrator only) -> `spotlight_resolve` and `spotlight_transition`. Both are bound by the harness to the active case.', orchestrator: true },
 	{ text: "- spawn-agent(id, prompt) / wait-agent -> `spawn_agent` (orchestrator only). It returns the worker's final answer.", orchestrator: true },
 	{
-		text: "- read-file, write-file, edit-file, list-files, grep-files -> `read_file`, `write_file`, `edit_file`, `list_files`, `grep_files`. {CASE_DIR} is the active case folder: give paths relative to it, keeping every folder the skill names and adding none (`{CASE_DIR}/brief-directions.txt` -> `brief-directions.txt`, `{CASE_DIR}/data/methodology.json` -> `data/methodology.json`). Files under the checkout's `schemas/` and agent instructions under `agents/references/` are readable with `read_file`. Writes outside your folder, through a symlink, or to resolver, review or receipt files are refused.",
+		// overnight-summary.md H-K2b: the orchestrator was shown edit_file,
+		// list_files and grep_files, which it does not have, and wrote a file
+		// named "list_files". Only the role's own file tools are named.
+		text: (_tier, tools) => `- ${FILE_VERBS.filter(([, tool]) => tools.includes(tool)).map(([verb]) => verb).join(', ')} -> ${FILE_VERBS.filter(([, tool]) => tools.includes(tool)).map(([, tool]) => `\`${tool}\``).join(', ')}. ` + "{CASE_DIR} is the active case folder: give paths relative to it, keeping every folder the skill names and adding none (`{CASE_DIR}/brief-directions.txt` -> `brief-directions.txt`, `{CASE_DIR}/data/methodology.json` -> `data/methodology.json`). Files under the checkout's `schemas/` and agent instructions under `agents/references/` are readable with `read_file`. Writes outside your folder, through a symlink, or to resolver, review or receipt files are refused.",
 	},
 	{ text: '- fetch -> `fetch` (use save_as for output_path).', tools: ['fetch'] },
 	{ text: '- search -> `search`.', tools: ['search'] },
