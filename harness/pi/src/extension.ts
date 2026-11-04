@@ -379,7 +379,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 // offered record_assessment only once it has fetched a second source; until
 // then judge_finding writes its claims. The frontier tier and every other
 // role keep all their tools.
-export const ASSESSMENT_HELD = 'record_assessment opens once you have fetched a second source, a page none of your findings cites. Until then answer each finding with judge_finding {finding_id, answer: supports, partly, doesnt or cant_tell, reason: one line}; code writes its claim.';
+export const ASSESSMENT_HELD = 'record_assessment opens once you have fetched a second source, a page none of your findings cites. Until then answer each finding with judge_finding {finding_id, answer: supports, partly, doesnt, cant_tell or contradicts (with quote, the contradicting line of the re-fetch), reason: one line}; code writes its claim.';
 const assessmentHeld = { held: false };
 function localAssessmentGate(role: string, caseDir: string, batch: string[]): (tool: string) => boolean {
 	if (role !== 'fact-checker' || !batch.length || (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === 'frontier') return () => true;

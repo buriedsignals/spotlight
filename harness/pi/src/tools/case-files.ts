@@ -1831,7 +1831,11 @@ function olderPassageRepair(context: ToolContext, message: string, mine: Set<str
 // Confidence is paperwork from the same rule (review-simp.md #1, plan C13):
 // medium for a verified row (one source, re-fetched), low for every other
 // answer. Without it Ingest's builder refuses the row and the report caps it.
-const ANSWERS = ['supports', 'partly', 'doesnt', 'cant_tell'] as const;
+// contradicts (Tom, 2026-11-04): the same re-fetch holds a line that
+// contradicts the finding; the fact-checker quotes it and the claim is
+// disputed, low, with that line against it. false needs a second source and
+// stays on record_assessment.
+const ANSWERS = ['supports', 'partly', 'doesnt', 'cant_tell', 'contradicts'] as const;
 
 // The lines of `text` that hold `quote`: as written first, else with spacing
 // normalized (the re-check's own comparison), then that window as the file has it.
@@ -1864,40 +1868,69 @@ function taskRecheck(context: ToolContext): Recheck {
 
 // The finding's supporting passage found in the harness re-fetch of its
 // source, as an evidence item quotes.ts records; or the reason there is none.
-function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; status: string } {
+// The finding's evidence items, by its refs or their claim links.
+function findingItems(context: ToolContext, findingId: string): RecordRow[] {
 	const finding = recordRows(recordDocument(context, 'data/findings.json').findings).find((row) => row.id === findingId);
 	const refs = new Set(Array.isArray(finding?.evidence_bundle_refs) ? finding.evidence_bundle_refs.map(String) : []);
-	const items = recordRows(recordDocument(context, 'data/evidence-bundle.json').items).filter((item) => refs.has(String(item.id)) || recordRows(item.claim_links).some((link) => link.finding_id === findingId));
+	return recordRows(recordDocument(context, 'data/evidence-bundle.json').items).filter((item) => refs.has(String(item.id)) || recordRows(item.claim_links).some((link) => link.finding_id === findingId));
+}
+
+// The harness re-fetch of `url` for this fact-checker, unchanged since and on
+// that URL, with its text; or why there is none.
+function refetchOf(context: ToolContext, url: string, recheck: Recheck): { path: string; accessed: string; text: string } | { status: string } {
+	const check = recheck[url];
+	const acquisition = typeof check === 'object' ? check.acquisition : undefined;
+	const capture = typeof acquisition?.path === 'string' ? factCheckerCapture(context, acquisition.path) : undefined;
+	// The re-fetch must have landed on the item's own URL, not a redirect (Codex review of simp-3, P1).
+	if (capture && capture.url !== url) return { status: `${url}: the re-fetch landed on ${capture.url}, not the cited source` };
+	if (!capture || capture.sha256 !== acquisition?.sha256) return { status: `${url}: ${typeof check === 'object' && check.status ? check.status : typeof check === 'string' ? check : 'no harness re-fetch'}` };
+	try {
+		return { path: acquisition!.path!, accessed: capture.accessed, text: readFileSync(readTarget(context.caseDir, acquisition!.path!, context.scope), 'utf8') };
+	} catch {
+		return { status: `${url}: the re-fetched copy cannot be read` };
+	}
+}
+
+const itemURL = (item: RecordRow) => typeof item.source_url === 'string' ? item.source_url : typeof item.url === 'string' ? item.url : undefined;
+
+function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; status: string } {
+	const items = findingItems(context, findingId);
 	const passages = recordRows(recordDocument(context, 'data/source-expressions.json').expressions).filter((passage) =>
 		recordRows(passage.lifecycle_events).at(-1)?.event === 'activated'
 		&& recordRows(passage.finding_links).some((link) => link.finding_id === findingId && link.relation === 'supports'));
 	const recheck = taskRecheck(context);
 	const statuses: string[] = [];
 	for (const item of items) {
-		const url = typeof item.source_url === 'string' ? item.source_url : typeof item.url === 'string' ? item.url : undefined;
+		const url = itemURL(item);
 		const own = passages.filter((passage) => passage.original_evidence_bundle_id === item.id && typeof passage.text === 'string');
 		if (!url || !own.length) continue;
-		const check = recheck[url];
-		const acquisition = typeof check === 'object' ? check.acquisition : undefined;
-		const capture = typeof acquisition?.path === 'string' ? factCheckerCapture(context, acquisition.path) : undefined;
-		// The re-fetch must have landed on the item's own URL, not a redirect (Codex review of simp-3, P1).
-		if (capture && capture.url !== url) { statuses.push(`${url}: the re-fetch landed on ${capture.url}, not the cited source`); continue; }
-		if (!capture || capture.sha256 !== acquisition?.sha256) {
-			statuses.push(`${url}: ${typeof check === 'object' && check.status ? check.status : typeof check === 'string' ? check : 'no harness re-fetch'}`);
-			continue;
-		}
-		let text: string;
-		try { text = readFileSync(readTarget(context.caseDir, acquisition!.path!, context.scope), 'utf8'); } catch { statuses.push(`${url}: the re-fetched copy cannot be read`); continue; }
+		const refetch = refetchOf(context, url, recheck);
+		if ('status' in refetch) { statuses.push(refetch.status); continue; }
 		let unsupported = false;
 		for (const passage of own) {
-			const found = locate(text, String(passage.text));
+			const found = locate(refetch.text, String(passage.text));
 			if (found && !sameSourceSupport(context, url, findingId, found.quote)) { unsupported = true; continue; }
-			if (found) return { status: 'found', item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${capture.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: acquisition!.path, line_start: found.line_start, line_end: found.line_end } } };
+			if (found) return { status: 'found', item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } } };
 		}
 		statuses.push(unsupported ? `${url}: the investigation records no direct or indirect support from this source for the finding` : `${url}: re-fetched, but the supporting passage is no longer on the page`);
 	}
 	if (!statuses.length) return { status: passages.length ? 'no harness re-fetch of its sources' : 'no recorded supporting passage to compare' };
 	return { status: statuses.join('; ') };
+}
+
+// The fact-checker's quote found in the harness re-fetch of one of the
+// finding's sources, as an evidence item against it; or the reason it is not.
+function refetchedContradiction(context: ToolContext, findingId: string, quote: string): { item?: RecordRow; status: string } {
+	const recheck = taskRecheck(context);
+	const statuses: string[] = [];
+	for (const url of new Set(findingItems(context, findingId).map(itemURL).filter((url): url is string => !!url))) {
+		const refetch = refetchOf(context, url, recheck);
+		if ('status' in refetch) { statuses.push(refetch.status); continue; }
+		const found = locate(refetch.text, quote);
+		if (found) return { status: 'found', item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; this line contradicts the finding. Same source as the investigation.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } } };
+		statuses.push(`${url}: the quote is not in its re-fetch ${refetch.path}`);
+	}
+	return { status: statuses.length ? statuses.join('; ') : 'no harness re-fetch of its sources' };
 }
 
 // B20 (K4 Tor P3: 13 record_assessment calls, 0 judge_finding, every
@@ -1921,15 +1954,16 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 		finding_id: Type.Optional(Type.String({ minLength: 1 })),
 		answer: Type.Union(ANSWERS.map((answer) => Type.Literal(answer))),
 		reason: Type.String({ minLength: 1, maxLength: 1000 }),
+		quote: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
 	}, { additionalProperties: false });
 	return {
 		name: 'judge_finding',
 		label: 'Judge finding',
 		parameters,
 		executionMode: 'sequential',
-		description: `Answer one question for one finding: does its source support it? answer is supports, partly, doesnt or cant_tell, with a one-line reason; code writes the claim from the harness re-fetch (partly adds a partial_support flag).${filled ? ` Your batch holds one finding, ${filled}: omit finding_id.` : batch.length ? ` finding_id is one of ${batch.join(', ')}.` : ''}`,
+		description: `Answer one question for one finding: does its source support it? answer is supports, partly, doesnt, cant_tell or contradicts, with a one-line reason; code writes the claim from the harness re-fetch (partly adds a partial_support flag). contradicts also needs quote, the exact line of the re-fetch that contradicts the finding; the claim is then disputed.${filled ? ` Your batch holds one finding, ${filled}: omit finding_id.` : batch.length ? ` finding_id is one of ${batch.join(', ')}.` : ''}`,
 		async execute(id, raw, signal, ...rest) {
-			const input = checkedParams<{ finding_id?: string; answer: typeof ANSWERS[number]; reason: string }>('judge_finding', parameters, raw);
+			const input = checkedParams<{ finding_id?: string; answer: typeof ANSWERS[number]; reason: string; quote?: string }>('judge_finding', parameters, raw);
 			const findingId = input.finding_id ?? filled;
 			if (!findingId) throw new ToolArgumentError(`judge_finding: finding_id is required${batch.length ? `: one of ${batch.join(', ')}` : ''}.`);
 			if (batch.length && !batch.includes(findingId)) throw new ToolArgumentError(`judge_finding: ${findingId} is not in your batch (${batch.join(', ')}).`);
@@ -1941,18 +1975,25 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 				if (support.item) evidence.unshift(support.item);
 				else status = support.status;
 			}
-			const verdict = input.answer === 'supports' && evidence.length ? 'verified' : 'unverified';
+			const against: RecordRow[] = [];
+			if (input.answer === 'contradicts') {
+				if (!input.quote?.trim()) throw new ToolArgumentError(`judge_finding: contradicts needs quote, the exact line of the harness re-fetch of ${findingId}'s source that contradicts it. Copy it from the re-fetch, or answer doesnt.`);
+				const contradiction = refetchedContradiction(context, findingId, input.quote);
+				if (!contradiction.item) throw new ToolArgumentError(`judge_finding: ${findingId} is not recorded: ${contradiction.status}. Copy the contradicting line exactly from the re-fetch, or answer doesnt.`);
+				against.push(contradiction.item);
+			}
+			const verdict = input.answer === 'supports' && evidence.length ? 'verified' : against.length ? 'disputed' : 'unverified';
 			const assessment: RecordRow = {
 				finding_id: findingId,
 				verdict,
 				confidence: verdict === 'verified' ? 'medium' : 'low',
 				evidence_for: evidence,
-				evidence_against: [],
+				evidence_against: against,
 				notes: status ? `${reason} (Harness re-check: ${status}.)` : reason,
 				...(input.answer === 'partly' ? { flags: [{ code: 'partial_support', reason }] } : {}),
 			};
 			const result = await assess.execute(id, { assessment }, signal, ...rest);
-			const said = verdict === 'verified' ? `${findingId} recorded as verified.` : `${findingId} recorded as unverified${status ? `: ${status}` : ''}.`;
+			const said = verdict === 'unverified' ? `${findingId} recorded as unverified${status ? `: ${status}` : ''}.` : `${findingId} recorded as ${verdict}.`;
 			return { ...result, content: [...result.content, { type: 'text' as const, text: said }] };
 		},
 	};

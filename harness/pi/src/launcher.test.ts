@@ -5041,12 +5041,19 @@ test('a rejected multi-quote write is carried after its earlier evidence side ef
 // may cite the re-fetch itself, or answer judge_finding and code writes the
 // claim; a page that changed leaves the finding unverified with the reason.
 test('a fact-checker can cite the harness recheck as its independent acquired evidence, or answer judge_finding and code writes the claim', async (t) => {
- for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated'] as const) await t.test(route, async (t) => {
+ for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts'] as const) await t.test(route, async (t) => {
 	const url = 'https://registry.example.org/recheck';
 	// The case's supporting passage is "Acme paid Doe." (the fixture's SX1).
-	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : 'Registry record\nAcme paid Doe.\n';
+	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : route === 'judge-contradicts' ? 'Registry record\nAcme never paid Doe.\n' : 'Registry record\nAcme paid Doe.\n';
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) {
+			// Tom (2026-11-04): contradicts is disputed, and needs a quote from the re-fetch; first without one.
+			if (route === 'judge-contradicts') {
+				const done = toolResults(request).length;
+				return done === 0 ? { toolCalls: [{ name: 'judge_finding', arguments: { answer: 'contradicts', reason: 'The registry says the payment never happened.' } }] }
+					: done === 1 ? { toolCalls: [{ name: 'judge_finding', arguments: { answer: 'contradicts', reason: 'The registry says the payment never happened.', quote: 'Acme never paid Doe.' } }] }
+					: { text: 'Checked.' };
+			}
 			if (toolResults(request).length) return { text: 'Checked.' };
 			if (route.startsWith('judge')) return { toolCalls: [{ name: 'judge_finding', arguments: { answer: 'supports', reason: 'The registry states the payment.' } }] };
 			const path = /research\/fc-recheck-E1\.md(?:\.raw)?/.exec(userText(request))?.[0];
@@ -5087,6 +5094,22 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	}
 	if (route === 'record-unrelated') {
 		assert.throws(() => execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir], { encoding: 'utf8', stdio: 'pipe' }), (error: { stdout?: string }) => /does not link finding F1 as direct or indirect support/.test(error.stdout ?? ''));
+		return;
+	}
+	if (route === 'judge-contradicts') {
+		const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!);
+		assert.match(results[0], /judge_finding: contradicts needs quote/);
+		// Continuity: the claim is written disputed, low, with the re-fetch line against it, and validates.
+		assert.equal(checked.claims[0].verdict, 'disputed');
+		assert.equal(checked.claims[0].confidence, 'low');
+		assert.equal(checked.claims[0].evidence_for.length, 0);
+		assert.equal(checked.claims[0].evidence_against[0].quote, 'Acme never paid Doe.');
+		assert.match(checked.claims[0].evidence_against[0].source_ref.path, /^research\/fc-recheck-E1\.md/);
+		try {
+			execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir], { encoding: 'utf8' });
+		} catch (error) {
+			assert.fail(`validate-fact-check.py: ${String((error as { stdout?: string }).stdout ?? error)} ${JSON.stringify(checked.claims)}`);
+		}
 		return;
 	}
 	if (route === 'judge-changed') {
