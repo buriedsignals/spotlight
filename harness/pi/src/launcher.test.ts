@@ -6321,7 +6321,8 @@ test('an auto-spawned worker keeps its own progress watchdog, and aborting the r
 		await briefApproved(space);
 		const chat = launch(t, baseEnv(space, fake.baseURL));
 		await waitUntil(() => existsSync(join(space.dataDir, 'locks', 'case-a.lock')), 30_000);
-		await waitUntil(() => readFileSync(join(space.dataDir, 'locks', 'case-a.lock'), 'utf8').includes('children'), 30_000);
+		// The lock is written with no children before the orchestrator is tracked: `before` must hold it, or the test waits for it to die.
+		await waitUntil(() => { try { return JSON.parse(readFileSync(join(space.dataDir, 'locks', 'case-a.lock'), 'utf8')).children?.length > 0; } catch { return false; } }, 30_000);
 		const before = new Set((await lockRecord(space)).children);
 		chat.send({ id: 'p-1', type: 'prompt', message: 'Continue.' });
 		await waitUntil(() => fake.requests.some((request) => isWorkerRequest(request, 'investigator')), 30_000);
