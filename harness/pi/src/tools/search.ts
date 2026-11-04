@@ -41,7 +41,7 @@ export function searchTool(context: ToolContext): ToolDefinition {
 				'search',
 				await runPython(context, args, {
 					// Engine's bsig checks the query for protected sources in the install's wiki.
-					keys: ['FIRECRAWL_API_KEY', ...engineEnv(context.env)],
+					keys: ['FIRECRAWL_API_KEY', 'SPOTLIGHT_SENSITIVE', ...engineEnv(context.env)],
 					extra: { SPOTLIGHT_CONFIG: context.configPath, ...(searchURL ? { SEARXNG_URL: searchURL } : {}) },
 					signal,
 				}),

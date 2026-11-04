@@ -17,6 +17,7 @@ import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { fetchTool } from './fetch.ts';
+import { searchTool } from './search.ts';
 
 const PAGE_URL = 'https://registry.example.org/company/42';
 const RAW_PAGE = '# Company 42\n\nNavigation | Login | Cookies\n\nAda Lovelace is President of Analytical Engines SA since 2019.\n\nFooter boilerplate.\n';
@@ -422,4 +423,20 @@ test('a fact-checker\'s fetch is saved under an fc- name, an investigator\'s as 
 	assert.equal((await checker.call({ url: PAGE_URL, save_as: 'fc-again.md' })).saved_to, 'research/fc-again.md');
 	const investigator = await fixture(t, { SPOTLIGHT_ROLE: 'investigator' });
 	assert.equal((await investigator.call({ url: PAGE_URL, save_as: 'research/company-42.md' })).saved_to, 'research/company-42.md');
+});
+
+// briefs/qwen-lanes.md Search modes: the seam is the only guard for a sensitive case, and a program sees only the variables it is handed.
+test('the search and fetch seams are told a run is sensitive', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-seam-env-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	const seen = join(root, 'seen.txt');
+	const seam = join(root, 'python');
+	await writeFile(seam, `#!/bin/sh\necho "$SPOTLIGHT_SENSITIVE" >> ${JSON.stringify(seen)}\necho '[]'\n`);
+	await chmod(seam, 0o755);
+	const context = { caseDir, writeRoot: caseDir, python: seam, configPath: join(root, 'config.json'), env: { PATH: process.env.PATH, SPOTLIGHT_SENSITIVE: 'true', SPOTLIGHT_ANONYMIZE_FETCH: 'true' } };
+	await searchTool(context).execute('s', { query: 'Acme filing' }, undefined, undefined, undefined as never);
+	await fetchTool(context).execute('f', { url: PAGE_URL }, undefined, undefined, undefined as never).catch(() => undefined);
+	assert.deepEqual((await readFile(seen, 'utf8')).trim().split('\n'), ['true', 'true']);
 });

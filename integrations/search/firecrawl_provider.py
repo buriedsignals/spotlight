@@ -1,8 +1,8 @@
 """Firecrawl search provider — optional escape hatch, not the default.
 
-Used only when SearXNG is unreachable and a Firecrawl CLI is present, or when
-explicitly requested (`--provider firecrawl` / `--union`). Sovereign-first: the
-default path never touches this. See KTD4 in tools/GOING_LOCAL.md.
+Used as search.py sets out (SearXNG down, no hits, `always` mode, or asked for
+with `--provider firecrawl` / `--union`), and never in sensitive mode: this
+module refuses that itself. See KTD4 in tools/GOING_LOCAL.md.
 """
 from __future__ import annotations
 
@@ -16,15 +16,18 @@ if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
 from integrations._cli import run_captured, strip_ansi  # noqa: E402
 from integrations._credentials import executable, redact, subprocess_env  # noqa: E402
+from integrations._firecrawl_policy import SENSITIVE_REFUSAL, sensitive  # noqa: E402
 
 from .search_types import SearchError, SearchHit
 
 
 def available() -> bool:
-    return executable("firecrawl") is not None
+    return not sensitive() and executable("firecrawl") is not None
 
 
 def search(query: str, *, limit: int = 10) -> list[SearchHit]:
+    if sensitive():
+        raise SearchError(SENSITIVE_REFUSAL)
     binary = executable("firecrawl")
     if binary is None:
         raise SearchError("firecrawl CLI not on PATH")
