@@ -1404,9 +1404,11 @@ test('on a small fold point read_file pages a large capture, the worker follows 
 			if (isWorkerRequest(request, 'investigator')) {
 				const results = toolResults(request);
 				if (results.length === 0) return { toolCalls: [{ name: 'read_file', arguments: { path: 'research/registry.md' } }] };
-				const next = /Read the next part with read_file offset (\d+) and limit (\d+)/.exec(results.at(-1)!);
+				const next = /Read the next part with read_file offset (\d+) and limit (\d+)/.exec(results[0]);
 				if (results.length === 1 && next) return { toolCalls: [{ name: 'read_file', arguments: { path: 'research/registry.md', offset: Number(next[1]), limit: Number(next[2]) } }] };
-				if (!results.some((result) => /recorded|F1/.test(result) && !/^refused/.test(result)) && results.length < 4) return { toolCalls: [{ name: 'record_finding', arguments: { finding: { claim: 'The registry names Acme Holdings as the owner.', confidence: 'medium' }, cite: [{ path: 'research/registry.md', line_start: 300, line_end: 300 }] } }] };
+				// The caller's own range ten lines past one page: the next read stays inside it.
+				if (results.length === 2 && next) return { toolCalls: [{ name: 'read_file', arguments: { path: 'research/registry.md', offset: 1, limit: Number(next[1]) - 1 + 10 } }] };
+				if (!results.some((result) => /recorded|F1/.test(result) && !/^refused/.test(result)) && results.length < 5) return { toolCalls: [{ name: 'record_finding', arguments: { finding: { claim: 'The registry names Acme Holdings as the owner.', confidence: 'medium' }, cite: [{ path: 'research/registry.md', line_start: 300, line_end: 300 }] } }] };
 				return { text: 'Recorded.' };
 			}
 			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EXECUTION\nWork the approved methodology.' } }] } : { text: 'Done.' };
@@ -1432,6 +1434,8 @@ test('on a small fold point read_file pages a large capture, the worker follows 
 		assert.match(results[0], /^Registry page line 1 /);
 		assert.match(results[0], /\[page: lines 1-\d+ of 400, so the read stays under this model's context fold\. Read the next part with read_file offset \d+ and limit \d+\.\]/);
 		assert.match(results[1], /The registry names Acme Holdings/, 'the next page holds line 300');
+		const pageEnd = Number(/offset (\d+)/.exec(results[0])![1]) - 1;
+		assert.match(results[2], new RegExp(`Read the next part with read_file offset ${pageEnd + 1} and limit 10\\.`), 'the next read stays inside the caller\'s range (Codex review of simp-read)');
 		const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<{ claim: string; evidence?: unknown }> };
 		assert.ok(findings.findings.some((finding) => /Acme Holdings/.test(finding.claim)), JSON.stringify(results.slice(2)));
 	});

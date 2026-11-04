@@ -20,6 +20,8 @@ export const COMMIT_GAP_TURNS = 4;
 const GREP_LINE_CHARS = 400;
 const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
 const CAPTURE = /^(?:research|evidence)\//;
+// case-files.ts readPage's note, the row before READ_TRUNCATED.
+const PAGE_NOTE = /\n\[page: lines (\d+)-\d+ of \d+, so the read stays under this model's context fold\.[^\n]*\]\n\[truncated: use offset and limit to read the rest\]$/;
 
 export const COMMIT_TEXT = 'Commit step (from the harness, not the member): record what the lines you have read already support. Call record_finding with the claim in your own words, its confidence, and cite the path and line numbers you read (as grep_files and read_file numbered them). If no line you have read supports a finding yet, call nothing_found with the reason. You keep working after this.';
 
@@ -87,8 +89,9 @@ export function commitState(messages: readonly unknown[], recorded: ReadonlySet<
 			if (body.trim() !== 'no matches' && rows.every(Boolean)) {
 				for (const match of rows) if (match![3].length < GREP_LINE_CHARS) show(match![1], Number(match![2]), call.turn);
 			}
-		} else if (call.name === 'read_file' && typeof call.args.path === 'string' && (call.args.offset || call.args.limit)) {
-			const from = Number(call.args.offset ?? 1);
+		} else if (call.name === 'read_file' && typeof call.args.path === 'string' && (call.args.offset || call.args.limit || PAGE_NOTE.test(body))) {
+			// A whole-file read on a small fold point returns a page that names its lines (Codex review of simp-read).
+			const from = call.args.offset || call.args.limit ? Number(call.args.offset ?? 1) : Number(PAGE_NOTE.exec(body)![1]);
 			const cut = body.endsWith(READ_TRUNCATED);
 			const rows = (cut ? body.slice(0, -READ_TRUNCATED.length).replace(/\n$/, '') : body).split('\n');
 			// The row before a cut may be partial: only whole lines were shown.

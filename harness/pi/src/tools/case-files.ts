@@ -39,7 +39,7 @@ export function readPageChars(env: Record<string, string | undefined> = process.
 	if (env.SPOTLIGHT_MODEL_TIER === 'frontier' || !Number.isInteger(at) || at <= 0 || at > READ_PAGE_FOLD_MAX) return undefined;
 	return Math.floor((at * 2.3) / 4);
 }
-function readPage(lines: string[], first: number, total: number, page: number): string {
+function readPage(lines: string[], first: number, total: number, page: number, limit?: number): string {
 	let used = 0;
 	let count = 0;
 	for (const line of lines) {
@@ -48,9 +48,14 @@ function readPage(lines: string[], first: number, total: number, page: number): 
 		count += 1;
 	}
 	const last = first + count - 1;
-	// One line longer than a page is cut; the marker below says the last row may be partial.
+	// One line longer than a page is cut, and said so: read_file has no cursor
+	// inside a line (Codex review of simp-read).
 	const body = lines.slice(0, count).join('\n').slice(0, page);
-	return `${body}\n[page: lines ${first}-${last} of ${total}, so the read stays under this model's context fold. Read the next part with read_file offset ${last + 1} and limit ${count}.]\n${READ_TRUNCATED}`;
+	const cut = lines[0].length > page ? ` Line ${first} is longer than a page (${lines[0].length} characters) and was cut at ${page}.` : '';
+	// Within the caller's own range, the next read stays inside it (Codex review of simp-read).
+	const next = limit === undefined ? count : Math.min(count, limit - count);
+	const more = next > 0 && last < total ? ` Read the next part with read_file offset ${last + 1} and limit ${next}.` : '';
+	return `${body}\n[page: lines ${first}-${last} of ${total}, so the read stays under this model's context fold.${cut}${more}]\n${READ_TRUNCATED}`;
 }
 
 // fc-stall scan (incr-test2 sp98): fact-checker threads folded at 50-54k after
@@ -1255,7 +1260,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (page && selected.length > page) {
 					const all = sourceLines(text);
 					const first = input.offset ?? 1;
-					return textResult(readPage(all.slice(first - 1, input.limit ? first - 1 + input.limit : undefined), first, all.length, page));
+					return textResult(readPage(all.slice(first - 1, input.limit ? first - 1 + input.limit : undefined), first, all.length, page, input.limit));
 				}
 				return textResult(
 					selected.length > MAX_READ_CHARS

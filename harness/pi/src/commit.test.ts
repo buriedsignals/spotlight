@@ -13,8 +13,10 @@ test('shown lines: grep hits under research/ or evidence/ under 400 characters, 
 		call('1', 'grep_files', { pattern: 'paid' }), result('1', `research/a.md:5:Acme paid Doe.\nresearch/a.md:9:${'x'.repeat(400)}\ndata/findings.json:2:paid`),
 		call('2', 'read_file', { path: 'evidence/b.txt', offset: 10, limit: 3 }), result('2', 'line ten\nline eleven\nline twe\n[truncated: use offset and limit to read the rest]'),
 		call('3', 'read_file', { path: 'research/c.md' }), result('3', 'whole file, no line numbers'),
+		// simp-read: a whole-file read paged on a small fold point names its lines; the note row is not a line.
+		call('4', 'read_file', { path: 'research/d.md' }), result('4', "one\ntwo\nthree\n[page: lines 1-3 of 9, so the read stays under this model's context fold. Read the next part with read_file offset 4 and limit 3.]\n[truncated: use offset and limit to read the rest]"),
 	]);
-	assert.deepEqual([...state.shown].map(([path, lines]) => [path, [...lines.keys()]]), [['research/a.md', [5]], ['evidence/b.txt', [10, 11]]]);
+	assert.deepEqual([...state.shown].map(([path, lines]) => [path, [...lines.keys()]]), [['research/a.md', [5]], ['evidence/b.txt', [10, 11]], ['research/d.md', [1, 2, 3]]]);
 	// A successful record_finding covering a line makes it recorded; a refused one does not.
 	const recorded = commitState([call('1', 'grep_files'), result('1', 'research/a.md:5:Acme paid Doe.'), call('2', 'record_finding', { cite: [{ path: 'research/a.md', line_start: 5, line_end: 5 }] }), result('2', 'refused', true)]);
 	assert.equal(recorded.uncommitted.length, 1);
