@@ -14,6 +14,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCh
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, factCheckerSourceURLs, fetchedFile, registeredCapture } from './fetch.ts';
+import { missingValues } from './claim-values.ts';
 import { flatText, linkText, sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
@@ -2112,7 +2113,17 @@ function refetchOf(context: ToolContext, url: string, recheck: Recheck): { path:
 
 const itemURL = (item: RecordRow) => typeof item.source_url === 'string' ? item.source_url : typeof item.url === 'string' ? item.url : undefined;
 
-function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; status: string } {
+// A finding's source as the case holds it: the harness re-fetch and the capture the item cites.
+function sourcePages(context: ToolContext, item: RecordRow, recheck: Recheck): string[] {
+	const url = itemURL(item);
+	const page = url ? refetchOf(context, url, recheck) : undefined;
+	let capture = '';
+	// Only a file inside the case; an unreadable one is simply not a source, so the claim check never fails the call.
+	try { if (typeof item.raw_path === 'string') capture = readFileSync(readTarget(context.caseDir, item.raw_path), 'utf8'); } catch { capture = ''; }
+	return [page && 'text' in page ? page.text : '', capture];
+}
+
+function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; status: string; passages?: string; pages?: string } {
 	const items = findingItems(context, findingId);
 	const passages = recordRows(recordDocument(context, 'data/source-expressions.json').expressions).filter((passage) =>
 		recordRows(passage.lifecycle_events).at(-1)?.event === 'activated'
@@ -2129,7 +2140,7 @@ function refetchedSupport(context: ToolContext, findingId: string): { item?: Rec
 		for (const passage of own) {
 			const found = locate(refetch.text, String(passage.text));
 			if (found && !sameSourceSupport(context, url, findingId, found.quote)) { unsupported = true; continue; }
-			if (found) return { status: 'found', item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } } };
+			if (found) return { status: 'found', passages: passages.map((row) => String(row.text ?? '')).join('\n'), pages: items.flatMap((other) => sourcePages(context, other, recheck)).join('\n'), item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } } };
 		}
 		statuses.push(unsupported ? `${url}: the investigation records no direct or indirect support from this source for the finding` : `${url}: re-fetched, but the supporting passage is no longer on the page`);
 	}
@@ -2198,6 +2209,13 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 				// B20b: a run with no harness re-fetch (no batch) cannot verify; "supports" must not turn a claim unverified.
 				const existing = recordRows(recordDocument(context, 'data/fact-check.json').claims).find((row) => row.finding_id === findingId);
 				if (!evidence.length && !context.env.SPOTLIGHT_TASK_RECHECK && existing) return textResult(`${findingId} keeps its ${String(existing.verdict)} claim: this run has no harness re-fetch to check it against.`);
+				// The claim check downgrades and never refuses: the same claim is written, unverified, with the value named.
+				const claim = recordRows(recordDocument(context, 'data/findings.json').findings).find((row) => row.id === findingId)?.claim;
+				const missing = support.item ? missingValues(String(claim ?? ''), support.passages ?? '', support.pages) : [];
+				if (missing.length) {
+					evidence.length = 0;
+					status = `the finding's sources do not contain ${missing.join(', ')}`;
+				}
 			}
 			const against: RecordRow[] = [];
 			if (input.answer === 'contradicts') {

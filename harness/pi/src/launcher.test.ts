@@ -5254,7 +5254,7 @@ test('a rejected multi-quote write is carried after its earlier evidence side ef
 // may cite the re-fetch itself, or answer judge_finding and code writes the
 // claim; a page that changed leaves the finding unverified with the reason.
 test('a fact-checker can cite the harness recheck as its independent acquired evidence, or answer judge_finding and code writes the claim', async (t) => {
- for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts'] as const) await t.test(route, async (t) => {
+ for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts', 'judge-value'] as const) await t.test(route, async (t) => {
 	const url = 'https://registry.example.org/recheck';
 	// The case's supporting passage is "Acme paid Doe." (the fixture's SX1).
 	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : route === 'judge-contradicts' ? 'Registry record\nAcme [never](https://registry.example.org/note) paid Doe.\n' : 'Registry record\nAcme paid Doe.\n';
@@ -5291,6 +5291,17 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	// One investigator item to recheck: the fixture's own FC-E1 re-fetch is left out.
 	bundle.items = bundle.items.filter((item: { created_by?: string }) => item.created_by !== 'fact-checker');
 	await writeFile(bundlePath, JSON.stringify(bundle));
+	if (route === 'judge-value') {
+		// The claim check: the passage is on the page, but it does not hold the finding's figure.
+		const findingsPath = join(caseDir, 'data', 'findings.json');
+		const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+		const claim = 'Acme paid Doe 1.2M on 3 March 2024.';
+		findings.findings[0].claim = claim;
+		await writeFile(findingsPath, JSON.stringify(findings));
+		for (const item of bundle.items) for (const link of item.claim_links ?? []) if (link.finding_id === 'F1') link.claim_text = claim;
+		await writeFile(bundlePath, JSON.stringify(bundle));
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'write-source-expressions.py'), caseDir, '--fingerprint-findings']);
+	}
 	const runs = join(space.root, 'recheck-runs');
 	const python = join(space.root, 'recheck-python');
 	await writeFile(python, `#!${process.execPath}\nconst fs = require('node:fs');\nconst cp = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) { fs.appendFileSync(${JSON.stringify(runs)}, 'fetch\\n'); process.stdout.write(JSON.stringify({ markdown:${JSON.stringify(page)}, source_url:${route === 'judge-redirected' ? JSON.stringify('https://elsewhere.example/landing') : 'args.at(-1)'}, provider:'crawl4ai', status_code:200 })); }\nelse { try { process.stdout.write(cp.execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, {stdio:['inherit','pipe','inherit']})); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exit(error.status ?? 1); } }\n`, { mode: 0o755 });
@@ -5323,6 +5334,17 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 		} catch (error) {
 			assert.fail(`validate-fact-check.py: ${String((error as { stdout?: string }).stdout ?? error)} ${JSON.stringify(checked.claims)}`);
 		}
+		return;
+	}
+	if (route === 'judge-value') {
+		// Downgraded, not refused: the claim is written, names the values, the turn goes on, and it validates.
+		assert.equal(checked.claims[0].verdict, 'unverified');
+		assert.equal(checked.claims[0].confidence, 'low');
+		assert.equal(checked.claims[0].evidence_for.length, 0);
+		assert.match(checked.claims[0].notes, /The registry states the payment\. \(Harness re-check: the finding's sources do not contain 3 March 2024, 1\.2M/);
+		const reply = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!)[0];
+		assert.match(reply, /F1 recorded as unverified: the finding's sources do not contain/);
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
 		return;
 	}
 	if (route === 'judge-changed') {
