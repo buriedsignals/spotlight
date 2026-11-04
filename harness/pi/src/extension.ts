@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { ROUTER_CALL_PREFIX, ROUTER_MODEL, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
+import { ROUTER_CALL_PREFIX, ROUTER_MODEL, harnessTurn, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
@@ -23,7 +23,7 @@ import { fixedStepRunner } from './tools/programs.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
-import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
+import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
@@ -73,15 +73,17 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	// Newsroom edition: the Editorial MCP tools, served by the launcher. The
 	// allowlist below keeps only the ones this role's swaps grant.
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
+	// Consecutive watchdog-stopped dispatches of one worker task (STALLED_DISPATCHES).
+	const stall: DispatchStall = { key: '', count: 0, digest: '' };
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
-		const stall: DispatchStall = { key: '', count: 0, digest: '' };
 		pi.on('before_agent_start', (event) => {
 			if (event.messageType !== 'user') return;
 			resetFactCheckerCycle(cycle);
-			// A member turn lets code start a stalled worker again (STALLED_DISPATCHES).
-			Object.assign(stall, { key: '', count: 0, digest: '' });
+			// Only the member's own turn lets code start a stalled worker again;
+			// a harness nudge does not (Codex review of simp-redispatch, P1).
+			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) Object.assign(stall, { key: '', count: 0, digest: '' });
 			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
 			// on a member's message.
 			process.send?.({ kind: 'spotlight-member-turn' });
@@ -354,7 +356,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	if (role === ORCHESTRATOR && tier12b) {
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-		registerTextTurnNudge(pi, () => caseForModel(active, runAdapter));
+		registerTextTurnNudge(pi, () => caseForModel(active, runAdapter), () => stall.count >= STALLED_DISPATCHES);
 	}
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
@@ -751,7 +753,9 @@ export const textTurnNudge = (phase: string, owner: string) =>
 // with no tool call, in a phase only the orchestrator can move, gets one
 // nudge; a second text turn in a row ends the run as before, so a model that
 // is done is not held.
-function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>): void {
+// `held`: code has stopped re-dispatching a stalled worker and the member was
+// to be told; that text turn is right (Codex review of simp-redispatch, P2).
+function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>, held: () => boolean = () => false): void {
 	let nudged = false;
 	pi.on('message_end', async (event) => {
 		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
@@ -761,7 +765,7 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 			nudged = false;
 			return;
 		}
-		if (message.stopReason !== 'stop' || nudged || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
+		if (message.stopReason !== 'stop' || nudged || held() || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
 		let status: Record<string, unknown>;
 		try {
 			status = await resolve();

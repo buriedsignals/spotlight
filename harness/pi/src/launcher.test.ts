@@ -2218,7 +2218,8 @@ test('a PLANNING investigator stopped twice by the progress watchdog with no cha
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	// 12b: the tier with the text-turn nudge, which must not follow the stop.
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b' });
 	const threads = () => fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0 && /MODE: PLANNING/.test(userText(request))).length;
 
 	await settledPrompt(chat, 'Continue.', 120_000);
@@ -2227,6 +2228,7 @@ test('a PLANNING investigator stopped twice by the progress watchdog with no cha
 	const held = lastResolution(chat) as { worker_stalled?: unknown; next_action?: unknown; fixed_steps?: unknown };
 	assert.deepEqual(held.worker_stalled, { step: 'investigator (investigator PLANNING)', attempts: 2 });
 	assert.equal(held.fixed_steps, undefined, 'the held resolve starts nothing');
+	assert.ok(!fake.requests.some((request) => JSON.stringify(request.messages).includes('Your turn ended with text')), 'no text-turn nudge after the stop (Codex review of simp-redispatch, P2)');
 	assert.match(String(held.next_action), /2 times in a row, and each time the progress watchdog stopped it with no change to the case files, so code does not start it again\. Tell the member [^]*amend the brief[^]*retry/);
 
 	// Continuity: the member's turn lets code start the planner again.

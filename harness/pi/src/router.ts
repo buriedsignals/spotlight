@@ -34,6 +34,9 @@ const HARNESS_TURN = /^(The conversation history before this point was compacted
 // whole so a member message that merely starts the same way stays the member's.
 const HARNESS_NUDGES = ['Your last turn was empty. Call the next tool, or give your answer.', 'Your last turn ran on without a tool call and was cut off. Call the next tool, or give your answer in a few sentences.'];
 
+// Whether a user-role turn is the harness's own (a nudge or the compaction note), not the member's.
+export const harnessTurn = (said: string) => HARNESS_TURN.test(said) || HARNESS_NUDGES.includes(said);
+
 const parts = (content: unknown): Part[] => (Array.isArray(content) ? (content as Part[]) : typeof content === 'string' ? [{ type: 'text', text: content }] : []);
 const text = (content: unknown) => parts(content).filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n');
 
