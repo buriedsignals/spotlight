@@ -1471,7 +1471,19 @@ test('a worker that records every third turn over 30 turns is never stopped by t
 // step1-routing.md (fz1s1:10, :19): at research resume_at suggestions the move
 // is fixed, so resolving launches that investigator; the orchestrator only
 // resolves, and the resolver then reaches research_approval (the page is next).
+// B18 (briefs/b18.md): the write commit step's request.
+const isWriteCommit = (request: ChatRequest) => JSON.stringify(request.messages.at(-1) ?? {}).includes('Commit step (from the harness, not the member): write ');
+// The worker's write_file calls as its last request carries them: [id, path, result].
+const writeCalls = (request: ChatRequest) => {
+	const results = new Map(request.messages.filter((message) => message.role === 'tool').map((message) => [message.tool_call_id, JSON.stringify(message.content)]));
+	return request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)
+		.filter((call) => call.function.name === 'write_file')
+		.map((call) => [call.id, JSON.parse(call.function.arguments).path, results.get(call.id) ?? ''] as const);
+};
+
 test('resolving at Research suggestions launches the AMENDMENT investigator; its suggestions file is credited, not stopped by the progress watchdog, and the resolver reaches research_approval', async (t) => {
+ // B18: on 12b, six searches without the file get the write commit step; on frontier, with the switch on, none.
+ for (const tier of ['frontier', '12b'] as const) await t.test(tier, async (t) => {
 	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	const sample = join(space.root, 'with-suggestions');
@@ -1482,6 +1494,8 @@ test('resolving at Research suggestions launches the AMENDMENT investigator; its
 	const suggestions = await readFile(join(sample, 'data', 'research-suggestions.json'), 'utf8');
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
+			// B19: a provider without tool_choice "required"; the same request with "auto" writes the file.
+			if (isWriteCommit(request)) return request.tool_choice === 'required' ? { status: 400 } : { toolCalls: [{ name: 'write_file', arguments: { path: 'data/research-suggestions.json', content: suggestions } }] };
 			const turn = toolResults(request).length;
 			if (turn === 16) return { text: 'Suggested.' };
 			return turn === 10 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/research-suggestions.json', content: suggestions } }] } : search(turn);
@@ -1489,15 +1503,33 @@ test('resolving at Research suggestions launches the AMENDMENT investigator; its
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Done.' };
 	});
 	t.after(() => fake.close());
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') });
 	await settledPrompt(chat, 'Continue.');
-	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && !isWriteCommit(request));
 	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: SUGGEST\n/);
 	assert.equal(lastResolution(chat).phase, 'research_approval', 'the suggestions count and the Research page is next');
 	assert.ok(toolResults(worker.at(-1)!).some((text) => text.startsWith('wrote ')), `the suggestions write was accepted: ${toolResults(worker.at(-1)!)[10]}`);
-	assert.equal(worker.length, 17);
 	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n');
 	assert.doesNotMatch(answer, /progress watchdog limit/);
+	const commits = fake.requests.filter(isWriteCommit);
+	if (tier === 'frontier') {
+		assert.equal(commits.length, 0, 'no commit request on frontier');
+		assert.ok(fake.requests.every((request) => request.tool_choice === undefined && !JSON.stringify(request.messages).includes('Commit step (from the harness')));
+		assert.equal(worker.length, 17);
+		assert.ok(writeCalls(worker.at(-1)!).every(([id]) => !id.startsWith('commit-')));
+		return;
+	}
+	assert.deepEqual(commits.map((request) => request.tool_choice), ['required', 'auto'], 'one commit step, asked again with auto after the provider refused required');
+	assert.deepEqual(toolNames(commits[0]), ['not_ready', 'write_file']);
+	assert.deepEqual(toolNames(commits[1]), ['not_ready', 'write_file']);
+	// The committed write is turn 7's real write_file, accepted; the worker's own route then runs on to its answer.
+	const [committed] = writeCalls(worker.at(-1)!);
+	assert.ok(committed[0].startsWith('commit-'), committed[0]);
+	assert.equal(committed[1], 'data/research-suggestions.json');
+	assert.match(committed[2], /wrote data\/research-suggestions\.json/);
+	assert.equal(toolResults(worker[6]).length, 7, 'the commit step answered turn 7; the next request is the worker\'s own');
+	assert.equal(worker.length, 16);
+ });
 });
 
 // Review W1: a write by absolute path (or ./) is the same case file.
@@ -2253,11 +2285,18 @@ test('a worker\'s fetch seam gets the launcher\'s runtime pack Chromium and Craw
 });
 
 test('after a planning task the harness runs the methodology check, not the findings check', async (t) => {
+ // B18 (k2-tor.md P1: LFM3 planned by reading and never wrote): on 12b a PLANNING
+ // investigator that only searches gets the write commit step; not_ready leaves
+ // it on its own route, and the next step four requests later writes the plan.
+ for (const route of ['own', 'committed'] as const) await t.test(route, async (t) => {
+	const plan = { name: 'write_file', arguments: { path: 'data/methodology.json', content: '{"project": "case-a"}' } };
+	let commits = 0;
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
-			return toolResults(request).length === 0
-				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: '{"project": "case-a"}' } }] }
-				: { text: 'Plan written.' };
+			if (isWriteCommit(request)) return ++commits === 1 ? { toolCalls: [{ name: 'not_ready', arguments: { reason: 'Still reading.' } }] } : { toolCalls: [plan] };
+			const done = toolResults(request).length;
+			if (route === 'own') return done === 0 ? { toolCalls: [plan] } : { text: 'Plan written.' };
+			return writeCalls(request).length ? { text: 'Plan written.' } : search(done);
 		}
 		return toolResults(request).length === 0
 			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
@@ -2268,14 +2307,26 @@ test('after a planning task the harness runs the methodology check, not the find
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), ...(route === 'committed' ? { SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on' } : {}) });
 
 	await settledPrompt(chat, 'Continue.');
 
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
-	const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+	const delegated = route === 'own'
+		? toolResults(orchestrator[orchestrator.length - 1]).join('\n')
+		: chat.lines.filter((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"')).join('\n');
 	assert.match(delegated, /validate-methodology-navigator\.py: FAILED/);
 	assert.doesNotMatch(delegated, /validate-case\.py/);
+	if (route === 'own') return;
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && !isWriteCommit(request));
+	assert.equal(commits, 2);
+	// not_ready: turn 7's request is the worker's own (six results); the second step answers turn 11.
+	assert.equal(toolResults(worker[6]).length, 6);
+	const [written] = writeCalls(worker.at(-1)!);
+	assert.ok(written[0].startsWith('commit-') && written[1] === 'data/methodology.json', JSON.stringify(written));
+	assert.match(written[2], /wrote data\/methodology\.json/);
+	assert.equal(toolResults(worker.at(-1)!).length, 11);
+ });
 });
 
 // k2-tor.md P1: code started PLANNING 11 times after identical progress
@@ -2455,26 +2506,33 @@ function delegateToAnalyst(analyst: (request: ChatRequest) => Reply, task = 'Pro
 // LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst's proposal failed
 // interface 1, which it never saw, and it read and grepped until stopped.
 test('an analyst proposal that fails interface 1 is refused when written, and after a valid one the analyst\'s turn ends and the batch is built', async (t) => {
+ // committed (B18, k2-eurostat.md P5: LFM3 read and never proposed): on 12b the
+ // analyst only reads; the write commit step writes the invalid proposal, its
+ // refusal reaches the analyst, and the analyst's own route writes the valid one.
  // B21 (K4 Tor P5): reply, the analyst puts the proposal in its reply as JSON instead of writing it.
- for (const route of ['write', 'reply'] as const) await t.test(route, async (t) => {
+ for (const route of ['own', 'committed', 'reply'] as const) await t.test(route, async (t) => {
 	const invalid = { ...PROPOSAL, claims: [{ ...PROPOSAL.claims[0], statement: { ...PROPOSAL.claims[0].statement, object: { text: 7 } } }] };
+	const write = (proposal: unknown) => ({ toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(proposal) } }] });
 	const fake = await startFakeOpenAI(
 		delegateToAnalyst((request) => {
+			if (isWriteCommit(request)) return write(invalid);
 			const done = toolResults(request).length;
 			if (route === 'reply') return { text: `Here is the proposal.\n\n\`\`\`json\n${JSON.stringify(JSON.stringify(request.messages).includes('Your reply held JSON') ? PROPOSAL : invalid, null, 2)}\n\`\`\`` };
-			if (done === 0) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(invalid) } }] };
-			if (done === 1) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } }] };
+			const first = route === 'own' ? 0 : 6;
+			if (route === 'committed' && done < first) return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/findings.json', offset: done + 1, limit: 1 } }] };
+			if (route === 'own' && done === 0) return write(invalid);
+			if (done === first + 1) return write(PROPOSAL);
 			return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/findings.json' } }] };
 		}),
 	);
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	const caseDir = await caseAtIngest(space);
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), ...(route === 'committed' ? { SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on' } : {}) });
 
 	await settledPrompt(chat, 'Continue.');
 
-	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst'));
+	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && !isWriteCommit(request));
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
 	if (route === 'reply') {
 		// The invalid object is refused with the validator's text as the next prompt; the valid one is written as it was sent.
@@ -2487,12 +2545,16 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
 		assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the harness built the batch after the analyst ended');
 		return;
 	}
-	assert.equal(analyst.length, 3, 'no analyst request after the one that went on past a valid proposal');
+	const first = route === 'own' ? 0 : 6;
+	assert.equal(analyst.length, route === 'own' ? 3 : 8, 'no analyst request after the one that went on past a valid proposal');
 	const results = toolResults(analyst[analyst.length - 1]);
-	assert.match(results[0], /^refused: data\/knowledge-proposal\.json does not match interface 1: \$\.claims\[0\]\.statement\.object\.text: must be string/);
-	assert.match(results[1], /wrote data\/knowledge-proposal\.json/);
-	assert.ok(toolResults(orchestrator.at(-1)!).join('\n').includes(PROPOSAL_DONE), 'the orchestrator gets the stop line as the analyst\'s answer');
+	assert.match(results[first], /^refused: data\/knowledge-proposal\.json does not match interface 1: \$\.claims\[0\]\.statement\.object\.text: must be string/);
+	assert.match(results[first + 1], /wrote data\/knowledge-proposal\.json/);
+	const delegated = chat.lines.filter((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"')).join('\n');
+	assert.ok(delegated.includes(JSON.stringify(PROPOSAL_DONE).slice(1, 40)), 'the orchestrator gets the stop line as the analyst\'s answer');
 	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the harness built the batch after the analyst ended');
+	const writes = writeCalls(analyst.at(-1)!);
+	assert.deepEqual(writes.map(([id]) => id.startsWith('commit-')), route === 'own' ? [false, false] : [true, false], 'the refused write was the commit step\'s; the valid one the analyst\'s own');
  });
 });
 
@@ -3393,15 +3455,19 @@ test('at Report the analyst gets the draft\'s structure; one that writes no pros
 // names the member's offer; once the analyst writes the prose it names
 // open_review, the code router opens the page, and the member decides there.
 test('at Report resolve names the offer before a draft and open_review after it; with the code router the page opens and the member\'s decision moves the case on', async (t) => {
-	const space = await workspace(t);
+ // committed (B18, k2-eurostat.md P4: LFM3 read the structure and never drafted):
+ // the analyst only reads and the write commit step writes the prose.
+ for (const route of ['own', 'committed'] as const) await t.test(route, async (t) => {	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'report', '--activated', '--clean']);
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'analyst')) {
 			const skeleton = JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
-			return toolResults(request).length === 0
-				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] }
-				: { text: 'Drafted.' };
+			const draft = { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] };
+			if (isWriteCommit(request)) return draft;
+			const done = toolResults(request).length;
+			if (route === 'committed') return writeCalls(request).length ? { text: 'Drafted.' } : { toolCalls: [{ name: 'read_file', arguments: { path: 'data/report-draft.json', offset: done + 1, limit: 1 } }] };
+			return done === 0 ? draft : { text: 'Drafted.' };
 		}
 		const step = toolResults(request).length;
 		return step === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : step === 1 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: '' } }] } : { text: 'The page is open.' };
@@ -3421,6 +3487,12 @@ test('at Report resolve names the offer before a draft and open_review after it;
 	const nonce = (JSON.parse(seam(['issue-review-nonce', 'report', caseDir])) as { nonce: string }).nonce;
 	seam(['decide-report', 'completed', '--nonce', nonce, '--digest', view.digest, '--decided-by', 'journalist:fixture', '--decided-at', '2026-10-23T12:00:00Z', caseDir]);
 	assert.notEqual((JSON.parse(seam(['status', '--json', caseDir])) as { phase?: string }).phase, 'report', 'the member\'s decision moved the case on');
+	if (route === 'committed') {
+		const [written] = writeCalls(fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && !isWriteCommit(request)).at(-1)!);
+		assert.ok(written[0].startsWith('commit-') && written[1] === 'data/report-draft.json', JSON.stringify(written));
+		assert.match(written[2], /wrote data\/report-draft\.json/);
+	}
+ });
 });
 
 test('the fact-checker is not started after the Investigation gate', async (t) => {
@@ -5737,7 +5809,9 @@ test('at a stalled investigation the resolver names the round, code launches the
 });
 
 test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment, for a whole methodology or only the changed direction', async (t) => {
- for (const shape of ['whole', 'fragment', 'fragment-changed'] as const) await t.test(shape, async (t) => {
+ // committed (B18, k2-tor.md P3: LFM3 amended by reading and never wrote): on 12b
+ // the worker only searches and the write commit step writes the whole methodology.
+ for (const shape of ['whole', 'fragment', 'fragment-changed', 'committed'] as const) await t.test(shape, async (t) => {
 	const space = await workspace(t);
 	const caseDir = caseAtAmendment(space);
 	const methodology = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
@@ -5746,8 +5820,12 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 	// D8 refuses the step itself, and only it (Codex review of simp-4, P3).
 	const first = JSON.parse(methodology).investigation_plan[0];
 	const added = { ...first, steps: [...first.steps, { order: first.steps.length + 1, action: 'Check the filing the research found', tool: 'fetch' }] };
-	const content = shape === 'whole' ? methodology : JSON.stringify({ investigation_plan: [shape === 'fragment' ? first : added] });
+	const content = shape === 'whole' || shape === 'committed' ? methodology : JSON.stringify({ investigation_plan: [shape === 'fragment' ? first : added] });
 	const fake = await startFakeOpenAI((request) => {
+		if (shape === 'committed' && isWorkerRequest(request, 'investigator')) {
+			if (isWriteCommit(request)) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content } }] };
+			return writeCalls(request).length ? { text: 'Amended.' } : search(toolResults(request).length);
+		}
 		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
 			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content } }] }
 			: { text: 'Amended.' };
@@ -5756,11 +5834,22 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 			: { text: 'Done.' };
 	});
 	t.after(() => fake.close());
-	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on', ...(shape === 'committed' ? { SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on' } : {}) });
+	await settledPrompt(chat, 'Continue.');
 
-	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && !isWriteCommit(request));
 	assert.ok(worker.length > 0, 'the investigator ran');
 	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: AMEND\n/);
+	if (shape === 'committed') {
+		// The AMEND worker's last request; the router then starts the EXECUTION investigator.
+		const amend = worker.find((request) => writeCalls(request).length);
+		assert.ok(amend, 'the write commit step wrote the amendment');
+		const [written] = writeCalls(amend);
+		assert.ok(written[0].startsWith('commit-') && written[1] === 'data/methodology-amendment.json', JSON.stringify(written));
+		assert.equal(toolResults(amend).length, 7, 'the step answered turn 7');
+		const applied = chat.lines.filter((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"')).join('\n');
+		assert.match(applied, /recordAmendment applied/);
+	}
 	for (const request of worker) assert.doesNotMatch(JSON.stringify(request), /ORCH-SENTINEL/);
 	if (shape === 'fragment-changed') {
 		const completed = JSON.parse(methodology);

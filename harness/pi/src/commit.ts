@@ -177,3 +177,89 @@ export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unk
 	});
 	return { args, dropped };
 }
+
+// B18 (fine-tuning briefs/b18.md): the same step for a worker whose deliverable
+// is one file it writes with write_file (k2-tor.md, k2-eurostat.md: LFM3
+// workers read and never wrote methodology.json, the research-step files, the
+// report draft or the knowledge proposal). After WRITE_COMMIT_AFTER_TURNS tool
+// turns with no write of that file, code makes one request offering only
+// write_file for that path and not_ready. An accepted answer becomes this
+// turn's real write_file call, so every validator and refusal runs on it, and
+// a refusal reaches the worker as its tool result. Code never writes content;
+// not_ready or anything else sends the model's own request. Attempts are
+// COMMIT_GAP_TURNS apart, so before the progress watchdog's 16th turn they
+// fall at turns 6, 10 and 14.
+export const WRITE_COMMIT_AFTER_TURNS = 6;
+const WRITE_COMMIT_FILES = new Set([
+	'data/methodology.json',
+	'data/research-suggestions.json',
+	'data/methodology-amendment.json',
+	'data/research-round.json',
+	'data/report-draft.json',
+	'data/knowledge-proposal.json',
+]);
+
+// The worker's one write-file deliverable, from the launcher's
+// SPOTLIGHT_DELIVERABLE_FILES; none for a findings, fact-check or two-file one.
+export function writeCommitFile(deliverables: string | undefined): string | undefined {
+	const files = (deliverables ?? '').split(',').filter(Boolean);
+	return files.length === 1 && WRITE_COMMIT_FILES.has(files[0]) ? files[0] : undefined;
+}
+
+export const writeCommitText = (file: string) => `Commit step (from the harness, not the member): write ${file} now from what you have read, as your task describes. Call write_file with path ${file} and the whole file as content. If you cannot write it yet, call not_ready with the reason. You keep working after this.`;
+
+export const writeCommitTools = (file: string) => [
+	{
+		type: 'function',
+		function: {
+			name: 'write_file',
+			description: `Write ${file}, the whole file, from what you have read.`,
+			parameters: { type: 'object', additionalProperties: false, required: ['path', 'content'], properties: { path: { type: 'string', enum: [file] }, content: { type: 'string', minLength: 1 } } },
+		},
+	},
+	{ type: 'function', function: { name: 'not_ready', description: `You cannot write ${file} yet.`, parameters: { type: 'object', additionalProperties: false, required: ['reason'], properties: { reason: { type: 'string' } } } } },
+];
+
+// A path as the worker spelled it, case-relative ("./", "{CASE_DIR}/" or the absolute case path).
+const caseRelative = (path: string, caseDir: string) => path.replace(/^\{CASE_DIR\}[\\/]/, '').replace(caseDir.endsWith('/') ? caseDir : `${caseDir}/`, '').replace(/^\.\//, '');
+
+// Due while the file has no accepted write or edit ("wrote ..."/"edited ..."
+// result; `writtenBefore`: one this process saw before a fold shortened the
+// transcript), the worker has spent WRITE_COMMIT_AFTER_TURNS tool turns since
+// its last try at the file, and no attempt is recent.
+export function writeCommitState(messages: readonly unknown[], file: string, caseDir: string): { turns: number; lastTry: number; written: boolean } {
+	let turns = 0;
+	let lastTry = 0;
+	let written = false;
+	const tries = new Set<string>();
+	for (const message of messages as Msg[]) {
+		if (message.role === 'assistant') {
+			const toolCalls = parts(message.content).filter((part) => part.type === 'toolCall');
+			if (!toolCalls.length) continue;
+			turns += 1;
+			for (const call of toolCalls) {
+				if ((call.name === 'write_file' || call.name === 'edit_file') && typeof call.arguments?.path === 'string' && caseRelative(call.arguments.path, caseDir) === file) {
+					lastTry = turns;
+					tries.add(String(call.id));
+				}
+			}
+		} else if (message.role === 'toolResult' && !message.isError && tries.has(String(message.toolCallId)) && /^(?:wrote|edited) /.test(text(message.content))) written = true;
+	}
+	return { turns, lastTry, written };
+}
+export function writeCommitDue(messages: readonly unknown[], file: string, caseDir: string, requestsSinceAttempt = Infinity, writtenBefore = false): boolean {
+	const state = writeCommitState(messages, file, caseDir);
+	return !writtenBefore && !state.written && state.turns - state.lastTry >= WRITE_COMMIT_AFTER_TURNS && requestsSinceAttempt >= COMMIT_GAP_TURNS;
+}
+
+// The first write_file of the file with content is kept; the other calls are
+// named by number and tool only.
+export function pickWrite(calls: ReadonlyArray<{ name?: string; arguments?: unknown }>, file: string, caseDir: string): { args: { path: string; content: string }; dropped: string[] } | { reason: string } {
+	const kept = calls.findIndex((call) => {
+		const args = call.arguments as { path?: unknown; content?: unknown } | undefined;
+		return call.name === 'write_file' && typeof args?.path === 'string' && caseRelative(args.path, caseDir) === file && typeof args.content === 'string' && args.content.trim() !== '';
+	});
+	if (kept < 0) return { reason: calls.some((call) => call.name === 'not_ready') ? 'the model answered not_ready' : `the commit answer has no write_file of ${file} with content` };
+	const dropped = calls.flatMap((call, index) => (index === kept ? [] : [`call ${index + 1} (${call.name === 'write_file' || call.name === 'not_ready' ? call.name : 'another tool'}: one write per commit step)`]));
+	return { args: { path: file, content: (calls[kept].arguments as { content: string }).content }, dropped };
+}

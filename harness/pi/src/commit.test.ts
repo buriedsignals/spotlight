@@ -3,7 +3,7 @@
 // end-to-end step is in launcher.test.ts ("commit step").
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { acceptCommit, commitDue, commitState, pickCommit } from './commit.ts';
+import { acceptCommit, commitDue, commitState, pickCommit, pickWrite, writeCommitDue, writeCommitFile } from './commit.ts';
 
 const call = (id: string, name: string, args: Record<string, unknown> = {}) => ({ role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: args }] });
 const result = (id: string, text: string, isError = false) => ({ role: 'toolResult', toolCallId: id, content: [{ type: 'text', text }], isError });
@@ -68,4 +68,36 @@ test('of several commit calls the first that passes the cite rules is kept; the 
 	}
 	assert.ok('reason' in pickCommit([unseen], shown));
 	assert.ok('reason' in pickCommit([], shown));
+});
+
+// B18 (briefs/b18.md): a worker whose deliverable is one write-file gets the
+// write commit step after six tool turns without a try at that file, while it
+// has no accepted write; tries at the file count however the path is spelled.
+test('the write commit step: which deliverables, when it is due, and which answer is kept', () => {
+	assert.equal(writeCommitFile('data/methodology.json'), 'data/methodology.json');
+	assert.equal(writeCommitFile('data/knowledge-proposal.json'), 'data/knowledge-proposal.json');
+	assert.equal(writeCommitFile('data/findings.json,data/evidence-bundle.json'), undefined, 'the investigation keeps the finding commit step');
+	assert.equal(writeCommitFile('data/fact-check.json'), undefined);
+	assert.equal(writeCommitFile(undefined), undefined);
+	const file = 'data/methodology.json', caseDir = '/cases/case-a';
+	const turn = (n: number) => [call(`t${n}`, 'grep_files'), result(`t${n}`, 'no matches')];
+	const turns = (n: number) => Array.from({ length: n }, (_, index) => turn(index)).flat();
+	assert.equal(writeCommitDue(turns(5), file, caseDir), false);
+	assert.equal(writeCommitDue(turns(6), file, caseDir), true);
+	assert.equal(writeCommitDue(turns(6), file, caseDir, 3), false, 'four requests between attempts');
+	// A refused try at the file restarts the count; an accepted write ends the step.
+	const refused = [call('w', 'write_file', { path: `${caseDir}/data/methodology.json`, content: '{}' }), result('w', 'refused: the plan has no directions', true)];
+	assert.equal(writeCommitDue([...turns(6), ...refused, ...turns(5)], file, caseDir), false);
+	assert.equal(writeCommitDue([...turns(6), ...refused, ...turns(6)], file, caseDir), true);
+	const wrote = [call('w', 'write_file', { path: './data/methodology.json', content: '{}' }), result('w', 'wrote data/methodology.json')];
+	assert.equal(writeCommitDue([...wrote, ...turns(12)], file, caseDir), false);
+	// Codex review of simp-b18, P2: an accepted edit_file is a write of the file too.
+	const edited = [call('e', 'edit_file', { path: file, old_string: 'a', new_string: 'b' }), result('e', 'edited data/methodology.json')];
+	assert.equal(writeCommitDue([...edited, ...turns(12)], file, caseDir), false);
+	assert.equal(writeCommitDue(turns(12), file, caseDir, Infinity, true), false, 'a write this process saw before a fold');
+	// The first write of the file with content is kept; others are named; not_ready or an empty write is not used.
+	assert.deepEqual(pickWrite([{ name: 'not_ready', arguments: { reason: 'r' } }, { name: 'write_file', arguments: { path: '{CASE_DIR}/data/methodology.json', content: '{"a":1}' } }], file, caseDir), { args: { path: file, content: '{"a":1}' }, dropped: ['call 1 (not_ready: one write per commit step)'] });
+	assert.deepEqual(pickWrite([{ name: 'not_ready', arguments: { reason: 'r' } }], file, caseDir), { reason: 'the model answered not_ready' });
+	assert.ok('reason' in pickWrite([{ name: 'write_file', arguments: { path: file, content: ' ' } }], file, caseDir));
+	assert.ok('reason' in pickWrite([{ name: 'write_file', arguments: { path: 'data/findings.json', content: '{}' } }], file, caseDir));
 });

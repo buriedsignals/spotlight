@@ -9,7 +9,7 @@ import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-age
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
 import { ROUTER_CALL_PREFIX, ROUTER_MODEL, harnessTurn, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
-import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit } from './commit.ts';
+import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
@@ -219,9 +219,77 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 // lines seen recorded.
 let requestsSinceCommit = Infinity;
 const recordedLines = new Set<string>();
-const commitStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1]['streamSimple']> = (model, context, options) => {
+// B18: this process saw its write-file deliverable accepted (kept across folds).
+let deliverableWritten = false;
+type StreamFn = NonNullable<Parameters<ExtensionAPI['registerProvider']>[1]['streamSimple']>;
+type Answer = Awaited<ReturnType<ReturnType<typeof streamOpenAICompletions>['result']>>;
+// One narrowed request: the commit text appended, only `tools` on the wire.
+// B19: a provider that refuses tool_choice "required" (any error) gets the
+// same request once with "auto".
+async function narrowedRequest(model: Parameters<StreamFn>[0], context: Parameters<StreamFn>[1], options: Parameters<StreamFn>[2], text: string, tools: unknown[]): Promise<Answer> {
+	const ask = (choice: 'required' | 'auto') => streamOpenAICompletions(model as never, { ...context, messages: [...context.messages, { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() }] } as typeof context, {
+		...options,
+		toolChoice: choice,
+		onPayload: async (payload, payloadModel) => {
+			const prepared = ((await options?.onPayload?.(payload, payloadModel)) ?? payload) as Record<string, unknown>;
+			return { ...prepared, tools, tool_choice: choice };
+		},
+	}).result();
+	const first = await ask('required').catch((error: Error) => error);
+	if (first instanceof Error || first.stopReason === 'error') {
+		log(`[commit] tool_choice required failed (${(first instanceof Error ? first.message : first.errorMessage ?? 'error').slice(0, 200)}); asking with auto`);
+		return ask('auto');
+	}
+	return first;
+}
+// The accepted call as this turn's answer, marked by its id; the calls not
+// kept are named in the turn itself, so the model sees them.
+function emitCommit(out: ReturnType<typeof createAssistantMessageEventStream>, answer: Answer, name: string, args: Record<string, unknown>, dropped: string[], noteHead: string, responseId: string): void {
+	const toolCall = { type: 'toolCall' as const, id: `${COMMIT_CALL_PREFIX}${Date.now().toString(36)}`, name, arguments: args };
+	const note = dropped.length ? [{ type: 'text' as const, text: `${noteHead}; not recorded: ${dropped.join('; ')}.` }] : [];
+	const message = { ...answer, content: [...note, toolCall], responseId, stopReason: 'toolUse' as const };
+	// Each block is in the partial only from its own event on (Pi's provider contract).
+	out.push({ type: 'start', partial: { ...message, content: [] } });
+	if (note.length) {
+		out.push({ type: 'text_start', contentIndex: 0, partial: { ...message, content: [{ type: 'text', text: '' }] } });
+		out.push({ type: 'text_end', contentIndex: 0, content: note[0].text, partial: { ...message, content: [...note] } });
+	}
+	out.push({ type: 'toolcall_start', contentIndex: note.length, partial: { ...message, content: [...note, { ...toolCall, arguments: {} }] } });
+	out.push({ type: 'toolcall_end', contentIndex: note.length, toolCall, partial: message });
+	out.push({ type: 'done', reason: 'toolUse', message });
+	out.end(message);
+}
+const commitStream: StreamFn = (model, context, options) => {
 	const out = createAssistantMessageEventStream();
 	void (async () => {
+		// B18: a worker whose deliverable is one write-file gets the write commit step.
+		const file = writeCommitFile(process.env.SPOTLIGHT_DELIVERABLE_FILES);
+		if (file && getCurrentTools(context.messages).some((tool) => tool.name === 'write_file')) {
+			const caseDir = required('SPOTLIGHT_CASE_DIR');
+			requestsSinceCommit += 1;
+			deliverableWritten ||= writeCommitState(context.messages, file, caseDir).written;
+			if (writeCommitDue(context.messages, file, caseDir, requestsSinceCommit, deliverableWritten)) {
+				requestsSinceCommit = 0;
+				let reason: string;
+				try {
+					const answer = await narrowedRequest(model, context, options, writeCommitText(file), writeCommitTools(file));
+					const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
+					const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickWrite(calls, file, caseDir);
+					if ('args' in accepted) {
+						log(`[commit] write_file ${file}${accepted.dropped.length ? `; dropped ${accepted.dropped.join('; ')}` : ''}`);
+						emitCommit(out, answer, 'write_file', accepted.args, accepted.dropped, 'Commit step: kept the first write', `commit step: write ${file}`);
+						return;
+					}
+					reason = accepted.reason;
+				} catch (error) {
+					reason = `commit request failed: ${(error as Error).message.slice(0, 200)}`;
+				}
+				log(`[commit] model's own request (${file}: ${reason})`);
+			}
+			for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
+			out.end();
+			return;
+		}
 		// Lines a recorded passage already anchors count as recorded, whichever process recorded them.
 		try {
 			const passages = (JSON.parse(readFileSync(resolve(required('SPOTLIGHT_CASE_DIR'), 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Array<{ anchor_ref?: { path?: unknown; line_start?: unknown; line_end?: unknown } }> }).expressions ?? [];
@@ -242,33 +310,12 @@ const commitStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 		if (own && commitDue(state, requestsSinceCommit)) {
 			requestsSinceCommit = 0;
 			try {
-				const commit = streamOpenAICompletions(model as never, { ...context, messages: [...context.messages, { role: 'user', content: [{ type: 'text', text: COMMIT_TEXT }], timestamp: Date.now() }] } as typeof context, {
-					...options,
-					toolChoice: 'required',
-					onPayload: async (payload, payloadModel) => {
-						const prepared = ((await options?.onPayload?.(payload, payloadModel)) ?? payload) as Record<string, unknown>;
-						return { ...prepared, tools: COMMIT_TOOLS, tool_choice: 'required' };
-					},
-				});
-				const answer = await commit.result();
+				const answer = await narrowedRequest(model, context, options, COMMIT_TEXT, COMMIT_TOOLS);
 				const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
 				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickCommit(calls, state.shown);
 				if ('args' in accepted) {
-					const toolCall = { type: 'toolCall' as const, id: `${COMMIT_CALL_PREFIX}${Date.now().toString(36)}`, name: 'record_finding', arguments: accepted.args };
-					// The calls not kept are named in the turn itself, so the model sees them.
-					const note = accepted.dropped.length ? [{ type: 'text' as const, text: `Commit step: kept the first finding; not recorded: ${accepted.dropped.join('; ')}.` }] : [];
-					const message = { ...answer, content: [...note, toolCall], responseId: `commit step: ${state.uncommitted.length} unrecorded line(s) shown`, stopReason: 'toolUse' as const };
 					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})${accepted.dropped.length ? `; dropped ${accepted.dropped.join('; ')}` : ''}`);
-					// Each block is in the partial only from its own event on (Pi's provider contract).
-					out.push({ type: 'start', partial: { ...message, content: [] } });
-					if (note.length) {
-						out.push({ type: 'text_start', contentIndex: 0, partial: { ...message, content: [{ type: 'text', text: '' }] } });
-						out.push({ type: 'text_end', contentIndex: 0, content: note[0].text, partial: { ...message, content: [...note] } });
-					}
-					out.push({ type: 'toolcall_start', contentIndex: note.length, partial: { ...message, content: [...note, { ...toolCall, arguments: {} }] } });
-					out.push({ type: 'toolcall_end', contentIndex: note.length, toolCall, partial: message });
-					out.push({ type: 'done', reason: 'toolUse', message });
-					out.end(message);
+					emitCommit(out, answer, 'record_finding', accepted.args, accepted.dropped, 'Commit step: kept the first finding', `commit step: ${state.uncommitted.length} unrecorded line(s) shown`);
 					return;
 				}
 				reason = accepted.reason;
@@ -293,7 +340,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
 	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
-		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : role === 'investigator' && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' ? { streamSimple: commitStream } : {}),
+		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : (role === 'investigator' || role === 'analyst') && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' ? { streamSimple: commitStream } : {}),
 		name: 'Spotlight',
 		baseUrl: required('SPOTLIGHT_MODEL_BASE_URL'),
 		api: 'openai-completions',
