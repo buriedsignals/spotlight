@@ -411,6 +411,8 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const tools = toolsFor(role, pi).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi)).map(factCheckDue);
 	const offered = localAssessmentGate(role, caseDir, assigned);
 	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi, tools.map((tool) => tool.name), offered);
+	// B20b: with no batch, nothing else reopens record_assessment after a fetch brings the second source.
+	else if (role === 'fact-checker' && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier') pi.on('tool_execution_end', () => pi.setActiveTools(tools.map((tool) => tool.name).filter(offered)));
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	registerSchemaHints(pi, tools);
@@ -424,14 +426,14 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name).filter(offered)));
 }
 
-// B20 (case-files.ts secondSourceFetched): a local-tier batch fact-checker is
-// offered record_assessment only once it has fetched a second source; until
+// B20 (case-files.ts secondSourceFetched): a local-tier fact-checker, with a
+// batch or without one (B20b, k4r-9ef5.md), is offered record_assessment only once it has fetched a second source; until
 // then judge_finding writes its claims. The frontier tier and every other
 // role keep all their tools.
 export const ASSESSMENT_HELD = 'record_assessment opens once you have fetched a second source, a page none of your findings cites. Until then answer each finding with judge_finding {finding_id, answer: supports, partly, doesnt, cant_tell or contradicts (with quote, the contradicting line of the re-fetch), reason: one line}; code writes its claim.';
 const assessmentHeld = { held: false };
 function localAssessmentGate(role: string, caseDir: string, batch: string[]): (tool: string) => boolean {
-	if (role !== 'fact-checker' || !batch.length || (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === 'frontier') return () => true;
+	if (role !== 'fact-checker' || (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === 'frontier') return () => true;
 	const context = { caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`, env: process.env };
 	const started = Date.now();
 	let open = false;

@@ -1940,10 +1940,12 @@ function refetchedContradiction(context: ToolContext, findingId: string, quote: 
 // cites, made since this worker started (the registry keeps earlier workers'
 // captures; Codex review of simp-b20). The harness re-fetch of a cited source is not one.
 export function secondSourceFetched(context: ToolContext, batch: string[], since: number): boolean {
-	const findings = recordRows(recordDocument(context, 'data/findings.json').findings).filter((row) => batch.includes(String(row.id)));
+	// No batch (B20b): the worker answers for every finding, so all their sources are cited.
+	const findings = recordRows(recordDocument(context, 'data/findings.json').findings).filter((row) => !batch.length || batch.includes(String(row.id)));
+	const ids = new Set(findings.map((row) => String(row.id)));
 	const refs = new Set(findings.flatMap((row) => Array.isArray(row.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []));
 	const cited = new Set(recordRows(recordDocument(context, 'data/evidence-bundle.json').items)
-		.filter((item) => refs.has(String(item.id)) || recordRows(item.claim_links).some((link) => batch.includes(String(link.finding_id))))
+		.filter((item) => refs.has(String(item.id)) || recordRows(item.claim_links).some((link) => ids.has(String(link.finding_id))))
 		.map((item) => item.source_url ?? item.url).filter((url): url is string => typeof url === 'string'));
 	const rechecks = new Set(Object.values(taskRecheck(context)).map((check) => typeof check === 'object' ? check.acquisition?.path : undefined).filter((path): path is string => typeof path === 'string'));
 	return factCheckerSourceURLs(context, rechecks, since).some((url) => !cited.has(url));
@@ -1974,6 +1976,9 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 				const support = refetchedSupport(context, findingId);
 				if (support.item) evidence.unshift(support.item);
 				else status = support.status;
+				// B20b: a run with no harness re-fetch (no batch) cannot verify; "supports" must not turn a claim unverified.
+				const existing = recordRows(recordDocument(context, 'data/fact-check.json').claims).find((row) => row.finding_id === findingId);
+				if (!evidence.length && !context.env.SPOTLIGHT_TASK_RECHECK && existing) return textResult(`${findingId} keeps its ${String(existing.verdict)} claim: this run has no harness re-fetch to check it against.`);
 			}
 			const against: RecordRow[] = [];
 			if (input.answer === 'contradicts') {

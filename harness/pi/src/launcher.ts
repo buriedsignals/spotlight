@@ -737,7 +737,7 @@ async function deliverable(harness: Harness, role: string, task: string, status:
 		if (correction) return correction;
 	}
 	const step = (status.research as { resume_at?: unknown } | undefined)?.resume_at;
-	const owed = deliverableFor(role, String(status.phase ?? ''), task, typeof step === 'string' ? step : undefined);
+	const owed = deliverableFor(role, String(status.phase ?? ''), task, typeof step === 'string' ? step : undefined, harness.config.modelTier !== 'frontier');
 	const start = role === 'fact-checker' ? factCheckStart(harness.active.caseDir) : '';
 	return owed && start ? { ...owed, start } : owed;
 }

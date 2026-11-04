@@ -2156,6 +2156,53 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 	});
 });
 
+// K4 Tor P3 rerun (k4r-9ef5.md): D10 kept the case at Investigation with every
+// finding claimed, and the model started another fact-checker. With no batch it
+// was offered record_assessment and told to use it. On a local tier it is held
+// as a batch fact-checker is, a judge with no re-fetch leaves the claim alone, and
+// a second source still opens record_assessment. Frontier keeps its route.
+test('a fact-checker started with no batch', async (t) => {
+ for (const tier of ['12b', 'frontier'] as const) await t.test(tier, async (t) => {
+	const checks: ChatRequest[] = [];
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			checks.push(request);
+			const done = toolResults(request).length;
+			return done === 0 ? { toolCalls: [{ name: 'record_assessment', arguments: { assessment: { finding_id: 'F1', verdict: 'verified', confidence: 'high', evidence_for: [], evidence_against: [] } } }] }
+				: done === 1 ? { toolCalls: [{ name: 'judge_finding', arguments: { finding_id: 'F1', answer: 'supports', reason: 'It still reads the same.' } }] }
+				: done === 2 ? { toolCalls: [{ name: 'fetch', arguments: { url: 'https://mirror.example.net/licence-notes', save_as: 'fc-notes.md' } }] }
+				: { text: 'Checked again.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--clean', '--activated']);
+	await unlink(join(caseDir, 'data', 'investigation-log.json'));
+	const seam = join(space.root, 'fetch-python');
+	await writeFile(seam, `#!${process.execPath}\nconst cp = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) process.stdout.write(JSON.stringify({ markdown: '# Notes\\n', source_url: args.at(-1), provider: 'crawl4ai', status_code: 200 }));\nelse { try { process.stdout.write(cp.execFileSync(${JSON.stringify(PYTHON)}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exit(error.status ?? 1); } }\n`, { mode: 0o755 });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_PYTHON: seam, SPOTLIGHT_ANONYMIZE_FETCH: 'true' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.ok(checks.length >= 4, `the fact-checker ran: ${checks.length}`);
+	const claim = () => (JSON.parse(readFileSync(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: Array<Record<string, unknown>> }).claims.find((row) => row.finding_id === 'F1');
+	if (tier === 'frontier') {
+		assert.ok(toolNames(checks[0]).includes('record_assessment'), 'frontier keeps record_assessment');
+		assert.match(userText(checks[0]), /Submit each complete judgment with record_assessment/);
+		return;
+	}
+	assert.ok(toolNames(checks[0]).includes('judge_finding') && !toolNames(checks[0]).includes('record_assessment'), toolNames(checks[0]).join(','));
+	assert.match(userText(checks[0]), /judge_finding \{finding_id, answer/);
+	assert.doesNotMatch(userText(checks[0]), /Submit each complete judgment with record_assessment/);
+	assert.equal(toolResults(checks[1])[0], ASSESSMENT_HELD);
+	assert.match(toolResults(checks[2])[1], /F1 keeps its verified claim/);
+	assert.equal(claim()?.verdict, 'verified', 'the judge did not downgrade the claim');
+	assert.ok(toolNames(checks[3]).includes('record_assessment'), 'a second source opened record_assessment');
+ });
+});
+
 // Tools whose effects stay on this machine (case files, the local vault, its
 // wiki write and the tool index, the Anomaly lookup and runner, the passage writer, the resolver, the loopback review page), plus the two checks
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.

@@ -249,7 +249,7 @@ const FILE_VERBS: Array<[verb: string, tool: string]> = [['read-file', 'read_fil
 const ADAPTER_LINES: AdapterLine[] = [
 	{ text: '- Navigator (Pi): use navigator_tools action find with your need, then action show for a selected tool. The wrapper handles CLI execution and authentication; its actual lookup result supplies current availability and protected provenance. Do not run navigator auth status or copy receipt fields. An unavailable or policy-skipped result is not successful use; use allowed local discovery or existing sources as needed. Tool recommendations are leads, not factual evidence or permission to install tools.', tools: ['navigator_tools'], skill: 'navigator' },
 	{ text: '- Findings (Pi): submit one structured finding through `record_finding`, with `cite` [{path, line_start, line_end}] of your capture; code copies the cited text, lists the source, adds the evidence item and records the passage. You choose claims, evidence, relations and confidence. Use file tools for the methodology and the log; never invent archive metadata.', tools: ['record_finding'] },
-	// B20: a local tier's batch fact-checker gets record_assessment only once it has fetched a second source.
+	// B20: a local tier's fact-checker gets record_assessment only once it has fetched a second source.
 	{ text: (tier) => tier === 'frontier'
 		? '- Assessments (Pi): submit one structured judgment through `record_assessment`; code supplies the destination, schema and exact assigned claim text. You choose verdict, confidence and evidence. Code does not verify claims for you. Use file tools only for other permitted artifacts or explicit legacy/manual corrections.'
 		: '- Assessments (Pi): when your task names `judge_finding`, answer each finding with it; code writes its claim from the harness re-fetch, and `record_assessment` opens once you have fetched a second source. With `record_assessment`, submit one structured judgment through `record_assessment`; code supplies the destination, schema and exact assigned claim text. You choose verdict, confidence and evidence. Code does not verify claims for you. Use file tools only for other permitted artifacts or explicit legacy/manual corrections.', tools: ['record_assessment'] },
@@ -467,8 +467,10 @@ export function correctionFiles(role: string, task: string): string[] | undefine
 	return mode?.endsWith('CORRECTION') ? ['data/findings.json', 'data/evidence-bundle.json', 'data/investigation-log.json'] : undefined;
 }
 
-export function deliverableFor(role: string, phase: string, task: string, researchStep?: string): Deliverable | undefined {
+export function deliverableFor(role: string, phase: string, task: string, researchStep?: string, local = false): Deliverable | undefined {
 	const one = (file: string, line = `Your deliverable: ${file}; write it with write_file, then finish.`) => ({ files: [file], line });
+	// B20b: a local tier's fact-checker with no batch answers through judge_finding, as a batch does.
+	if (role === 'fact-checker' && local) return one('data/fact-check.json', 'Your deliverable: data/fact-check.json. For each finding that still needs a judgment, one call: judge_finding {finding_id, answer: supports, partly, doesnt, cant_tell or contradicts, reason: one line}; code writes its claim and keeps the others. record_assessment opens only after you fetch a second source. Then finish.');
 	if (role === 'fact-checker') return one('data/fact-check.json', 'Your deliverable: data/fact-check.json covering every finding in data/findings.json for this cycle. Submit each complete judgment with record_assessment (assessment is one claim object); code adds or replaces that finding_id and keeps the others. Then finish.');
 	if (role === 'analyst') return ANALYST_DELIVERABLES[phase] ?? one('data/knowledge-proposal.json');
 	if (role !== 'investigator') return undefined;
