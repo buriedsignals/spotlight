@@ -8,6 +8,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { PROGRESS_STOP } from './run.ts';
+import { batchBlocked } from './review.ts';
 
 const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 
@@ -204,7 +205,11 @@ export const NEXT_LANES = 'Next: the research round has not finished (research_r
 export const NEXT_RESEARCH_OFF = 'Next: Research is off for this case (missing says so). Tell the member their options in plain words: turn Research on in the app, or go back to the Methodology gate and approve the plan without research. Then end your turn.';
 export const NEXT_GATE_APPROVAL = 'Next: call open_review so the member can review the investigation and approve the Investigation gate or request a follow-up, then end your turn and wait for their decision.';
 export const NEXT_GATE_OWED = 'Next: the Investigation gate still needs what missing lists. Call spotlight_resolve: code starts the analyst for the gate summary. Do not open the review page yet.';
-export const nextFixedStep = (step: string) => `Next: code's ${step || 'mechanical'} step has not finished (fixed_steps says why, when it ran). Call spotlight_resolve once to run it again; if it still does not finish, tell the member in plain words what fixed_steps reports and end your turn.`;
+export const nextFixedStep = (step: string, failed = false) => failed
+	// A failed receipt is not retried by the model: resolving again repeats the step (Codex review of simp-next).
+	? `Next: code's ${step || 'mechanical'} step failed (fixed_steps says why). Tell the member in plain words what it reports, and end your turn; do not call spotlight_resolve again until the member answers.`
+	: `Next: code's ${step || 'mechanical'} step has not finished. Call spotlight_resolve to run it; if it does not finish, tell the member in plain words what fixed_steps reports and end your turn.`;
+export const NEXT_INGEST_BLOCKED = 'Next: no knowledge batch can be built for this case. Call open_review so the member can decline ingestion or request a follow-up, then end your turn and wait for their decision. Do not spawn the analyst.';
 export const NEXT_NEWSROOM_SUBMIT = 'Next: submit the requested ingest with newsroom_submit, as the ingest skill says, then call spotlight_resolve.';
 export const NEXT_INGEST_ANALYST = 'Next: spawn_agent with agent analyst to write the knowledge proposal (phase-ingest step 1); the harness builds the knowledge batch when it finishes. Then call spotlight_resolve.';
 export const NEXT_INGEST_LEGACY = 'Next: this case uses findings contract 1.0 and can no longer be ingested. Invoke the ingest skill, tell the member what it explains (activate the case, or continue it as a follow-up 1.1 case), and end your turn.';
@@ -222,7 +227,8 @@ function writerOf(item: string): 'investigator' | 'fact-checker' | undefined {
 	const owner = /\[(investigator|fact-checker)\]/.exec(item)?.[1];
 	if (owner) return owner as 'investigator' | 'fact-checker';
 	if (/fact-check/.test(item)) return 'fact-checker';
-	if (/findings|evidence-bundle|investigation-log|investigator/.test(item)) return 'investigator';
+	// "investigation follow-up" is a legacy follow-up's owed investigator update (Codex review of simp-next).
+	if (/findings|evidence-bundle|investigation-log|investigator|investigation follow-up/.test(item)) return 'investigator';
 	return undefined;
 }
 
@@ -243,6 +249,7 @@ export function draftWritten(caseDir: string): boolean {
 
 export function nextAction(resolved: Record<string, unknown>, onDisk: (relative: string) => boolean, caseDir?: string): string | undefined {
 	const missing = Array.isArray(resolved.missing) ? resolved.missing.map(String) : [];
+	const stepFailed = Array.isArray(resolved.fixed_steps) && (resolved.fixed_steps as Array<{ ok?: unknown }>).some((receipt) => receipt?.ok === false);
 	if (resolved.worker_stalled && typeof resolved.worker_stalled === 'object') return nextWorkerStalled(resolved.worker_stalled as { step?: unknown; attempts?: unknown });
 	switch (resolved.phase) {
 		case 'brief':
@@ -266,20 +273,22 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		case 'investigation_gate_approval':
 			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : NEXT_GATE_OWED;
 		case 'investigation_gate_finalization':
-			return nextFixedStep(String((resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at ?? missing[0] ?? ''));
+			return nextFixedStep(String((resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at ?? missing[0] ?? ''), stepFailed);
 		case 'report':
 			return caseDir && draftWritten(caseDir) ? NEXT_REPORT_APPROVAL : NEXT_REPORT_OFFER;
 		case 'ingest': {
 			const ingest = resolved.ingest as { resume_at?: unknown } | undefined;
 			const newsroom = process.env.SPOTLIGHT_EDITION === 'newsroom';
-			if (ingest?.resume_at === 'ingest') return newsroom ? NEXT_NEWSROOM_SUBMIT : nextFixedStep('wiki');
-			if (ingest?.resume_at === 'seal') return nextFixedStep('seal');
+			if (ingest?.resume_at === 'ingest') return newsroom ? NEXT_NEWSROOM_SUBMIT : nextFixedStep('wiki', stepFailed);
+			if (ingest?.resume_at === 'seal') return nextFixedStep('seal', stepFailed);
 			// The decision. The newsroom edition has no local batch: its page is the
 			// decision. A legacy case is not ingested. An activated solo case needs
 			// the analyst's batch before its page (Codex review of simp-ingest).
 			if (newsroom) return NEXT_INGEST_APPROVAL;
 			if (!onDisk('data/case-contract.json')) return NEXT_INGEST_LEGACY;
-			return onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : NEXT_INGEST_ANALYST;
+			if (onDisk('data/knowledge-batch-draft.json')) return NEXT_INGEST_APPROVAL;
+			// The launcher refuses every analyst once no batch can be built (Codex review of simp-next).
+			return caseDir && batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, caseDir) ? NEXT_INGEST_BLOCKED : NEXT_INGEST_ANALYST;
 		}
 		case 'blocked':
 			return NEXT_BLOCKED;

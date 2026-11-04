@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
-import { NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
+import { batchBlockedFile, factCheckHash, missingForApproval } from './review.ts';
 
 const PYTHON = process.env.SPOTLIGHT_PYTHON ?? 'python3';
 
@@ -382,4 +383,24 @@ test('every state the resolver can return names a next step, and only member dec
 		// The router opens the page whenever the line names open_review.
 		assert.equal(next!.includes('open_review'), kind === 'member', `${label}: ${next}`);
 	}
+	delete process.env.SPOTLIGHT_EDITION;
+	// Codex review of simp-next: a failed fixed step is not retried by the model;
+	// a legacy follow-up names the investigator; a batch that cannot be built
+	// sends the member to the page, not the model to a refused analyst; the
+	// newsroom page names no analyst.
+	assert.match(nextAction({ phase: 'investigation_gate_finalization', investigation_gate: { resume_at: 'seal' }, fixed_steps: [{ step: 'seal_gate', ok: false, output: 'x' }] }, () => false)!, /failed \(fixed_steps says why\)[^]*do not call spotlight_resolve again/);
+	assert.match(nextAction({ phase: 'investigation', missing: ['investigation follow-up'], follow_up: { instructions: 'x' } }, () => false)!, /spawn the investigator/);
+	const blocked = join(dir, 'blocked');
+	const harnessData = join(dir, 'harness');
+	await mkdir(join(blocked, 'data'), { recursive: true });
+	await writeFile(join(blocked, 'data', 'fact-check.json'), '{}');
+	await mkdir(dirname(batchBlockedFile(harnessData, blocked)), { recursive: true });
+	await writeFile(batchBlockedFile(harnessData, blocked), JSON.stringify({ reason: 'the case does not validate', fact_check_sha256: factCheckHash(blocked) }));
+	const data = process.env.SPOTLIGHT_HARNESS_DATA;
+	process.env.SPOTLIGHT_HARNESS_DATA = harnessData;
+	t.after(() => { if (data === undefined) delete process.env.SPOTLIGHT_HARNESS_DATA; else process.env.SPOTLIGHT_HARNESS_DATA = data; });
+	assert.equal(nextAction({ phase: 'ingest', ingest: { resume_at: 'decision' } }, (relative) => relative === 'data/case-contract.json', blocked), NEXT_INGEST_BLOCKED);
+	process.env.SPOTLIGHT_EDITION = 'newsroom';
+	assert.equal(await missingForApproval(dir, { phase: 'ingest', ingest: { resume_at: 'decision' } }), undefined);
+	delete process.env.SPOTLIGHT_EDITION;
 });
