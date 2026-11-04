@@ -3,7 +3,7 @@
 // end-to-end step is in launcher.test.ts ("commit step").
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { acceptCommit, commitDue, commitState, pickCommit, pickWrite, writeCommitDue, writeCommitFile } from './commit.ts';
+import { commitDue, commitState, pickCommit, pickWrite, writeCommitDue, writeCommitFile } from './commit.ts';
 
 const call = (id: string, name: string, args: Record<string, unknown> = {}) => ({ role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: args }] });
 const result = (id: string, text: string, isError = false) => ({ role: 'toolResult', toolCallId: id, content: [{ type: 'text', text }], isError });
@@ -35,14 +35,15 @@ test('the commit step waits two tool turns after the first unrecorded line and f
 
 test('a commit answer is clipped to the lines the model was shown; no surviving cite or nothing_found is not used', () => {
 	const shown = commitState([call('1', 'grep_files'), result('1', 'research/a.md:140:Heading\nresearch/a.md:164:Acme paid Doe.')]).shown;
-	assert.deepEqual(acceptCommit('record_finding', { finding: { claim: 'Acme paid Doe.', confidence: 'medium' }, cite: [{ path: 'research/a.md', line_start: 140, line_end: 164 }] }, shown),
-		{ args: { finding: { claim: 'Acme paid Doe.', confidence: 'medium' }, cite: [{ path: 'research/a.md', line_start: 140, line_end: 140 }, { path: 'research/a.md', line_start: 164, line_end: 164 }] } });
-	assert.ok('reason' in acceptCommit('record_finding', { finding: { claim: 'X.', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 1, line_end: 100 }] }, shown));
-	assert.ok('reason' in acceptCommit('nothing_found', { reason: 'none' }, shown));
-	assert.ok('reason' in acceptCommit('record_finding', { finding: { claim: '', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 164, line_end: 164 }] }, shown));
+	const pick = (name: string, args: unknown) => pickCommit([{ name, arguments: args }], shown);
+	assert.deepEqual(pick('record_finding', { finding: { claim: 'Acme paid Doe.', confidence: 'medium' }, cite: [{ path: 'research/a.md', line_start: 140, line_end: 164 }] }),
+		{ args: { finding: { claim: 'Acme paid Doe.', confidence: 'medium' }, cite: [{ path: 'research/a.md', line_start: 140, line_end: 140 }, { path: 'research/a.md', line_start: 164, line_end: 164 }] }, dropped: [] });
+	assert.ok('reason' in pick('record_finding', { finding: { claim: 'X.', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 1, line_end: 100 }] }));
+	assert.ok('reason' in pick('nothing_found', { reason: 'none' }));
+	assert.ok('reason' in pick('record_finding', { finding: { claim: '', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 164, line_end: 164 }] }));
 	// Codex review of simp-commit: an unsafe or reversed range is dropped at once, not walked.
-	assert.ok('reason' in acceptCommit('record_finding', { finding: { claim: 'X.', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 9007199254740992, line_end: 9007199254740992 }] }, shown));
-	assert.ok('reason' in acceptCommit('record_finding', { finding: { claim: 'X.', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 164, line_end: 140 }] }, shown));
+	assert.ok('reason' in pick('record_finding', { finding: { claim: 'X.', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 9007199254740992, line_end: 9007199254740992 }] }));
+	assert.ok('reason' in pick('record_finding', { finding: { claim: 'X.', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 164, line_end: 140 }] }));
 });
 
 test('a grep result with a row that is not path:line:text shows nothing (a path holding a newline cannot forge a hit)', () => {
@@ -76,6 +77,7 @@ test('of several commit calls the first that passes the cite rules is kept; the 
 test('the write commit step: which deliverables, when it is due, and which answer is kept', () => {
 	assert.equal(writeCommitFile('data/methodology.json'), 'data/methodology.json');
 	assert.equal(writeCommitFile('data/knowledge-proposal.json'), 'data/knowledge-proposal.json');
+	assert.equal(writeCommitFile('data/methodology-amendment.json'), 'data/methodology-amendment.json');
 	assert.equal(writeCommitFile('data/findings.json,data/evidence-bundle.json'), undefined, 'the investigation keeps the finding commit step');
 	assert.equal(writeCommitFile('data/fact-check.json'), undefined);
 	assert.equal(writeCommitFile(undefined), undefined);

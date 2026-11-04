@@ -127,7 +127,7 @@ export function commitDue(state: CommitState, requestsSinceAttempt = Infinity): 
 // The model's commit answer, with each cite clipped to the lines it was shown
 // (runs of consecutive shown lines become separate cites); or why it is not used.
 export type CommitArgs = { finding: { claim: string; confidence: string }; cite: Array<{ path: string; line_start: number; line_end: number }> };
-export function acceptCommit(name: string | undefined, args: unknown, shown: Shown): { args: CommitArgs } | { reason: string } {
+function acceptCommit(name: string | undefined, args: unknown, shown: Shown): { args: CommitArgs } | { reason: string } {
 	if (name === 'nothing_found') return { reason: 'the model answered nothing_found' };
 	if (name !== 'record_finding') return { reason: `the model answered ${name ?? 'no tool call'}` };
 	const input = args as { finding?: { claim?: unknown; confidence?: unknown }; cite?: unknown };

@@ -312,19 +312,8 @@ test('a long methodology correction keeps the research checks\' rule lines ahead
 	assert.ok(errors.length <= 4000);
 });
 
-// Codex review of simp-triage2: the triage-hold step is given only when the round's triage failed, never for a triage still owed.
-test('the triage hold names the member options only after a failed triage', () => {
-	const held = { phase: 'research', research: { resume_at: 'triage' } };
-	assert.equal(nextAction(held, () => false), NEXT_TRIAGE, 'a triage still owed is code\'s step, not a hold');
-	assert.equal(nextAction({ ...held, research_round: { triage: { ok: false, error: 'research triage: research needs a decision model' } } }, () => false), NEXT_TRIAGE_HELD);
-});
-
-// r2-k1.md: every Research step names its next move; the AMENDMENT steps are code's, the gate is the member's.
-test('the Research steps name their next move, and code launches the investigator for the round and the amendment', () => {
-	assert.equal(nextAction({ phase: 'research', research: { resume_at: 'round_topics' } }, () => false), NEXT_ROUND);
-	assert.equal(nextAction({ phase: 'research', research: { resume_at: 'amendment' } }, () => false), NEXT_AMENDMENT);
-	assert.equal(nextAction({ phase: 'research_approval' }, () => false), NEXT_RESEARCH_APPROVAL);
-	assert.match(NEXT_RESEARCH_APPROVAL, /open_review/);
+// r2-k1.md: code launches the investigator for the round and the amendment; the gate is the member's.
+test('code launches the investigator for the round and the amendment, and leaves the Research page to the member', () => {
 	assert.deepEqual(dispatchAt({ phase: 'research', status: 'active', research: { resume_at: 'round_topics' } }), { agent: 'investigator', task: 'MODE: AMENDMENT\nTASK: ROUND', step: 'investigator AMENDMENT ROUND' });
 	assert.deepEqual(dispatchAt({ phase: 'research', status: 'active', research: { resume_at: 'amendment' } }), { agent: 'investigator', task: 'MODE: AMENDMENT\nTASK: AMEND', step: 'investigator AMENDMENT AMEND' });
 	assert.equal(dispatchAt({ phase: 'research_approval', status: 'active' }), undefined, 'the gate is the member\'s');
@@ -339,20 +328,21 @@ test('every state the resolver can return names a next step, and only member dec
 	const drafted = join(dir, 'drafted');
 	await mkdir(join(drafted, 'data'), { recursive: true });
 	await writeFile(join(drafted, 'data', 'report-draft.json'), JSON.stringify({ title: 'T', deck: '', finding_treatments: [] }));
-	type Row = [label: string, state: Record<string, unknown>, onDisk: string[], kind: 'member' | 'other', caseDir?: string, edition?: string];
+	type Row = [label: string, state: Record<string, unknown>, onDisk: string[], kind: 'member' | 'other', caseDir?: string, edition?: string, line?: string];
 	const rows: Row[] = [
 		['brief', { phase: 'brief' }, [], 'other'],
 		['methodology', { phase: 'methodology' }, [], 'other'],
 		['methodology failing', { phase: 'methodology', methodology_check: 'FAIL' }, [], 'other'],
 		['methodology_approval', { phase: 'methodology_approval' }, [], 'member'],
 		['research lanes', { phase: 'research', research: { resume_at: 'lanes' } }, [], 'other'],
-		['research triage owed', { phase: 'research', research: { resume_at: 'triage' } }, [], 'other'],
-		['research triage failed', { phase: 'research', research: { resume_at: 'triage' }, research_round: { triage: { ok: false } } }, [], 'other'],
+		['research triage owed', { phase: 'research', research: { resume_at: 'triage' } }, [], 'other', undefined, undefined, NEXT_TRIAGE],
+		// Codex review of simp-triage2: the hold only after a failed triage, never for one still owed.
+		['research triage failed', { phase: 'research', research: { resume_at: 'triage' }, research_round: { triage: { ok: false } } }, [], 'other', undefined, undefined, NEXT_TRIAGE_HELD],
 		['research suggestions', { phase: 'research', research: { resume_at: 'suggestions' } }, [], 'other'],
-		['research amendment', { phase: 'research', research: { resume_at: 'amendment' } }, [], 'other'],
-		['research round_topics', { phase: 'research', research: { resume_at: 'round_topics' } }, [], 'other'],
+		['research amendment', { phase: 'research', research: { resume_at: 'amendment' } }, [], 'other', undefined, undefined, NEXT_AMENDMENT],
+		['research round_topics', { phase: 'research', research: { resume_at: 'round_topics' } }, [], 'other', undefined, undefined, NEXT_ROUND],
 		['research off', { phase: 'research', research: { resume_at: 'research_off' } }, [], 'other'],
-		['research_approval', { phase: 'research_approval' }, [], 'member'],
+		['research_approval', { phase: 'research_approval' }, [], 'member', undefined, undefined, NEXT_RESEARCH_APPROVAL],
 		['investigation, findings owed', { phase: 'investigation', missing: ['data/findings.json'] }, [], 'other'],
 		['investigation, fact-check owed', { phase: 'investigation', missing: ['data/fact-check.json'] }, [], 'other'],
 		['investigation, other', { phase: 'investigation', missing: ['something else'] }, [], 'other'],
@@ -375,13 +365,14 @@ test('every state the resolver can return names a next step, and only member dec
 	];
 	const edition = process.env.SPOTLIGHT_EDITION;
 	t.after(() => { if (edition === undefined) delete process.env.SPOTLIGHT_EDITION; else process.env.SPOTLIGHT_EDITION = edition; });
-	for (const [label, state, files, kind, caseDir, rowEdition] of rows) {
+	for (const [label, state, files, kind, caseDir, rowEdition, line] of rows) {
 		if (rowEdition) process.env.SPOTLIGHT_EDITION = rowEdition; else delete process.env.SPOTLIGHT_EDITION;
 		const next = nextAction(state, (relative) => files.includes(relative), caseDir);
 		assert.equal(typeof next, 'string', `${label}: no next step`);
 		assert.match(next!, /(^|\. )Next: /, label);
 		// The router opens the page whenever the line names open_review.
 		assert.equal(next!.includes('open_review'), kind === 'member', `${label}: ${next}`);
+		if (line) assert.equal(next, line, label);
 	}
 	delete process.env.SPOTLIGHT_EDITION;
 	// Codex review of simp-next: a failed fixed step is not retried by the model;

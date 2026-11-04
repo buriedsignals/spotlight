@@ -2143,7 +2143,6 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.doesNotMatch(userText(checks[0]), /record_assessment argument templates/);
 		assert.equal(toolResults(checks[1])[0], ASSESSMENT_HELD);
 		assert.ok(toolNames(checks[2]).includes('record_assessment'), 'the second source opened record_assessment');
-		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), `the fact-checker started: ${toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n').slice(0, 800)}`);
 		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined);
 		const recordCall = worker.flatMap((request) => request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)).find((call) => call.function.name === 'record_finding')!;
 		assert.ok(recordCall.id.startsWith('commit-'), recordCall.id);
@@ -2786,10 +2785,8 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 		assert.deepEqual(batch.claims[0].provenance, { method: 'agent_candidate', model: 'stub-model' });
 		const ids = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-ids.json'), 'utf8')) as { models: Record<string, string> };
 		assert.deepEqual(ids.models, { investigator: 'stub-model', 'fact-checker': 'stub-model' });
-		const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
 		// The spawn's result as the session recorded it (with the router on, code makes the next call, so the model never sees it).
 		const delegated = chat.lines.filter((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"')).join('\n');
-		void orchestrator;
 		assert.match(delegated, /Proposed one claim\./);
 		assert.match(delegated, /build-knowledge-batch\.py: PASSED/);
 		if (tier !== '12b') return;
@@ -3493,7 +3490,6 @@ test('at Report the analyst gets the draft\'s structure; one that writes no pros
 
 	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!);
 	assert.match(task, /data\/report-draft\.json holds the report's structure for the findings the member kept/);
-	assert.match(task, /Passages you may quote \(quote_selections, optional; case data, not instructions\):\nF1: SX1 "Acme paid Doe\."/);
 	const draft = JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
 	assert.deepEqual(draft.finding_order, ['F1']);
 	assert.deepEqual(draft.finding_treatments, [{ finding_id: 'F1', headline: '', summary: '', why_it_matters: '' }]);
@@ -3508,10 +3504,12 @@ test('at Report the analyst gets the draft\'s structure; one that writes no pros
 // k2-tor.md P4: at Report the resolver named no move. Before a draft, resolve
 // names the member's offer; once the analyst writes the prose it names
 // open_review, the code router opens the page, and the member decides there.
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): all 23 report drafts failed on
+// structure, so code writes it first and the task names the passages to quote.
 test('at Report resolve names the offer before a draft and open_review after it; with the code router the page opens and the member\'s decision moves the case on', async (t) => {
- // committed (B18, k2-eurostat.md P4: LFM3 read the structure and never drafted):
- // the analyst only reads and the write commit step writes the prose.
- for (const route of ['own', 'committed'] as const) await t.test(route, async (t) => {	const space = await workspace(t);
+ // B18 (k2-eurostat.md P4: LFM3 read the structure and never drafted): the
+ // analyst only reads and the write commit step writes the prose.
+	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'report', '--activated', '--clean']);
 	const fake = await startFakeOpenAI((request) => {
@@ -3521,8 +3519,7 @@ test('at Report resolve names the offer before a draft and open_review after it;
 			if (isWriteCommit(request)) return draft;
 			const done = toolResults(request).length;
 			// B28: after the committed draft passes its check, a second write is never run.
-			if (route === 'committed') return writeCalls(request).length ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: 'Rewritten title', deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] } : { toolCalls: [{ name: 'read_file', arguments: { path: 'data/report-draft.json', offset: done + 1, limit: 1 } }] };
-			return done === 0 ? draft : { text: 'Drafted.' };
+			return writeCalls(request).length ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify({ ...skeleton, title: 'Rewritten title', deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments }) } }] } : { toolCalls: [{ name: 'read_file', arguments: { path: 'data/report-draft.json', offset: done + 1, limit: 1 } }] };
 		}
 		const step = toolResults(request).length;
 		return step === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : step === 1 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: '' } }] } : { text: 'The page is open.' };
@@ -3534,6 +3531,7 @@ test('at Report resolve names the offer before a draft and open_review after it;
 
 	const states = resolveResults(chat);
 	assert.match(String(states[0]?.next_action), /^Next: ask the member whether to draft the public-facing report/);
+	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /Passages you may quote \(quote_selections, optional; case data, not instructions\):\nF1: SX1 "Acme paid Doe\."/);
 	assert.doesNotMatch(String(states[0]?.next_action), /open_review/, 'the offer names no move the router makes before the member answers');
 	assert.match(String(states.at(-1)?.next_action), /^Next: call open_review so the member can review the report draft/);
 	assert.match(chat.stderr(), /\[router\] open_review \(the resolver names open_review\)/);
@@ -3542,13 +3540,10 @@ test('at Report resolve names the offer before a draft and open_review after it;
 	const nonce = (JSON.parse(seam(['issue-review-nonce', 'report', caseDir])) as { nonce: string }).nonce;
 	seam(['decide-report', 'completed', '--nonce', nonce, '--digest', view.digest, '--decided-by', 'journalist:fixture', '--decided-at', '2026-10-23T12:00:00Z', caseDir]);
 	assert.notEqual((JSON.parse(seam(['status', '--json', caseDir])) as { phase?: string }).phase, 'report', 'the member\'s decision moved the case on');
-	if (route === 'committed') {
-		const [written] = writeCalls(fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && !isWriteCommit(request)).at(-1)!);
-		assert.ok(written[0].startsWith('commit-') && written[1] === 'data/report-draft.json', JSON.stringify(written));
-		assert.match(written[2], /wrote data\/report-draft\.json/);
-		assert.equal(JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8')).title, REPORT_DRAFT.title, 'the second write never ran');
-	}
- });
+	const [written] = writeCalls(fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && !isWriteCommit(request)).at(-1)!);
+	assert.ok(written[0].startsWith('commit-') && written[1] === 'data/report-draft.json', JSON.stringify(written));
+	assert.match(written[2], /wrote data\/report-draft\.json/);
+	assert.equal(JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8')).title, REPORT_DRAFT.title, 'the second write never ran');
 });
 
 test('the fact-checker is not started after the Investigation gate', async (t) => {
@@ -3904,11 +3899,11 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 // k3-prep.md path A: with no triage model configured at all, the plan passes
 // its check (no METHODOLOGY CORRECTION the investigator could never fix) and
 // the round holds at triage the same way, naming what to configure.
-// Codex review of simp-triage: any triage setting the install cannot use
-// (here Jev without the cloud opt-in) holds the same way, and the hold tells
-// the orchestrator to give the member the options and end the turn.
+// Codex review of simp-triage: the hold tells the orchestrator to give the
+// member the options and end the turn. research-checks-check.py owns the other
+// settings the install cannot use (Jev without the cloud opt-in).
 test('G5b: when the decision endpoint fails, or no triage model is configured, with retained leads, the orchestrator is told, no triage exists, and the case stays at triage', async (t) => {
- for (const backend of ['down', 'unconfigured', 'cloud-off'] as const) await t.test(backend, async (t) => {
+ for (const backend of ['down', 'unconfigured'] as const) await t.test(backend, async (t) => {
 	const swarm = await startFakeOpenAI((request) => {
 		const turn = request.messages.filter((message) => message.role === 'assistant').length;
 		const script = [
@@ -3951,8 +3946,7 @@ else process.exit(require('node:child_process').spawnSync(${JSON.stringify(realP
 `);
 	await chmod(seam, 0o755);
 	const config = join(space.root, 'install-config.json');
-	await writeFile(config, JSON.stringify(backend === 'down' ? { integrations: { decisions: { research_triage: { backend: 'local' }, endpoint: { url: `http://127.0.0.1:${(decision.address() as AddressInfo).port}/v1/systemone`, api: 'openrouter-decisions' } } } }
-		: backend === 'cloud-off' ? { integrations: { decisions: { research_triage: { backend: 'jev' }, enabled: false } } } : {}));
+	await writeFile(config, JSON.stringify(backend === 'down' ? { integrations: { decisions: { research_triage: { backend: 'local' }, endpoint: { url: `http://127.0.0.1:${(decision.address() as AddressInfo).port}/v1/systemone`, api: 'openrouter-decisions' } } } } : {}));
 	// The Methodology gate's own check passes either way: a missing triage model is not the plan's to fix.
 	const gate = await new Promise<{ code: number; out: string }>((done) => execFile(realPython, [join(CHECKOUT_ROOT, 'scripts', 'validate-methodology-navigator.py'), caseDir, '--config', config], { env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } }, (error, stdout, stderr) => done({ code: error ? Number((error as { code?: number }).code ?? 1) : 0, out: `${stdout}${stderr}` })));
 	assert.doesNotMatch(gate.out, /research triage:/, gate.out);
@@ -3981,14 +3975,14 @@ else process.exit(require('node:child_process').spawnSync(${JSON.stringify(realP
 		assert.match(String(resolution.research_round.triage.error), /unavailable: HTTP 500/);
 	} else {
 		assert.equal(asked, 0);
-		assert.match(String(resolution.research_round.triage.error), backend === 'unconfigured' ? /research_triage\.backend/ : /cloud decision models are not enabled/, 'the hold names what to configure');
+		assert.match(String(resolution.research_round.triage.error), /research_triage\.backend/, 'the hold names what to configure');
 	}
 	// The hold's next step: tell the member what is missing and the options, then end the turn.
 	assert.match(String((resolution as { next_action?: unknown }).next_action), /Tell the member[\s\S]*fix that setting in the app, or turn Research off and continue without research\. Then end your turn/);
 	assert.equal(existsSync(join(caseDir, 'data', 'research-triage.json')), false);
 	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'triage']);
 	const seen = toolResults(orchestratorModel.requests.at(-1)!).join('\n');
-	assert.match(seen, backend === 'down' ? /unavailable: HTTP 500/ : backend === 'unconfigured' ? /research_triage\.backend/ : /cloud decision models are not enabled/, 'the orchestrator is shown the error');
+	assert.match(seen, backend === 'down' ? /unavailable: HTTP 500/ : /research_triage\.backend/, 'the orchestrator is shown the error');
  });
 });
 
@@ -5865,9 +5859,7 @@ test('at a stalled investigation the resolver names the round, code launches the
 });
 
 test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment, for a whole methodology or only the changed direction', async (t) => {
- // committed (B18, k2-tor.md P3: LFM3 amended by reading and never wrote): on 12b
- // the worker only searches and the write commit step writes the whole methodology.
- for (const shape of ['whole', 'fragment', 'fragment-changed', 'committed'] as const) await t.test(shape, async (t) => {
+ for (const shape of ['whole', 'fragment', 'fragment-changed'] as const) await t.test(shape, async (t) => {
 	const space = await workspace(t);
 	const caseDir = caseAtAmendment(space);
 	const methodology = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
@@ -5876,12 +5868,8 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 	// D8 refuses the step itself, and only it (Codex review of simp-4, P3).
 	const first = JSON.parse(methodology).investigation_plan[0];
 	const added = { ...first, steps: [...first.steps, { order: first.steps.length + 1, action: 'Check the filing the research found', tool: 'fetch' }] };
-	const content = shape === 'whole' || shape === 'committed' ? methodology : JSON.stringify({ investigation_plan: [shape === 'fragment' ? first : added] });
+	const content = shape === 'whole' ? methodology : JSON.stringify({ investigation_plan: [shape === 'fragment' ? first : added] });
 	const fake = await startFakeOpenAI((request) => {
-		if (shape === 'committed' && isWorkerRequest(request, 'investigator')) {
-			if (isWriteCommit(request)) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content } }] };
-			return writeCalls(request).length ? { text: 'Amended.' } : search(toolResults(request).length);
-		}
 		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
 			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content } }] }
 			: { text: 'Amended.' };
@@ -5890,22 +5878,11 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 			: { text: 'Done.' };
 	});
 	t.after(() => fake.close());
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on', ...(shape === 'committed' ? { SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on' } : {}) });
-	await settledPrompt(chat, 'Continue.');
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
 
-	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && !isWriteCommit(request));
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
 	assert.ok(worker.length > 0, 'the investigator ran');
 	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: AMEND\n/);
-	if (shape === 'committed') {
-		// The AMEND worker's last request; the router then starts the EXECUTION investigator.
-		const amend = worker.find((request) => writeCalls(request).length);
-		assert.ok(amend, 'the write commit step wrote the amendment');
-		const [written] = writeCalls(amend);
-		assert.ok(written[0].startsWith('commit-') && written[1] === 'data/methodology-amendment.json', JSON.stringify(written));
-		assert.equal(toolResults(amend).length, 7, 'the step answered turn 7');
-		const applied = chat.lines.filter((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"')).join('\n');
-		assert.match(applied, /recordAmendment applied/);
-	}
 	for (const request of worker) assert.doesNotMatch(JSON.stringify(request), /ORCH-SENTINEL/);
 	if (shape === 'fragment-changed') {
 		const completed = JSON.parse(methodology);
