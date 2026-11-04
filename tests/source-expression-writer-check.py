@@ -373,7 +373,9 @@ def main() -> int:
         # 12B r1 quotes that were the source's words but not exact, or cited the
         # wrong file or item, or were the model's own text (each refused on #206).
         other = case / "research" / "other.txt"
-        other.write_text("**Revenue** was `42` million in 2024.\nMinutes: the board met on 9 June.\n", encoding="utf-8")
+        # The third line is the Eurostat capture's, whose sentence holds a markdown link (reports/qwen-base.md H-1).
+        eurostat = 'Compared with the rates published in the [News Release](https://ec.europa.eu/eurostat/en/web/products-euro-indicators/w/3-01102026-ap "https://ec.europa.eu/eurostat/en/web/products-euro-indicators/w/3-01102026-ap") of 1 October 2026, the August 2026 unemployment rate for the EU was revised from 6.1% to 6.2% and the unemployment rate for the euro area was revised from 6.4% to 6.5%.'
+        other.write_text(f"**Revenue** was `42` million in 2024.\nMinutes: the board met on 9 June.\n{eurostat}\n", encoding="utf-8")
         bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
         item = json.loads(json.dumps(next(i for i in bundle["items"] if i["id"] == "E2")))
         item.update({"id": "E3", "raw_path": "research/other.txt", "sha256": hashlib.sha256(other.read_bytes()).hexdigest()})
@@ -384,6 +386,12 @@ def main() -> int:
         done = relaxed("SXR-MD", 4, text='"Revenue was 42 million in 2024."', anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
         require(done.returncode == 0 and stored("SXR-MD")["text"] == "**Revenue** was `42` million in 2024.",
                 f"a quote differing only in markdown and wrapping quotes was not stored as the file's line: {done.stderr}")
+        # A quote of the words a reader sees: the link's target is not the source's words, and the file's own line is stored.
+        done = relaxed("SXR-LINK", 4, text="Compared with the rates published in the News Release of 1 October 2026, the August 2026 unemployment rate for the EU was revised from 6.1% to 6.2%", anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
+        require(done.returncode == 0 and stored("SXR-LINK")["text"] == eurostat, f"a quote differing only in a link's markup was not stored as the file's line: {done.stderr}")
+        # Nothing else relaxes: the link's text must still be the words quoted.
+        done = relaxed("SXR-LINK2", 4, text="Compared with the rates published in the Press Note of 1 October 2026", anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
+        require(done.returncode != 0, "a quote changing a link's visible text was accepted")
         # The named file lacks the quote and one other evidence file has it: that file and its item are cited.
         done = relaxed("SXR-DERIVE", 4, text="Minutes: the board met on 9 June.")
         require(done.returncode == 0 and stored("SXR-DERIVE")["anchor_ref"]["path"] == "research/other.txt"

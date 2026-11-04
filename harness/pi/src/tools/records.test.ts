@@ -1,6 +1,6 @@
 // Typed canonical writes use the same production merge/refusal/quote boundary.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -150,18 +150,19 @@ test('typed finding fingerprint failure reports the accepted write and can be re
 	assert.match(recovered.at(-1).finding_fingerprint,/^[a-f0-9]{64}$/);
 });
 
-test('typed assessment records an exact quote from its independently acquired capture through the canonical passage writer', async t=>{
+// H-1 (reports/qwen-base.md, Eurostat P3): the capture's sentence held a markdown link, the quote its visible words: 5 refused writes, then the watchdog stopped the case.
+for (const [name,line,quote] of [['exact','Acme paid Doe in full.','Acme paid Doe in full.'],['through a link','Acme paid [Doe](https://example.org/doe "https://example.org/doe") in full.','Acme paid Doe in full.']] as const)
+test(`typed assessment records a quote ${name} from its independently acquired capture through the canonical passage writer`, async t=>{
 	const {call,json,context,caseDir}=await fixture(t,'fact-checker');
 	const interpreter=context.python;
 	const wrapper=join(caseDir,'python-fetch');
 	const url='https://web.archive.org/web/20261001000000/https://registry.example.org/acme';
-	const envelope=JSON.stringify({markdown:'Registry record\nAcme paid Doe in full.\n',source_url:url,provider:'crawl4ai',status_code:200});
+	const envelope=JSON.stringify({markdown:`Registry record\n${line}\n`,source_url:url,provider:'crawl4ai',status_code:200});
 	await writeFile(wrapper,`#!${process.execPath}\nconst {execFileSync}=require('node:child_process');\nconst args=process.argv.slice(2);\nif(args.includes('integrations.scraping')) process.stdout.write(${JSON.stringify(envelope)});\nelse {try{process.stdout.write(execFileSync(${JSON.stringify(interpreter)},args,{stdio:['inherit','pipe','inherit']}));}catch(error){process.stdout.write(error.stdout??'');process.exitCode=error.status??1;}}\n`,{mode:0o755});
 	context.python=wrapper;
 	context.env.SPOTLIGHT_ANONYMIZE_FETCH='true';
 	await call('fetch',{url,save_as:'fc-own.md'});
 	const finding=(await json('findings.json')).findings[0];
-	const quote='Acme paid Doe in full.';
 	await call('record_assessment',{assessment:{finding_id:finding.id,verdict:'verified',confidence:'high',evidence_for:[{description:'The independently retrieved registry states this payment.',source:url,archive_url:url,quote,source_ref:{path:'research/fc-own.md',line_start:2,line_end:2}}],evidence_against:[],grounding_assessment:{support_type:'direct',claim_elements_checked:['payment'],missing_assumptions:[],confidence_cap:'high',assessment:'The registry states the payment.'}}});
 	const checked=(await json('fact-check.json')).claims.find((row:any)=>row.finding_id===finding.id);
 	const item=(await json('evidence-bundle.json')).items.find((row:any)=>row.raw_path==='research/fc-own.md');
@@ -172,9 +173,12 @@ test('typed assessment records an exact quote from its independently acquired ca
 	assert.equal(checked.evidence_for[0].evidence_bundle_id,item.id);
 	assert.ok(checked.evidence_for[0].source_expression_refs.length>0);
 	const passage=(await json('source-expressions.json')).expressions.find((row:any)=>row.id===checked.evidence_for[0].source_expression_refs[0]);
-	assert.equal(passage.text,quote);
+	assert.equal(passage.text,line,'the file\'s own line is what is stored');
 	assert.equal(passage.anchor_ref.path,'research/fc-own.md');
 	assert.equal(passage.created_by,'fact-checker');
+	// Continuity: the validator the fact-check gate runs takes the same claim.
+	const check=spawnSync(interpreter,[join(CHECKOUT_ROOT,'scripts/validate-fact-check.py'),caseDir],{encoding:'utf8'});
+	assert.doesNotMatch(`${check.stdout}${check.stderr}`,/exact quote is not present/);
 });
 
 test('typed archive compatibility preserves a historical citation but refuses a changed capture identity', async t=>{

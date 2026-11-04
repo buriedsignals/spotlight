@@ -20,6 +20,16 @@ def normalized(value: Any) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text)).strip()
 
 
+# H-1 (reports/qwen-base.md): a capture keeps a page's links as markdown, while a quote gives the words a reader sees. The link's text
+# is the source's words; its target is not. The same rule as harness/pi/src/tools/quotes.ts linkText.
+# An image is not visible words, so `![alt](src)` stays as it is. Spaces are spelled out because \\s differs between Python and JavaScript.
+MARKDOWN_LINK = re.compile(r"(?<!!)\[([^\]\n]*)\]\((?:[^() \t\r\n]|\([^() \t\r\n]*\))*(?:[ \t]+\"[^\"\n]*\")?\)")
+
+
+def link_text(text: str) -> str:
+    return MARKDOWN_LINK.sub(r"\1", text)
+
+
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -187,10 +197,12 @@ def locate_quote(path: Path, quote: Any) -> tuple[int, int] | None:
         return None
 
     def holds(start: int, end: int) -> bool:
-        return wanted in normalized("\n".join(lines[start:end]))
+        return wanted in reader("\n".join(lines[start:end]))
 
-    whole = normalized("\n".join(lines))
-    for wanted in quote_variants(quote):
+    # As written first; then with links read as their visible words, as validate_source_ref reads them.
+    tries = [(wanted, normalized) for wanted in quote_variants(quote)] + [(wanted, lambda text: normalized(link_text(text))) for wanted in quote_variants(quote)]
+    for wanted, reader in tries:
+        whole = reader("\n".join(lines))
         first = whole.find(wanted)
         if first == -1:
             continue
@@ -229,7 +241,7 @@ def validate_source_ref(
     if error:
         return {path}, [error]
     variants = quote_variants(quote)
-    if variants and not any(wanted in normalized(selected) for wanted in variants for selected in candidates):
+    if variants and not any(wanted in normalized(text) for wanted in variants for selected in candidates for text in (selected, link_text(selected))):
         return {path}, [f"exact quote is not present in the selected source_ref from {path.name}"]
     return {path}, []
 

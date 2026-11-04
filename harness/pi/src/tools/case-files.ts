@@ -14,7 +14,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCh
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, factCheckerSourceURLs, fetchedFile, registeredCapture } from './fetch.ts';
-import { flatText, sameSourceSupport } from './quotes.ts';
+import { flatText, linkText, sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
 import { HARNESS_PROPOSALS, RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
@@ -2070,7 +2070,7 @@ function locate(text: string, quote: string): { line_start: number; line_end: nu
 	for (let size = 1; size <= most; size++) {
 		for (let start = 0; start + size <= lines.length; start++) {
 			const window = lines.slice(start, start + size).join('\n');
-			if (flatText(window).includes(flatText(wanted))) return { line_start: start + 1, line_end: start + size, quote: window.trim() };
+			if (flatText(linkText(window)).includes(flatText(wanted))) return { line_start: start + 1, line_end: start + size, quote: window.trim() };
 		}
 	}
 	return undefined;

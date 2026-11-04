@@ -115,6 +115,8 @@ async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[],
 // takes nothing.
 // Text with runs of whitespace as one space: the re-check's comparison.
 export const flatText = (text: string) => text.replace(/\s+/g, ' ').trim();
+// A markdown link as its visible words (scripts/evidence_anchors.py link_text, the same rule): the anchor compare only (H-1).
+export const linkText = (text: string) => text.replace(/(?<!!)\[([^\]\n]*)\]\((?:[^() \t\r\n]|\([^() \t\r\n]*\))*(?:[ \t]+"[^"\n]*")?\)/g, '$1');
 export function sameSourceSupport(context: ToolContext, url: string, finding: string, quote: string): string | undefined {
 	const row = list(readJson(context.caseDir, 'findings.json'), 'findings').find((entry) => entry.id === finding);
 	const refs = new Set(Array.isArray(row?.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []);
@@ -146,19 +148,20 @@ function quoteSupport(context: ToolContext, claim: Row, item: Row, relation: str
 
 // Whether an item's quote occurs in a file. An item without a quote is not
 // anchored there, whatever lines it names.
-function anchoredIn(caseDir: string, path: string, item: Row): boolean {
+function anchoredIn(caseDir: string, path: string, item: Row, exact = false): boolean {
 	let text: string;
 	try {
 		text = readFileSync(join(caseDir, path), 'utf8');
 	} catch {
 		return false;
 	}
-	return typeof item.quote === 'string' && item.quote.trim() !== '' && text.includes(item.quote.trim());
+	if (typeof item.quote !== 'string' || item.quote.trim() === '') return false;
+	return text.includes(item.quote.trim()) || (!exact && linkText(text).includes(item.quote.trim()));
 }
 
 // Whether an item's quote occurs, exactly as written, in a file.
 function verbatimIn(caseDir: string, path: string, item: Row): boolean {
-	return typeof item.quote === 'string' && item.quote === item.quote.trim() && anchoredIn(caseDir, path, item);
+	return typeof item.quote === 'string' && item.quote === item.quote.trim() && anchoredIn(caseDir, path, item, true);
 }
 
 // The fact-check write with its quotes recorded, or the content unchanged when

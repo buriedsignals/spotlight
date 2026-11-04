@@ -68,7 +68,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from evidence_anchors import case_evidence_path, locate_quote, normalized, rlm_lead_failure, selected_source_texts, source_lines, validate_source_ref  # noqa: E402
+from evidence_anchors import case_evidence_path, link_text, locate_quote, normalized, rlm_lead_failure, selected_source_texts, source_lines, validate_source_ref  # noqa: E402
 from source_expression_contract import canonical_fingerprint, canonical_json_bytes, passage_core  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
@@ -162,9 +162,9 @@ ESCAPE = ("If no source you acquired contains a passage that supports the findin
 
 # How a quote may differ from the file and still be the file's own words:
 # exactly; on validate-case's NFKC whitespace rule; and with markdown markers
-# (**, __, backticks, a leading "> ") and wrapping quotes also ignored.
+# (**, __, backticks, a leading "> ", a link's markup) and wrapping quotes also ignored.
 def _markdown_free(text: str) -> str:
-    return normalized(re.sub(r"\*\*|__|`", "", re.sub(r"(?m)^\s*>\s?", "", text)))
+    return normalized(re.sub(r"\*\*|__|`", "", re.sub(r"(?m)^\s*>\s?", "", link_text(text))))
 
 
 MATCH_RULES = (("exact", lambda text: text), ("spacing", normalized), ("markdown", _markdown_free))

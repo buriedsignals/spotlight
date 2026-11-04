@@ -5255,7 +5255,7 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
  for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts'] as const) await t.test(route, async (t) => {
 	const url = 'https://registry.example.org/recheck';
 	// The case's supporting passage is "Acme paid Doe." (the fixture's SX1).
-	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : route === 'judge-contradicts' ? 'Registry record\nAcme never paid Doe.\n' : 'Registry record\nAcme paid Doe.\n';
+	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : route === 'judge-contradicts' ? 'Registry record\nAcme [never](https://registry.example.org/note) paid Doe.\n' : 'Registry record\nAcme paid Doe.\n';
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) {
 			// Tom (2026-11-04): contradicts is disputed, and needs a quote from the re-fetch; first without one.
@@ -5314,7 +5314,7 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 		assert.equal(checked.claims[0].verdict, 'disputed');
 		assert.equal(checked.claims[0].confidence, 'low');
 		assert.equal(checked.claims[0].evidence_for.length, 0);
-		assert.equal(checked.claims[0].evidence_against[0].quote, 'Acme never paid Doe.');
+		assert.equal(checked.claims[0].evidence_against[0].quote, 'Acme [never](https://registry.example.org/note) paid Doe.', 'H-1: the visible words find the line, and the line is recorded as the file has it');
 		assert.match(checked.claims[0].evidence_against[0].source_ref.path, /^research\/fc-recheck-E1\.md/);
 		try {
 			execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir], { encoding: 'utf8' });

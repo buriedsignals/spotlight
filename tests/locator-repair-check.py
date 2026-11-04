@@ -79,6 +79,15 @@ class LocatorRepair(unittest.TestCase):
         [rows], _ = self.repair([evidence(TABLE_ROWS, 7, 8)])
         self.assertNotIn("locator_repaired_from", rows)
 
+    def test_a_quote_through_a_link_is_located_and_an_image_gives_no_words(self) -> None:
+        # H-1: a link's visible words are the source's; an image's alt text is not on the page.
+        self.note.write_text(self.note.read_text() + "\nAcme [paid](https://example.org/a) Doe in 2021.\n![Acme paid](figure.png) in full.\n", encoding="utf-8")
+        last = len(self.note.read_text().splitlines())
+        [linked], _ = self.repair([evidence("Acme paid Doe in 2021.", 1, 1)])
+        self.assertEqual((linked["source_ref"]["line_start"], linked["source_ref"]["line_end"]), (last - 1, last - 1))
+        self.assertEqual(validate_source_ref(self.case, linked["source_ref"], linked["quote"])[1], [])
+        self.assertNotEqual(validate_source_ref(self.case, evidence("Acme paid in full.", last, last)["source_ref"], "Acme paid in full.")[1], [])
+
     def test_an_ambiguous_or_missing_quote_is_left_for_the_model(self) -> None:
         ambiguous, missing = evidence("Source: registry extract.", 1, 1), evidence("Ines Tarrant resigned in 2022.", 5, 5)
         (first, second), output = self.repair([ambiguous, missing])
