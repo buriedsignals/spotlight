@@ -73,14 +73,18 @@ def resolve_case(
     except OSError as exc:
         raise OrchestrationError(f"case directory not found: {value}") from exc
     if authorized_cases_root is not None:
+        # samefile compares the files themselves, so a root spelled in another
+        # case on a case-insensitive disk (Cases for cases) is the same root.
         try:
             cases_root = Path(authorized_cases_root).expanduser().resolve(strict=True)
-            case.relative_to(cases_root)
-        except (OSError, ValueError) as exc:
+            inside = cases_root.is_dir() and not case.samefile(cases_root) and any(
+                parent.samefile(cases_root) for parent in case.parents
+            )
+        except OSError as exc:
             raise OrchestrationError(
                 "case directory is outside the authorized cases root"
             ) from exc
-        if case == cases_root or not cases_root.is_dir():
+        if not inside:
             raise OrchestrationError(
                 "case directory is outside the authorized cases root"
             )

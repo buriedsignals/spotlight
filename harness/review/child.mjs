@@ -95,6 +95,8 @@ async function main() {
 }
 
 main().catch((error) => {
+  // The parent keeps the tail of this in its start log (session.mjs).
+  process.stderr.write(`review child: ${error?.code ?? ""} ${String(error?.message ?? error).slice(0, 300)}\n`);
   event("error", { code: error?.code === "no-pending-gate" ? "no-pending-gate" : "start-failed" });
   process.exitCode = 1;
 });

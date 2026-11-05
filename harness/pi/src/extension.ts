@@ -1159,6 +1159,8 @@ function registerCallBudget(pi: ExtensionAPI, budget: number): void {
 // model request, and the member is told what failed. The count starts again
 // after the stop, so a member who asks to try again gets five more attempts.
 export const REVIEW_REFUSAL_CAP = 5;
+export const PAGE_COULD_NOT_START = 'The Spotlight review page could not start.';
+export const REVIEW_START_STOP = 'Spotlight stopped this turn because the review page could not start five times. Nothing was changed in your case. This is a problem with Spotlight on this computer, not with your case, so asking again will not help until it is fixed. The reason is in review-start.log in Spotlight\'s data folder.';
 const REVIEW_ERROR_LINES = 3;
 
 // The stop line is the member's, so it names the problem in plain words and
@@ -1556,10 +1558,13 @@ function registerReviewRefusalCap(pi: ExtensionAPI): void {
 	pi.on('tool_execution_end', (event) => {
 		if (event.toolName !== 'open_review') return;
 		const text: string = event.result?.content?.[0]?.text ?? '';
-		if (!event.isError) refusals = 0;
-		else if (text.startsWith(PAGE_NOT_OPENED) && ++refusals >= REVIEW_REFUSAL_CAP) {
+		// A page that could not start comes back as a plain result, not an error
+		// (tools/review.ts), so it is counted here too (qwen real launch: 140+ calls).
+		const couldNotStart = text.startsWith(PAGE_COULD_NOT_START);
+		if (!event.isError && !couldNotStart) refusals = 0;
+		else if ((couldNotStart || text.startsWith(PAGE_NOT_OPENED)) && ++refusals >= REVIEW_REFUSAL_CAP) {
 			refusals = 0;
-			stop = reviewRefusalStop(text);
+			stop = couldNotStart ? REVIEW_START_STOP : reviewRefusalStop(text);
 			log(`open_review was refused ${REVIEW_REFUSAL_CAP} times; the turn was stopped`);
 		}
 	});
