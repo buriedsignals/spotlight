@@ -38,6 +38,7 @@ async function renderClient(view) {
     document,
     location: { hash: "", search: "", pathname: "/" },
     history: { replaceState() {} },
+    URL,
     URLSearchParams,
     setTimeout,
     clearTimeout,
@@ -72,5 +73,24 @@ test("approved finalization renders a usable human follow-up without enabling ap
   assert.equal(page.getElementById("request-follow-up").attributes["aria-disabled"], "false");
   for (const button of page.getElementById("decision-controls").querySelectorAll("button")) {
     assert.equal(button.attributes["aria-disabled"], "true", "approval stays unavailable");
+  }
+});
+
+test("finding sources link only http and https, in a new tab without an opener", async (t) => {
+  const caseDir = buildCase(tempRoot(t), "case", "investigation_gate");
+  const view = await createCaseBridge({ caseDir }).view("investigation_gate");
+  view.content.findings[0].sources = [
+    { url: "https://www.example.org/filing", description: "" },
+    { url: "javascript:alert(1)", description: "" },
+    { url: "data:text/html,hello", description: "" },
+  ];
+  const page = await renderClient(view);
+  const links = page.getElementById("app").querySelectorAll("a");
+  assert.ok(links.length, "the finding's web source is a link");
+  for (const link of links) {
+    assert.equal(link.attributes.href, "https://www.example.org/filing");
+    assert.equal(link.attributes.target, "_blank");
+    assert.match(link.attributes.rel, /\bnoopener\b/);
+    assert.equal(link.textContent, "example.org");
   }
 });

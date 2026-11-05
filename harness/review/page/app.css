@@ -167,6 +167,10 @@ th, td { text-align: left; padding: 10px 12px 10px 0; border-bottom: 1px solid v
 th { font-size: 13px; font-weight: 600; border-bottom: 2px solid var(--fg); }
 td .pill { margin: 0; white-space: nowrap; }
 p:empty { display: none; }
+a { color: var(--focus); text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: var(--fg); }
+.sources { font-size: 15px; }
+ul.sources { margin: 6px 0; }
 .lede { font: 500 19px/1.4 var(--display); margin: 6px 0 8px; }
 .meta { margin: 0 0 6px; }
 .pill {

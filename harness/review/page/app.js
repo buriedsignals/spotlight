@@ -102,6 +102,27 @@ function fold(key, summary, children, { open = false, className = "fold" } = {})
   );
 }
 
+// Source URLs come from the web, so only http and https become links.
+function webUrl(value) {
+  try {
+    const url = new URL(String(value ?? ""));
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function sourceLink(value) {
+  const url = webUrl(value);
+  if (!url) return el("span", { className: "muted", text: value ? `${value} (not a web link)` : "No source URL" });
+  return el("a", { href: url.href, target: "_blank", rel: "noopener noreferrer", title: url.href, text: url.hostname.replace(/^www\./, "") });
+}
+
+function sourceLinks(values) {
+  const links = [...new Set(values)].map(sourceLink);
+  return links.flatMap((link, index) => (index ? [" · ", link] : [link]));
+}
+
 function say(message) {
   statusLine.textContent = message;
 }
@@ -277,8 +298,8 @@ function findingDetails(finding) {
     finding.evidence ? el("p", { className: "quote" }, el("strong", { text: "Recorded evidence: " }), finding.evidence) : null,
     finding.fact_check_notes ? el("p", { className: "quote" }, el("strong", { text: "Independent fact-check: " }), finding.fact_check_notes) : null,
     finding.sources.length
-      ? fold(`sources:${finding.id}`, `${finding.sources.length} source${finding.sources.length === 1 ? "" : "s"}`, el("ul", { "aria-label": `Sources for finding ${finding.id}` }, finding.sources.map((source) => el("li", { text: source.description ? `${source.description} (${source.url})` : source.url }))))
-      : null,
+      ? el("ul", { className: "sources", "aria-label": `Sources for finding ${finding.id}` }, finding.sources.map((source) => el("li", {}, sourceLink(source.url), source.description ? ` ${source.description}` : null)))
+      : el("p", { className: "muted", text: "No source URL recorded for this finding." }),
   ];
 }
 
@@ -450,7 +471,7 @@ function investigationContent(content, items) {
       { "aria-labelledby": "findings-heading" },
       el("h2", { id: "findings-heading", text: `Findings (${content.findings.length})` }),
       content.findings.length
-        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note"], content.findings.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes]))
+        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note", "Sources"], content.findings.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
         : el("p", { className: "muted", text: "The case records no findings." }),
     ),
     el(
@@ -759,7 +780,7 @@ function leadCard(lead, directionLabel) {
     leadTags(lead),
     directionLabel ? el("p", { className: "muted", text: `Direction: ${directionLabel}` }) : null,
     lead.excerpt ? el("p", { className: "quote" }, el("strong", { text: lead.direct_quote ? "Excerpt (verbatim): " : "Excerpt (not a direct quote): " }), lead.excerpt) : null,
-    lead.source_url ? el("p", { className: "quote muted", text: `Source: ${lead.source_url}` }) : null,
+    lead.source_url ? el("p", { className: "quote" }, "Source: ", sourceLink(lead.source_url)) : el("p", { className: "muted", text: lead.absence ? "No source URL: the lookup found nothing." : "No source URL recorded for this lead." }),
     lead.attribution ? el("p", { className: "quote", text: `Reported claim: ${lead.attribution.actor} ${lead.attribution.stance} (“${lead.attribution.verbatim}”)` }) : null,
     lead.absence && lead.queries_tried.length ? el("p", { className: "muted", text: `Queries tried: ${lead.queries_tried.join("; ")}` }) : null,
     labels.length ? el("p", { className: "muted", text: `Triage: ${labels.map(([name, value]) => `${LABEL_NAMES[name] ?? name} ${words(value)}`).join("; ")}.` }) : null,
@@ -796,6 +817,8 @@ function markGroup(item, options, groupLabel) {
 
 function clueCard(clue, item, leadsById, index) {
   const name = domId("mark", item.key);
+  const clueLeads = clue.lead_ids.map((id) => leadsById.get(id)).filter(Boolean);
+  const urls = clueLeads.map((lead) => lead.source_url).filter(Boolean);
   const options = item.protected ? [["pursue", "Pursue"]] : [["pursue", "Pursue"], ["dismiss", "Dismiss"]];
   return el(
     "fieldset",
@@ -810,6 +833,9 @@ function clueCard(clue, item, leadsById, index) {
     ),
     el("p", { className: "quote lede", text: clue.summary }),
     clue.warning ? el("p", {}, el("strong", { text: "Warning: " }), clue.warning) : null,
+    urls.length
+      ? el("p", { className: "sources" }, "Found at: ", sourceLinks(urls))
+      : el("p", { className: "muted", text: clueLeads.some((lead) => lead.absence) ? "No source URL: the lookup found nothing." : "No source URL recorded for this clue." }),
     markGroup(item, options, `Mark for clue ${index + 1}`),
     item.protected ? el("p", { className: "muted", text: "Watchlist and premise clues cannot be dismissed." }) : null,
     el("p", { id: `${name}-state` }, changeTag(item)),
