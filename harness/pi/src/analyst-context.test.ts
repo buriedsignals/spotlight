@@ -44,3 +44,34 @@ test('oversized analyst context stays bounded and the complete candidate map rem
 	assert.equal(data.findings[0].origin_candidates[1999].id, 'S1999');
 	assert.equal(data.findings[0].claim.length, 50_000);
 });
+
+// qwen-u9-mac.md: 14 of 15 proposal writes refused before the schema was read.
+test('a local tier gets the proposal skeleton: what the case fixes is filled, judgment stays a placeholder; frontier gets none', async (t) => {
+	const dir = await fixture(t, [passage('S1')]);
+	const due = analystDeliverable(dir, 'runtime-model', true);
+	const { proposal_skeleton: skeleton } = JSON.parse(await readFile(join(dir, 'data/harness-checks/analyst/context.json'), 'utf8'));
+	assert.deepEqual(skeleton.claims, [{ key: 'c1', finding_id: 'F1', fact_check_id: 1, origin_expression_id: 'S1', proposition: '', language: 'en', statement: { subject: { text: '' }, predicate: '' }, attributed: null }]);
+	assert.match(due.start!, /"proposal_skeleton":/);
+	assert.match(due.line, /Copy proposal_skeleton/);
+
+	const frontier = analystDeliverable(dir, 'runtime-model');
+	assert.doesNotMatch(frontier.start!, /proposal_skeleton/);
+	assert.doesNotMatch(frontier.line, /proposal_skeleton/);
+});
+
+test('the skeleton leaves the origin open between two passages, and no claim for a finding the builder could not take', async (t) => {
+	const dir = await fixture(t, [passage('S1'), passage('S2', { language: 'de' }), passage('T1', { derivative_type: 'translation' })]);
+	analystDeliverable(dir, 'runtime-model', true);
+	const read = async () => JSON.parse(await readFile(join(dir, 'data/harness-checks/analyst/context.json'), 'utf8')).proposal_skeleton.claims;
+	const [claim] = await read();
+	assert.deepEqual([claim.origin_expression_id, claim.language], ['', '']);
+
+	await writeFile(join(dir, 'data/source-expressions.json'), JSON.stringify({ expressions: [] }));
+	analystDeliverable(dir, 'runtime-model', true);
+	assert.deepEqual(await read(), []);
+
+	await writeFile(join(dir, 'data/source-expressions.json'), JSON.stringify({ expressions: [passage('S1')] }));
+	await writeFile(join(dir, 'data/fact-check.json'), JSON.stringify({ claims: [{ finding_id: 'F1', verdict: 'verified' }, { finding_id: 'F1', verdict: 'disputed' }] }));
+	analystDeliverable(dir, 'runtime-model', true);
+	assert.deepEqual(await read(), [], 'the builder cannot tell id-less rows apart');
+});

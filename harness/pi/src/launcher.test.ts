@@ -2702,6 +2702,34 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
  });
 });
 
+// qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
+// carries a skeleton whose placeholders the builder refuses until they are filled.
+test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {
+	const skeleton = (request: ChatRequest) => JSON.parse(userText(request).match(/"proposal_skeleton":(\{.*?"story_arcs":\[\]\})/)![1]);
+	const write = (proposal: unknown) => ({ toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(proposal) } }] });
+	const fake = await startFakeOpenAI(
+		delegateToAnalyst((request) => {
+			const done = toolResults(request).length;
+			if (done === 0) return write(skeleton(request));
+			if (done > 1) return { text: 'Proposed.' };
+			const proposal = skeleton(request);
+			const [claim] = proposal.claims;
+			return write({ ...proposal, claims: [{ ...claim, proposition: 'Acme paid Doe.', statement: { subject: { text: 'Acme' }, predicate: 'paid' }, attributed: claim.attributed ?? false }] });
+		}),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).at(-1)!);
+	assert.match(results[0], /^refused: data\/knowledge-proposal\.json/, 'an unfilled skeleton never passes');
+	assert.match(results[1], /wrote data\/knowledge-proposal\.json/);
+	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the case goes on to the Ingest page');
+});
+
 // LFM3 r3 kde stage 3 on Osaurus (ecbcd23e): a schema-valid proposal broke the
 // builder's cross-record rules, which the analyst never saw in its turn.
 test('an analyst proposal the builder\'s cross-record rules refuse is refused when written', async (t) => {
