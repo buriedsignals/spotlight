@@ -1220,6 +1220,11 @@ def _decisions_recorded(case: Path, gate: str, data_descriptor: int | None) -> i
     )
 
 
+# A solo case has one member, so its decisions need no typed name. A name saved
+# for the open decision still counts; newsroom decisions must name their decider.
+SOLO_DECIDER = "Member"
+
+
 def _reviewer_names(case: Path, gate: str, review: dict[str, Any], data_descriptor: int | None) -> tuple[str, str]:
     """(name for this decision, name saved before an earlier decision).
 
@@ -1242,6 +1247,9 @@ def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dic
     items = _merge_items(suggested, review["items"])
     counts = _counts(items)
     reviewer, previous_reviewer = _reviewer_names(case, gate, review, data_descriptor)
+    name_required = ingest_mode() == "newsroom"
+    if not name_required:
+        reviewer, previous_reviewer = reviewer or SOLO_DECIDER, ""
     return {
         "schema_version": "spotlight-review-view/v1",
         "gate": gate,
@@ -1253,6 +1261,7 @@ def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dic
         "open_required": counts["open_required"],
         "reviewer": reviewer,
         "previous_reviewer": previous_reviewer,
+        "name_required": name_required,
         "digest": review_digest(case, gate, data_descriptor),
     }
 

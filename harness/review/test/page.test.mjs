@@ -62,7 +62,7 @@ test("approved finalization renders a usable human follow-up without enabling ap
   writeFileSync(path, JSON.stringify(state));
   const view = await createCaseBridge({ caseDir }).view("investigation_gate");
   assert.equal(view.pending_gate, null);
-  const page = await renderClient(view);
+  const page = await renderClient({ ...view, name_required: true, reviewer: "" });
   const note = page.getElementById("follow-up-note");
   assert.ok(note, page.getElementById("alert").textContent);
   assert.notEqual(note.disabled, true);
@@ -93,4 +93,13 @@ test("finding sources link only http and https, in a new tab without an opener",
     assert.match(link.attributes.rel, /\bnoopener\b/);
     assert.equal(link.textContent, "example.org");
   }
+});
+
+test("a solo gate asks for no name and its follow-up needs only the note", async (t) => {
+  const caseDir = buildCase(tempRoot(t), "case", "investigation_gate");
+  const page = await renderClient(await createCaseBridge({ caseDir }).view("investigation_gate"));
+  assert.ok(page.getElementById("decision-controls"));
+  assert.equal(page.getElementById("reviewer"), null);
+  page.getElementById("follow-up-note").listeners.input({ target: { value: "Recheck the filing date." } });
+  assert.equal(page.getElementById("request-follow-up").attributes["aria-disabled"], "false");
 });
