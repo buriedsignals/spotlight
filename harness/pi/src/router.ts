@@ -75,7 +75,7 @@ export function routerState(messages: readonly unknown[]): RouterState {
 // that approval clears the block (transitions.py approve). Written by code so
 // no model blames a file (r3 blamed brief-directions.txt).
 export const BLOCKED_STOPS: Record<string, string> = {
-	'structural-correction': "Spotlight stopped the investigation. The investigator could not fix the structural errors in its findings after two tries, so no fact-check was run. To continue, change the methodology and approve it again; the investigation will start again.",
+	'structural-correction': "Spotlight stopped the investigation. The investigator's files still fail the format check after two corrections, so Spotlight cannot go on by itself. This stop deleted nothing. The fault is in how the files are written, not in your plan, but the only way back is to approve the methodology again: make any small edit to it (reword a question, for example), approve it, and the investigator gets two more tries.",
 	'amendment-correction': "Spotlight stopped at Research. The changes you marked could not be written into the plan, and the plan is unchanged. To continue, change the methodology (for example keep a direction you marked to drop) and approve it again; Research will run again.",
 };
 

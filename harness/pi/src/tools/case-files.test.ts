@@ -127,6 +127,18 @@ test('a direction\'s worker reads only its own entries, and its write keeps ever
 	assert.deepEqual(JSON.parse(await call('read_file', { path: 'data/findings.json' })).findings, [{ id: 'D2-F1', claim: 'second, corrected' }]);
 });
 
+// qwen-u9-mac.md (P3W-5): the log wants techniques_used and tools_used; r3 wrote techniques and tools and the case looped.
+test('an investigation log written with techniques and tools is stored with techniques_used and tools_used', async (t) => {
+	const { caseDir, call } = await fixture(t, undefined, 'investigator');
+	const log = join(caseDir, 'data', 'investigation-log.json');
+	await writeFile(log, JSON.stringify({ project: 'p', cycles: [] }));
+	const cycle = (methodology: Record<string, unknown>) => ({ cycle: 1, focus: 'f', methodology });
+	await call('write_file', { path: 'data/investigation-log.json', content: JSON.stringify({ project: 'p', cycles: [cycle({ techniques: ['registry search'], tools: ['fetch'], search_queries: ['q'] })] }) });
+	assert.deepEqual(JSON.parse(await readFile(log, 'utf8')).cycles[0].methodology, { techniques_used: ['registry search'], tools_used: ['fetch'], search_queries: ['q'] });
+	await call('write_file', { path: 'data/investigation-log.json', content: JSON.stringify({ project: 'p', cycles: [cycle({ techniques: ['alias'], techniques_used: ['right'], tools_used: [] })] }) });
+	assert.deepEqual(JSON.parse(await readFile(log, 'utf8')).cycles[0].methodology, { techniques: ['alias'], techniques_used: ['right'], tools_used: [] }, 'a key the model got right is never overwritten');
+});
+
 // train-tor on 52bf6183: one direction's write renamed the project and left
 // out run_id and created_at, and validate-case failed on all three.
 test('a direction\'s write keeps the file\'s project, version, run id and creation time', async (t) => {
