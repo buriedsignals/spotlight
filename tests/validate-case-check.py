@@ -394,6 +394,17 @@ def main() -> int:
     check("findings: empty list with an explicit no-qualifying-findings record", vc.validate_findings(mutate(valid_findings(), lambda d: d.update(findings=[], no_qualifying_findings=nothing))), False)
     check("findings: no-qualifying-findings record without a reason", vc.validate_findings(mutate(valid_findings(), lambda d: d.update(findings=[], no_qualifying_findings={"reason": " "}))), True)
     check("findings: no-qualifying-findings record beside findings", vc.validate_findings(mutate(valid_findings(), lambda d: d.__setitem__("no_qualifying_findings", nothing))), True)
+    # qwen real launch ab7e6c04: eleven pages fetched, then an empty pass whose reason named none of them.
+    with tempfile.TemporaryDirectory() as raw_case:
+        (Path(raw_case) / "research").mkdir()
+        (Path(raw_case) / "research/tor-people.md.raw").write_text("page\n", encoding="utf-8")
+        empty = lambda reason: mutate(valid_findings(), lambda d: d.update(findings=[], no_qualifying_findings={"reason": reason}))
+        os.environ.pop("SPOTLIGHT_MODEL_TIER", None)
+        check("findings: empty pass over a fetched page that names none of them", vc.validate_findings(empty("No findings were generated."), Path(raw_case)), True)
+        check("findings: empty pass that names the page it read", vc.validate_findings(empty("Read research/tor-people.md; it names no holder."), Path(raw_case)), False)
+        os.environ["SPOTLIGHT_MODEL_TIER"] = "frontier"
+        check("findings: frontier is not asked to name its pages", vc.validate_findings(empty("No findings were generated."), Path(raw_case)), False)
+        os.environ.pop("SPOTLIGHT_MODEL_TIER", None)
     check("findings schema: empty list with the record", schema_errors("findings.schema.json", mutate(valid_findings(), lambda d: d.update(findings=[], no_qualifying_findings=nothing))), False)
     check("findings schema: empty list without the record", schema_errors("findings.schema.json", mutate(valid_findings(), lambda d: d.__setitem__("findings", []))), True)
     check("findings: empty claim", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].__setitem__("claim", " "))), True)

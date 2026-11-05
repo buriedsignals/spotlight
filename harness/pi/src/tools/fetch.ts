@@ -31,7 +31,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { LEAD_MARKER, readTarget, writeConfined } from './case-files.ts';
+import { LEAD_MARKER, localTier, readTarget, writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { startEgressProxy } from './proxy.ts';
 import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython, savePath, saveTarget } from './run.ts';
@@ -110,6 +110,18 @@ export async function rlmComplete(env: ToolContext['env'], baseURL: string, body
 	return answer.choices?.[0]?.message?.content?.trim() ?? '';
 }
 
+const CONTEXT_LINES = 3;
+function widened(picked: Array<{ line_start: number; line_end: number; lo: number; hi: number }>): typeof picked {
+	const out: typeof picked = [];
+	for (const range of [...picked].sort((a, b) => a.line_start - b.line_start)) {
+		const wide = { ...range, line_start: Math.max(range.lo, range.line_start - CONTEXT_LINES), line_end: Math.min(range.hi, range.line_end + CONTEXT_LINES) };
+		const last = out.at(-1);
+		if (last && wide.line_start <= last.line_end + 1) last.line_end = Math.max(last.line_end, wide.line_end);
+		else out.push(wide);
+	}
+	return out;
+}
+
 // The helper chooses line ranges only. It never writes the text returned as a lead.
 async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<{ leads: string; inspected: number; total: number; selections: Array<{ line_start: number; line_end: number }> }> {
 	const request = JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest;
@@ -117,8 +129,7 @@ async function distill(baseURL: string, env: ToolContext['env'], markdown: strin
 	const scope = task ? `Task scope (not source evidence):\n${task}\n\n` : '';
 	const lines = markdown.split('\n').map((line) => line.endsWith('\r') ? line.slice(0, -1) : line);
 	if (lines.at(-1) === '') lines.pop();
-	const excerpts: string[] = [];
-	const selections: Array<{ line_start: number; line_end: number }> = [];
+	const picked: Array<{ line_start: number; line_end: number; lo: number; hi: number }> = [];
 	let next = 0;
 	for (let chunk = 0; chunk < 3 && next < lines.length; chunk++) {
 		const start = next;
@@ -140,12 +151,22 @@ async function distill(baseURL: string, env: ToolContext['env'], markdown: strin
 			if (!range || typeof range !== 'object' || Array.isArray(range) || Object.keys(range).sort().join() !== 'end,start') throw new Error('RLM returned invalid line selection');
 			const { start: first, end: last } = range as { start: unknown; end: unknown };
 			if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || (first as number) < start + 1 || (last as number) > next || (last as number) < (first as number)) throw new Error('RLM selected lines outside the inspected range');
-			selections.push({ line_start: first as number, line_end: last as number });
-			excerpts.push(`[raw lines ${first}-${last}]\n${lines.slice((first as number) - 1, last as number).join('\n')}`);
+			picked.push({ line_start: first as number, line_end: last as number, lo: start + 1, hi: next });
 		}
 	}
-	if (!excerpts.length) throw new Error('RLM returned no extractive leads');
-	const leads = excerpts.join('\n\n');
+	if (!picked.length) throw new Error('RLM returned no extractive leads');
+	const render = (ranges: Array<{ line_start: number; line_end: number }>) => ranges.map(({ line_start, line_end }) => `[raw lines ${line_start}-${line_end}]\n${lines.slice(line_start - 1, line_end).join('\n')}`).join('\n\n');
+	// qwen real launch (ab7e6c04): the helper picked 'Executive Director of the Tor Project.' and not the name two lines above it, so the page was
+	// refetched seven times. On the local tiers each pick keeps CONTEXT_LINES either side, inside the chunk the helper inspected; if that would
+	// pass the output bound, the picks stay as chosen.
+	const wide = localTier(env) ? widened(picked) : picked;
+	const selections = wide.map(({ line_start, line_end }) => ({ line_start, line_end }));
+	let leads = render(selections);
+	if (leads.length > MAX_RETURNED_CHARS && wide !== picked) {
+		const plain = picked.map(({ line_start, line_end }) => ({ line_start, line_end }));
+		leads = render(plain);
+		selections.splice(0, selections.length, ...plain);
+	}
 	if (leads.length > MAX_RETURNED_CHARS) throw new Error('RLM selections exceed the output bound');
 	return { leads, inspected: next, total: lines.length, selections };
 }

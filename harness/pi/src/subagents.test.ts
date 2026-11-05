@@ -143,6 +143,20 @@ test('a non-JSON stdout line is skipped and the transcript folder is created', a
 	assert.equal((await readdir(transcripts)).length, 1);
 });
 
+test('a local install keeps worker transcripts in its harness data folder unless told otherwise', async (t) => {
+	const root = await scratch(t);
+	const saved = { dir: process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR, data: process.env.SPOTLIGHT_HARNESS_DATA, tier: process.env.SPOTLIGHT_MODEL_TIER };
+	t.after(() => { for (const [key, value] of [['SPOTLIGHT_WORKER_TRANSCRIPT_DIR', saved.dir], ['SPOTLIGHT_HARNESS_DATA', saved.data], ['SPOTLIGHT_MODEL_TIER', saved.tier]]) { if (value === undefined) delete process.env[key!]; else process.env[key!] = value; } });
+	delete process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
+	process.env.SPOTLIGHT_HARNESS_DATA = join(root, 'data');
+	delete process.env.SPOTLIGHT_MODEL_TIER;
+	await runWorker(worker(root, process.execPath, ['-e', NOISY_WORKER]), 'task', new AbortController().signal);
+	assert.equal((await readdir(join(root, 'data', 'transcripts'))).length, 1);
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	await runWorker(worker(root, process.execPath, ['-e', NOISY_WORKER]), 'task', new AbortController().signal);
+	assert.equal((await readdir(join(root, 'data', 'transcripts'))).length, 1, 'frontier writes none');
+});
+
 // Gold run 1 on 99c6567e: a worker's whole answer was "<|tool_response>", and the orchestrator took it as the result.
 test('a worker that ends empty or with only a control token is a failed task', async (t) => {
 	const root = await scratch(t);

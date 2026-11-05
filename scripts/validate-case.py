@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -648,7 +649,27 @@ def validate_source_positions(data: Any, findings_data: Any, expressions_data: A
     return errors
 
 
-def validate_findings(data: dict[str, Any]) -> list[str]:
+def unexplained_empty_pass(case_dir: Path, reason: Any) -> list[str]:
+    """On the local tiers, an empty pass over fetched pages must say which pages
+    were read (qwen real launch ab7e6c04: eleven pages fetched, then a reason
+    that named none). A page counts as named by its file name."""
+    if os.environ.get("SPOTLIGHT_MODEL_TIER", "12b").strip() == "frontier" or not isinstance(reason, str):
+        return []
+    pages = sorted(path for path in (case_dir / "research").glob("**/*.raw") if path.is_file())
+    if not pages:
+        return []
+    said = reason.lower()
+    for page in pages:
+        name = page.name[: -len(".raw")]
+        if name.lower() in said or name.rsplit(".", 1)[0].lower() in said:
+            return []
+    return [
+        f"findings.json: 'no_qualifying_findings' names nothing that was read, but the case holds {len(pages)} fetched page(s). "
+        "Call record_finding with a cite, or list in the reason which fetched pages were read (for example research/<file>) and why none qualify."
+    ]
+
+
+def validate_findings(data: dict[str, Any], case_dir: Path | None = None) -> list[str]:
     errors: list[str] = []
 
     if not isinstance(data, dict):
@@ -673,6 +694,8 @@ def validate_findings(data: dict[str, Any]) -> list[str]:
             errors.append("findings.json: 'no_qualifying_findings' must be an object with a non-empty 'reason'")
         if data["findings"]:
             errors.append("findings.json: 'no_qualifying_findings' is only allowed with an empty 'findings' list")
+        elif isinstance(nothing, dict) and case_dir is not None:
+            errors.extend(unexplained_empty_pass(case_dir, nothing.get("reason")))
     elif not data["findings"]:
         errors.append(
             "findings.json: 'findings' is empty. If nothing qualified, say so explicitly: add "
@@ -1402,7 +1425,7 @@ def main() -> int:
         findings_data, errs = load_json(findings_path)
         all_errors.extend(errs)
         if findings_data is not None:
-            all_errors.extend(validate_findings(findings_data))
+            all_errors.extend(validate_findings(findings_data, case_dir))
     else:
         all_errors.append(f"findings.json: not found in {case_dir}/data/ or {case_dir}/")
 

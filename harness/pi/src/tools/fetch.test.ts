@@ -201,6 +201,18 @@ test('a later chunk cannot select lines of an earlier chunk, and overlapping ran
 	}
 });
 
+// qwen real launch (ab7e6c04): the helper picked the title line and not the name two lines above it, so the page was refetched seven times.
+test('a picked line keeps three lines either side, so a role and its holder arrive together, within the inspected range', async (t) => {
+	const page = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n');
+	const back = await standInRLM(t, 200, () => JSON.stringify({ ranges: [{ start: 10, end: 10 }, { start: 2, end: 2 }] }));
+	const { caseDir, call } = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: back.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own' }, page);
+	const result = await call({ url: PAGE_URL, save_as: 'research/people.md' });
+	assert.equal(result.distilled, true, String(result.rlm_error));
+	assert.deepEqual(result.selections, [{ path: 'research/people.md.raw', line_start: 1, line_end: 5 }, { path: 'research/people.md.raw', line_start: 7, line_end: 13 }]);
+	assert.match(String(result.leads), /\[raw lines 7-13\]\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13/);
+	assert.ok(existsSync(join(caseDir, 'research/people.md.raw')));
+});
+
 test('bounded chunks expose late exact passages and disclose uninspected tail', async (t) => {
 	for (const rangeCount of [1, 14]) await t.test(`${rangeCount} exact ranges per selected chunk`, async (t) => {
 		const width = rangeCount === 1 ? 36 : 1;
