@@ -1184,12 +1184,13 @@ export function reviewRefusalStop(refusal: string): string {
 	const report = refusal.slice(PAGE_NOT_OPENED.length).startsWith('data/report-draft.json ');
 	const stop = report
 		? 'Spotlight stopped this turn because the report draft was refused five times. The draft did not pass the report check, so nothing was rendered or recorded. Ask Spotlight to try again, or say what to change.'
-		: 'Spotlight stopped this turn because the review page was refused five times. The case files it needed did not pass their check, so nothing was recorded. Ask Spotlight to try again, or say what to change.';
+		: 'Spotlight stopped this turn because the review page was refused five times. The case files it needed did not pass their check, so nothing was recorded and your case is saved. Send a message here to try again. If the same problems come back, the page cannot open until they are fixed.';
 	const errors = refusal
 		.split('\n')
-		.filter((line) => line.startsWith('FAIL '))
+		.map((line) => line.trim())
+		.filter((line) => line.startsWith('FAIL ') || line.startsWith('• '))
 		.slice(0, REVIEW_ERROR_LINES)
-		.map((line) => line.replace(/^FAIL\s+/, ''));
+		.map((line) => line.replace(/^(?:FAIL\s+|•\s+)/, ''));
 	return errors.length > 0 ? `${stop}\nThe check found these problems.\n${errors.join('\n')}` : stop;
 }
 

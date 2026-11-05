@@ -15,7 +15,8 @@ import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } 
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import { DECISION_RECORDED } from './router.ts';
-import { REVIEW_HOLD_NOTICE } from './tools/review.ts';
+import { reviewRefusalStop } from './extension.ts';
+import { PAGE_NOT_OPENED, REVIEW_HOLD_NOTICE } from './tools/review.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { registerCapture } from './test-support/receipts.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
@@ -2786,6 +2787,28 @@ test('past the limit, the turn ends as it always did; Stop ends the hold at once
 	assert.equal(settles(chat), 2, 'the chat is free again after Stop');
 });
 
+// Lab OptiQ leg on d3b8305f (kseeds/u9mac-od3b81): the analyst left [verdict] in summary.md and five refusals ended the turn.
+test('at the gate a summary the check refuses is rebuilt by code on a local tier, and the page opens; frontier keeps the refusal', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI(holdScript);
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = atGate(space);
+		await writeFile(join(caseDir, 'summary.md'), '- Finding ID [id]: Verdict [verdict]\n');
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+		await settledPrompt(chat, 'Continue.', 20_000);
+		const written = await readFile(join(caseDir, 'summary.md'), 'utf8');
+		if (tier === 'frontier') {
+			assert.equal(chat.opened().length, 0);
+			assert.match(written, /\[verdict\]/);
+		} else {
+			assert.equal(chat.opened().length, 1, 'the page opened');
+			assert.doesNotMatch(written, /\[verdict\]/);
+			assert.match(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir], { encoding: 'utf8' }), /PASS|valid/i);
+		}
+	}
+});
+
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
 // carries a skeleton whose placeholders the builder refuses until they are filled.
 test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {
@@ -3157,6 +3180,7 @@ test('the orchestrator is stopped at the fifth open_review refusal, even with wr
 	);
 	const stopLine = chat.lines.find((line) => line.includes('The check found these problems.')) ?? '';
 	assert.equal(stopLine.split('\\nSTRUCTURE: ').length - 1, 3, 'at most the first three errors');
+	assert.match(reviewRefusalStop(`${PAGE_NOT_OPENED}data/findings.json does not pass validate-case.py.\n  • findings.json: F1 has no source`), /Send a message here to try again[\s\S]*The check found these problems\.\nfindings\.json: F1 has no source/, 'a gate refusal names the next step and validate-case\'s own lines');
 });
 
 // r3 held-kde run (ecbcd23e): at brief, with no brief-directions.txt and no

@@ -568,7 +568,7 @@ export function receiptOutput(answer: string): string {
 // Runs the dispatches the resolved state reaches, resolving after each. A
 // spawn the launcher refuses or a worker that fails stops the loop with its
 // receipt; the model then sees it and the state.
-async function runDispatches(resolved: Record<string, unknown>, active: ActiveCase, runAdapter: AdapterRunner, runner: DispatchRunner, signal?: AbortSignal): Promise<Record<string, unknown>> {
+async function runDispatches(resolved: Record<string, unknown>, active: ActiveCase, runAdapter: AdapterRunner, runner: DispatchRunner, signal?: AbortSignal, runStep?: FixedStepRunner): Promise<Record<string, unknown>> {
 	const receipts: Array<{ step: string; ok: boolean; output: string }> = Array.isArray(resolved.fixed_steps) ? [...(resolved.fixed_steps as never[])] : [];
 	let state = resolved;
 	let previous = '';
@@ -578,7 +578,19 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 	const repaired = runner.stall ? (runner.stall.repaired ??= new Set<string>()) : new Set<string>();
 	let stalled: { step: string; attempts: number } | undefined;
 	const stall = runner.stall;
+	let summaryTried = false;
 	for (let spawned = 0; spawned < AUTO_SPAWNS_PER_RESOLVE; spawned++) {
+		// Lab OptiQ leg on d3b8305f: a dispatch chain reached the gate after the fixed
+		// steps had run, so the analyst wrote the summary. Code's step comes first here too.
+		if (runStep && !summaryTried && fixedStepAt(state) === 'summary') {
+			summaryTried = true;
+			try {
+				receipts.push({ step: 'summary', ok: true, output: (await runStep('summary', signal) ?? '').slice(0, 600) });
+				state = await resolveCase(active, runAdapter, signal);
+			} catch (error) {
+				receipts.push({ step: 'summary', ok: false, output: (error as Error).message.slice(0, 2000) });
+			}
+		}
 		const failure = state.phase === 'methodology_approval' ? await runner.methodologyCheck() : undefined;
 		const dispatch = repair ?? dispatchAt(state, failure);
 		repair = undefined;
@@ -649,7 +661,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		async execute(_id, params, signal) {
 			const first = await resolveCase(active, runAdapter, signal);
 			const fixed = runStep ? await runFixedSteps(first, active, runAdapter, role, runStep, signal) : first;
-			const resolved = dispatch ? await withPlanCheck(await runDispatches(fixed, active, runAdapter, dispatch, signal), dispatch.methodologyCheck) : fixed;
+			const resolved = dispatch ? await withPlanCheck(await runDispatches(fixed, active, runAdapter, dispatch, signal, runStep), dispatch.methodologyCheck) : fixed;
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.
@@ -658,7 +670,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 			// A round that ends at the suggested marks gets their investigator in
 			// the same resolve (Codex review of simp-1b).
 			const after = await resolveCase(active, runAdapter, signal);
-			const post = dispatch ? await runDispatches(after, active, runAdapter, dispatch, signal) : after;
+			const post = dispatch ? await runDispatches(after, active, runAdapter, dispatch, signal, runStep) : after;
 			// The steps code took before the round stay in the result (r2-k1.md: a
 			// ROUND worker's receipt was lost when its round ran in the same resolve).
 			const steps = [...((resolved.fixed_steps as unknown[] | undefined) ?? []), ...((post.fixed_steps as unknown[] | undefined) ?? [])];
