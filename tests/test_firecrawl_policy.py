@@ -176,6 +176,45 @@ def test_off_never_uses_firecrawl_on_either_seam_even_when_asked_for():
         assert box.calls() == []
 
 
+def test_always_reads_pages_with_firecrawl_and_a_failure_keeps_crawl4ai():
+    with Box({"firecrawl_mode": "always"}, blocked=False) as box:
+        assert scrape("https://example.org/page").provider == "firecrawl"
+        assert box.calls() == ["scrape https://example.org/page"], box.calls()
+        binary = pathlib.Path(box.tmp.name) / "firecrawl"
+        binary.write_text('#!/bin/sh\necho "$@" >> "$FIRECRAWL_LOG"\nexit 3\n')
+        assert scrape("https://example.org/page").provider == "crawl4ai"
+        box.blocked = True
+        assert scrape("https://example.org/page").provider == "crawl4ai"
+        assert len(box.calls()) == 3, "a failed Firecrawl read is not tried twice for one page"
+        box.blocked = False
+        binary.write_text(FAKE)
+        # The operator's explicit provider and a Tor fetch keep their route.
+        assert scrape("https://example.org/page", provider="crawl4ai").provider == "crawl4ai"
+        os.environ["SCRAPE_PROVIDER"] = "crawl4ai"
+        assert scrape("https://example.org/page").provider == "crawl4ai"
+        os.environ.pop("SCRAPE_PROVIDER")
+        assert scrape("https://example.org/page", anonymize=True).provider == "crawl4ai"
+        assert len(box.calls()) == 3, box.calls()
+
+
+def test_always_stays_on_crawl4ai_for_a_sensitive_case_or_a_withheld_key():
+    with Box({"firecrawl_mode": "always", "sensitive": True}, blocked=False) as box:
+        assert scrape("https://example.org/page").provider == "crawl4ai"
+        assert box.calls() == []
+    with Box({"firecrawl_mode": "always"}, key=None, blocked=False) as box:
+        assert scrape("https://example.org/page").provider == "crawl4ai"
+        assert box.calls() == []
+
+
+def test_backup_reads_pages_with_crawl4ai_and_falls_back_on_a_block():
+    with Box({"firecrawl_mode": "backup"}, blocked=False) as box:
+        assert scrape("https://example.org/page").provider == "crawl4ai"
+        assert box.calls() == []
+    with Box({"firecrawl_mode": "backup"}, blocked=True) as box:
+        assert scrape("https://example.org/page").provider == "firecrawl"
+        assert box.calls() == ["scrape https://example.org/page"], box.calls()
+
+
 def test_a_named_config_that_is_missing_counts_as_sensitive():
     with Box(None) as box:   # SPOTLIGHT_CONFIG names a file that is not there
         attempts(box)
