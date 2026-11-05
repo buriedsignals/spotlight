@@ -2733,6 +2733,8 @@ const atGate = (space: Workspace) => {
 };
 const holdScript = (request: ChatRequest): Reply => (request.messages.some((message) => message.role === 'tool') ? { text: 'Done.' } : { toolCalls: [{ name: 'open_review', arguments: {} }] });
 const notices = (chat: { lines: string[] }) => chat.lines.map((line) => JSON.parse(line) as { method?: string; message?: string }).filter((record) => record.method === 'notify').map((record) => record.message ?? '');
+// What Osaurus shows: its codec reads text only from text_delta (PiRPCAdapter.swift decodeMessageUpdate).
+const shownText = (chat: { lines: string[] }) => chat.lines.map((line) => JSON.parse(line) as { type?: string; assistantMessageEvent?: { type?: string; delta?: string } }).filter((record) => record.type === 'message_update' && record.assistantMessageEvent?.type === 'text_delta').map((record) => record.assistantMessageEvent!.delta).join('');
 const settles = (chat: { lines: string[] }) => chat.lines.filter((line) => line.includes('"type":"agent_settled"')).length;
 
 test('on a local tier open_review holds the turn; a decision on the record carries the case on in the same chat turn, as a member turn', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
@@ -2750,11 +2752,31 @@ test('on a local tier open_review holds the turn; a decision on the record carri
 	await turn;
 
 	assert.equal(settles(chat), 1, 'one chat turn from the page to the next step');
-	assert.equal(chat.lines.filter((line) => line.includes('"type":"message_end"') && line.includes(DECISION_RECORDED)).length, 1, 'the member sees the decision taken up, once');
+	assert.equal(shownText(chat).split(DECISION_RECORDED).length - 1, 1, 'Osaurus shows text deltas only, so the line must stream, once');
 	assert.ok(chat.lines.filter((line) => line.includes('"type":"agent_start"')).length >= 2, 'a fresh run, so per-run limits start over');
 	assert.match(chat.stderr(), /the decision on the page counts as the member's turn/, 'and the member-turn resets, which a fresh run does not fire');
 	assert.notEqual(lastResolution(chat).phase, 'investigation_gate_approval', 'code resolved past the gate');
 	assert.ok(!chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)));
+});
+
+// Real launch dfdad41e: Ingest finished and the last line in the chat was still the hold notice.
+test('a decision that completes the case ends the held turn on code\'s closing line, as text the chat shows', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'ingest', '--activated', '--clean', '--proposal']);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_CODE_ROUTER: 'on' });
+
+	const turn = settledPrompt(chat, 'Continue.', 40_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 20_000);
+	execFileSync(PYTHON, [SEAM, 'decide-ingest', 'declined', '--decided-by', 'journalist:fixture', '--decided-at', '2026-08-23T12:00:00Z', caseDir]);
+	await turn;
+
+	const shown = shownText(chat);
+	assert.match(shown, /Case complete: \d+ findings?/, shown);
+	assert.ok(shown.lastIndexOf('Case complete') > shown.lastIndexOf(DECISION_RECORDED), 'the closing line is the last thing said');
+	assert.equal(settles(chat), 1);
 });
 
 test('past the limit, the turn ends as it always did; Stop ends the hold at once; frontier never holds', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
@@ -2768,6 +2790,7 @@ test('past the limit, the turn ends as it always did; Stop ends the hold at once
 		assert.equal(fake.requests.length, 1, name);
 		assert.equal(notices(chat).includes(REVIEW_HOLD_NOTICE), name === 'limit', name);
 		assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), `${name}: the fallback line`);
+		if (name === 'limit') assert.ok(notices(chat).includes(REVIEW_OPEN_STOP), 'a replaced line reaches Osaurus as a notice');
 	}
 
 	const fake = await startFakeOpenAI(holdScript);

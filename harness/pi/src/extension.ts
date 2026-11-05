@@ -170,6 +170,12 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 // unchanged. Each decision is logged with its reason.
 // The orchestrator's notice to the member, for the router below.
 let memberNotice: ((text: string) => void) | undefined;
+// A line swapped in at message_end never streams, and Osaurus shows deltas only
+// (real launch dfdad41e), so the member gets it as a notice too. Workers set no notice.
+function shownStop<T extends { message: unknown }>(event: T, text: string) {
+	memberNotice?.(text);
+	return { message: { ...(event.message as object), content: [{ type: 'text', text }] } as T['message'] };
+}
 // Past member-intent.py's own 90 s, so the script reports the failure itself.
 const INTENT_TIMEOUT_MS = 95_000;
 function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number; failed?: string }> {
@@ -234,6 +240,8 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 			const stop = routerMessage(model, [words], move.reason, 'stop');
 			out.push({ type: 'start', partial: { ...stop, content: [] } });
 			out.push({ type: 'text_start', contentIndex: 0, partial: { ...stop, content: [{ type: 'text', text: '' }] } });
+			// Osaurus shows text from deltas only (PiRPCAdapter.swift), so code's words must stream.
+			out.push({ type: 'text_delta', contentIndex: 0, delta: words.text, partial: stop });
 			out.push({ type: 'text_end', contentIndex: 0, content: words.text, partial: stop });
 			out.push({ type: 'done', reason: 'stop', message: stop });
 			out.end(stop);
@@ -724,7 +732,7 @@ function registerCompletionFloor(pi: ExtensionAPI): void {
 	});
 	pi.on('message_end', (event) => {
 		if (!starved || (event.message as { role?: string }).role !== 'assistant') return undefined;
-		return { message: { ...event.message, content: [{ type: 'text', text: NO_ROOM_STOP }] } as typeof event.message };
+		return shownStop(event, NO_ROOM_STOP);
 	});
 }
 
@@ -863,7 +871,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		// it, and a worker's line is its answer to the orchestrator. A turn stopped
 		// after it streamed tool calls lost them in the abort.
 		const calls = parts.some((part) => part.type === 'toolCall');
-		if (stopped) return { message: { ...event.message, content: [{ type: 'text', text: stalled && calls ? STALL_STOP : REPEAT_STOP }] } as typeof event.message };
+		if (stopped) return shownStop(event, stalled && calls ? STALL_STOP : REPEAT_STOP);
 		if (calls) return undefined;
 		const output = (event.message as { usage?: { output?: number } }).usage?.output;
 		if (message.stopReason === 'length' && output && output < MIN_CUT_TOKENS) return undefined;
@@ -1231,7 +1239,7 @@ function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 	pi.on('message_end', (event) => {
 		if (!opened || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		opened = false;
-		return { message: { ...event.message, content: [{ type: 'text', text: stopLine }] } as typeof event.message };
+		return shownStop(event, stopLine);
 	});
 }
 
@@ -1462,7 +1470,7 @@ function registerUnproductiveBound(pi: ExtensionAPI, next: () => Promise<string 
 		if (!stopping || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		stopping = false;
 		count = 0;
-		return { message: { ...event.message, content: [{ type: 'text', text: ORCHESTRATOR_LOOP_STOP }] } as typeof event.message };
+		return shownStop(event, ORCHESTRATOR_LOOP_STOP);
 	});
 }
 
@@ -1485,7 +1493,7 @@ function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
 		if (!stopping || message.role !== 'assistant') return undefined;
 		stopping = false;
 		notices = 0;
-		return { message: { ...event.message, content: [{ type: 'text', text: ORCHESTRATOR_LOOP_STOP }] } as typeof event.message };
+		return shownStop(event, ORCHESTRATOR_LOOP_STOP);
 	});
 	pi.on('before_provider_request', (_event, ctx) => {
 		if (stopping) ctx.abort();
@@ -1524,7 +1532,7 @@ function registerBlockedStop(pi: ExtensionAPI): void {
 		const message = event.message as { role?: string; content?: Array<{ type: string }> };
 		if (!blocked || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
 		log('the case is blocked and the orchestrator went on; its turn was ended');
-		return { message: { ...event.message, content: [{ type: 'text', text: blockedStop(open) }] } as typeof event.message };
+		return shownStop(event, blockedStop(open));
 	});
 }
 
@@ -1607,7 +1615,7 @@ function registerReviewRefusalCap(pi: ExtensionAPI): void {
 		if (!stop || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		const text = stop;
 		stop = undefined;
-		return { message: { ...event.message, content: [{ type: 'text', text }] } as typeof event.message };
+		return shownStop(event, text);
 	});
 }
 
