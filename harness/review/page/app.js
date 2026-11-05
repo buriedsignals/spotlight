@@ -1149,7 +1149,7 @@ function receiptSection() {
     { "aria-labelledby": "receipt-heading", className: "card" },
     el("h2", { id: "receipt-heading", tabindex: "-1", text: "Decision recorded" }),
     el("dl", {}, rows.flatMap(([name, value]) => [el("dt", { text: name }), el("dd", { text: value })])),
-    el("p", { text: "The review is read-only. You can close this tab and tell the agent you are done." }),
+    el("p", { text: "The review is read-only. You can close this tab. Send a message in your chat to carry on with the case." }),
   );
 }
 

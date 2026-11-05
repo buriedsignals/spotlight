@@ -16,7 +16,7 @@ import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinking, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
-import { READ_TRUNCATED, canonicalWriteCall, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
+import { READ_TRUNCATED, canonicalWriteCall, localTier, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { dispatchRunner } from './tools/review.ts';
 import { fixedStepRunner } from './tools/programs.ts';
@@ -88,7 +88,9 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
-		pi.on('before_agent_start', (event) => {
+		const progress: { say?: (text: string) => void } = {};
+		pi.on('before_agent_start', (event, ctx) => {
+			if (localTier(process.env)) progress.say = (text) => ctx.ui.notify(text, 'info');
 			if (event.messageType !== 'user') return;
 			resetFactCheckerCycle(cycle);
 			// Only the member's own turn lets code start a stalled worker again;
@@ -113,7 +115,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			// A worker that started and failed is not a refusal.
 			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
 		});
-		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
+		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle, progress);
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
 		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));

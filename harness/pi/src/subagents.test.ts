@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { MAX_CONCURRENT_WORKERS, WorkerQueue, runWorker, spawnAgentTool, FACT_CHECKERS_SPENT } from './subagents.ts';
+import { MAX_CONCURRENT_WORKERS, PROGRESS_EVERY_MS, WorkerQueue, runWorker, spawnAgentTool, withProgress, FACT_CHECKERS_SPENT } from './subagents.ts';
 import * as subagents from './subagents.ts';
 import type { WorkerLaunch } from './subagents.ts';
 
@@ -172,4 +172,23 @@ test('a task cancelled while queued never starts its worker', async (t) => {
 
 	await assert.rejects(queued, { name: 'AbortError' });
 	assert.equal(existsSync(marker), false);
+});
+
+// P6: silence during long phases. The beat stops with the worker, success or failure.
+test('a running worker reports start, a beat a minute and its end, and a failed worker stops the beat', async (t) => {
+	t.mock.timers.enable({ apis: ['setInterval'] });
+	const said: string[] = [];
+	const { promise, resolve } = Promise.withResolvers<string>();
+	const running = withProgress((text) => said.push(text), 'investigator', promise);
+	t.mock.timers.tick(PROGRESS_EVERY_MS * 2);
+	resolve('done');
+	assert.equal(await running, 'done');
+	t.mock.timers.tick(PROGRESS_EVERY_MS * 3);
+	assert.deepEqual(said, ['The investigator started.', 'The investigator is still working (1 min).', 'The investigator is still working (2 min).', 'The investigator finished.']);
+
+	said.length = 0;
+	await assert.rejects(withProgress((text) => said.push(text), 'analyst', Promise.reject(new Error('stopped'))), /stopped/);
+	t.mock.timers.tick(PROGRESS_EVERY_MS);
+	assert.deepEqual(said, ['The analyst started.', 'The analyst finished.']);
+	assert.equal(await withProgress(undefined, 'analyst', Promise.resolve(1)), 1, 'frontier says nothing');
 });

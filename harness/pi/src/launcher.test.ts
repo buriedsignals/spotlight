@@ -2702,6 +2702,21 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
  });
 });
 
+// P6: the notice must reach the RPC client as a notify request and stay out of what the model reads.
+test('on a local tier a worker\'s start and end reach the chat client as notices, outside the transcript; frontier sends none', async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Stopped.' })));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await caseAtIngest(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+		await settledPrompt(chat, 'Continue.');
+		const notices = chat.lines.map((line) => JSON.parse(line) as { type?: string; method?: string; message?: string }).filter((record) => record.type === 'extension_ui_request' && record.method === 'notify').map((record) => record.message);
+		assert.deepEqual(notices, tier === 'frontier' ? [] : ['The analyst started.', 'The analyst finished.'], tier);
+		assert.doesNotMatch(JSON.stringify(fake.requests.at(-1)!.messages), /The analyst started/);
+	}
+});
+
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
 // carries a skeleton whose placeholders the builder refuses until they are filled.
 test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {

@@ -113,7 +113,25 @@ export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no inves
 
 export const INVESTIGATOR_TASK_NEEDED = 'spawn_agent needs a task for the investigator that says what to do (for example MODE: EXECUTION and the approved scope). Call spotlight_resolve for the next step.';
 
-export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
+// P6: a worker can run for many minutes with nothing in the chat. On a local tier
+// code says so about once a minute. ctx.ui.notify reaches Osaurus as an inline
+// notice (PiRPCCodec, 0.25.31) and stays out of the transcript; it drops
+// tool_execution_update, so Pi's onUpdate would show nothing there.
+export const PROGRESS_EVERY_MS = 60_000;
+export async function withProgress<T>(say: ((text: string) => void) | undefined, agent: string, work: Promise<T>): Promise<T> {
+	if (!say) return work;
+	let minutes = 0;
+	say(`The ${agent} started.`);
+	const beat = setInterval(() => say(`The ${agent} is still working (${++minutes} min).`), PROGRESS_EVERY_MS);
+	try {
+		return await work;
+	} finally {
+		clearInterval(beat);
+		say(`The ${agent} finished.`);
+	}
+}
+
+export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }, progress: { say?: (text: string) => void } = {}): ToolDefinition {
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',
@@ -159,7 +177,7 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			signal?.addEventListener('abort', onAbort, { once: true });
 			process.send({ kind: 'spotlight-spawn', id, agent, task } satisfies SpawnRequest);
 			try {
-				const result = await promise;
+				const result = await withProgress(progress.say, agent, promise);
 				if (!result.ok) {
 					// U9 held-kde: refused spawns spent the cap with no fact-checker run,
 					// which closed the repair path. Only a started worker is an attempt,
