@@ -70,6 +70,38 @@ function el(tag, options = {}, ...children) {
   return node;
 }
 
+// Colours follow the report template's pills; every pill also says what it is.
+const VERDICT_TONES = { verified: "good", partially_verified: "warn", disputed: "warn", mischaracterized: "bad", false: "bad", unverified: "none", not_checkable: "none" };
+const CONFIDENCE_TONES = { high: "good", medium: "warn", low: "none" };
+
+function pill(tone, text) {
+  return el("span", { className: `pill tone-${tone ?? "none"}`, text });
+}
+
+function verdictPill(verdict, label = "Fact-check: ") {
+  return pill(VERDICT_TONES[verdict], `${label}${words(verdict) || "not stated"}`);
+}
+
+function confidencePill(confidence, label = "Confidence: ") {
+  return pill(CONFIDENCE_TONES[confidence], `${label}${confidence || "not stated"}`);
+}
+
+// A closed block. Every edit re-renders the page, so what the member opened is remembered.
+const openFolds = new Set();
+
+function fold(key, summary, children, { open = false, className = "fold" } = {}) {
+  return el(
+    "details",
+    {
+      className,
+      open: open || openFolds.has(key),
+      on: { toggle: (event) => (event.target.open ? openFolds.add(key) : openFolds.delete(key)) },
+    },
+    el("summary", {}, summary),
+    children,
+  );
+}
+
 function say(message) {
   statusLine.textContent = message;
 }
@@ -210,14 +242,11 @@ function researchPlanContent(plan) {
   const consent = plan.consent;
   return [
     el("h3", { text: "Research plan" }),
-    el(
-      "div",
-      { className: "card" },
-      el("p", { text: `Mode: ${plan.mode || "not set"}. Round budget: ${usd(plan.round_budget_usd)}. Case budget: ${usd(plan.case_budget_usd)}.` }),
-      el("p", {
-        text: `Cloud research (topic briefs sent to a cloud model): ${consent.swarm ? "yes" : "no"}. Journalist input to the local corpus lane: ${consent.journalist_input ? "yes" : "no"}. Approving this plan records this consent under your name and the time you approve.`,
-      }),
-    ),
+    el("p", {
+      text: `Cloud research (topic briefs sent to a cloud model): ${consent.swarm ? "yes" : "no"}. Journalist input to the local corpus lane: ${consent.journalist_input ? "yes" : "no"}. Approving this plan records this consent under your name and the time you approve.`,
+    }),
+    fold("research-plan", `${plan.topics.length} research topics, mode and budgets`, [
+    el("p", { className: "muted", text: `Mode: ${plan.mode || "not set"}. Round budget: ${usd(plan.round_budget_usd)}. Case budget: ${usd(plan.case_budget_usd)}.` }),
     plan.topics.length
       ? plan.topics.map((topic) =>
           el(
@@ -236,18 +265,19 @@ function researchPlanContent(plan) {
           ),
         )
       : el("p", { className: "muted", text: "The research plan lists no topics." }),
+    ]),
   ];
 }
 
 function findingDetails(finding) {
   if (!finding) return null;
   return [
-    el("p", {}, el("span", { className: "tag strong", text: `Fact-check verdict: ${finding.verdict}` }), el("span", { className: "tag", text: `Confidence: ${finding.confidence || "not stated"}` })),
-    el("p", { className: "quote", text: finding.claim }),
-    finding.evidence ? el("p", { className: "quote muted", text: `Evidence: ${finding.evidence}` }) : null,
-    finding.fact_check_notes ? el("p", { className: "quote muted", text: `Fact-check notes: ${finding.fact_check_notes}` }) : null,
+    el("p", { className: "meta" }, verdictPill(finding.verdict), confidencePill(finding.confidence)),
+    el("p", { className: "quote lede", text: finding.claim }),
+    finding.evidence ? el("p", { className: "quote" }, el("strong", { text: "Recorded evidence: " }), finding.evidence) : null,
+    finding.fact_check_notes ? el("p", { className: "quote" }, el("strong", { text: "Independent fact-check: " }), finding.fact_check_notes) : null,
     finding.sources.length
-      ? el("ul", { "aria-label": `Sources for finding ${finding.id}` }, finding.sources.map((source) => el("li", { text: source.description ? `${source.description} (${source.url})` : source.url })))
+      ? fold(`sources:${finding.id}`, `${finding.sources.length} source${finding.sources.length === 1 ? "" : "s"}`, el("ul", { "aria-label": `Sources for finding ${finding.id}` }, finding.sources.map((source) => el("li", { text: source.description ? `${source.description} (${source.url})` : source.url }))))
       : null,
   ];
 }
@@ -271,7 +301,7 @@ function changeTag(item) {
 
 function noteField(item) {
   const id = domId("note", item.key);
-  return el(
+  const field = el(
     "div",
     {},
     el("label", { for: id, text: "Note (optional)" }),
@@ -283,6 +313,8 @@ function noteField(item) {
       on: { change: (event) => edit({ kind: "note", key: item.key, value: event.target.value }) },
     }),
   );
+  // An Ingest flag's note becomes the disposition's reason, so it stays in view.
+  return item.kind === "flag" ? field : fold(`note:${item.key}`, "Add a note", field, { open: Boolean(item.note) });
 }
 
 function dispositionCard(item, finding, labels = DISPOSITION_LABELS, legend = `Finding ${finding?.id ?? item.target}`) {
@@ -415,9 +447,11 @@ function investigationContent(content, items) {
   return [
     el(
       "section",
-      { "aria-labelledby": "summary-heading" },
-      el("h2", { id: "summary-heading", text: content.title || "Summary" }),
-      el("p", { className: "quote", text: content.summary || "No summary recorded." }),
+      { "aria-labelledby": "findings-heading" },
+      el("h2", { id: "findings-heading", text: `Findings (${content.findings.length})` }),
+      content.findings.length
+        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note"], content.findings.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes]))
+        : el("p", { className: "muted", text: "The case records no findings." }),
     ),
     el(
       "section",
@@ -430,6 +464,12 @@ function investigationContent(content, items) {
       { "aria-labelledby": "selection-heading" },
       el("h2", { id: "selection-heading", text: "Selection" }),
       selection.length ? selection.map((item) => selectionCard(item, findings.get(item.target))) : el("p", { className: "muted", text: "No verified findings to select." }),
+    ),
+    el(
+      "section",
+      { "aria-labelledby": "summary-heading" },
+      el("h2", { id: "summary-heading", text: content.title || "Summary" }),
+      el("p", { className: "quote", text: content.summary || "No summary recorded." }),
     ),
     indicatorFrameworkSection(content.indicator_framework, items),
     anomalySignalsSection(content.anomaly_signals, items),
@@ -452,7 +492,7 @@ function table(caption, headers, rows) {
       {},
       el("caption", { text: caption }),
       el("thead", {}, el("tr", {}, headers.map((header) => el("th", { scope: "col", text: header })))),
-      el("tbody", {}, rows.map((row) => el("tr", {}, row.map((cell) => el("td", { text: cell || "—" }))))),
+      el("tbody", {}, rows.map((row) => el("tr", {}, row.map((cell) => (cell && typeof cell === "object" ? el("td", {}, cell) : el("td", { text: cell || "—" })))))),
     ),
   );
 }
@@ -518,18 +558,18 @@ function treatmentCard(treatment) {
   return el(
     "div",
     { className: treatment.verified ? "card" : "card unverified" },
-    treatment.verified ? null : el("p", { className: "warning", text: `Not verified by the fact-check (verdict: ${treatment.verdict}).` }),
-    el("h4", { text: treatment.headline || `Finding ${treatment.finding_id}` }),
+    treatment.verified ? null : el("p", { className: "warning", text: `Not verified by the fact-check (verdict: ${words(treatment.verdict)}).` }),
     el(
       "p",
-      {},
+      { className: "meta" },
       el("span", { className: "tag", text: `Finding ${treatment.finding_id}` }),
-      el("span", { className: treatment.verified ? "tag" : "tag strong", text: `Fact-check verdict: ${treatment.verdict}` }),
-      el("span", { className: "tag", text: `Confidence: ${treatment.confidence || "not stated"}` }),
+      verdictPill(treatment.verdict),
+      confidencePill(treatment.confidence),
       treatment.quotes ? el("span", { className: "tag", text: `Quoted passages: ${treatment.quotes}` }) : null,
     ),
-    treatment.summary ? el("p", { className: "quote", text: treatment.summary }) : null,
-    treatment.why_it_matters ? el("p", { className: "quote muted", text: `Why it matters: ${treatment.why_it_matters}` }) : null,
+    el("h3", { text: treatment.headline || `Finding ${treatment.finding_id}` }),
+    treatment.summary ? el("p", { className: "quote lede", text: treatment.summary }) : null,
+    treatment.why_it_matters ? el("p", { className: "quote" }, el("strong", { text: "Why it matters: " }), treatment.why_it_matters) : null,
   );
 }
 
@@ -537,6 +577,9 @@ function reportDraft(content) {
   return [
     el("h3", { text: content.draft_title || "Untitled draft" }),
     content.deck ? el("p", { className: "quote", text: content.deck }) : null,
+    content.treatments.length
+      ? table("Fact-check verdicts", ["Finding", "Headline", "Verdict", "Confidence"], content.treatments.map((treatment) => [treatment.finding_id, treatment.headline, verdictPill(treatment.verdict, ""), confidencePill(treatment.confidence, "")]))
+      : null,
     el("h3", { text: "Findings, in the order the report presents them" }),
     content.treatments.length ? content.treatments.map(treatmentCard) : el("p", { className: "muted", text: "The draft treats no findings." }),
     content.diagrams.length
@@ -556,7 +599,7 @@ function reportContent(content) {
       { "aria-labelledby": "report-heading" },
       el("h2", { id: "report-heading", text: content.title || "Public report" }),
       content.draft_ready
-        ? [el("p", { text: "This is the draft that publishing renders. Read it before you decide." }), el("div", { className: "card" }, reportDraft(content))]
+        ? [el("p", { text: "This is the draft that publishing renders. Read it before you decide." }), reportDraft(content)]
         : el("p", { text: "No report draft exists yet. Ask the agent to draft the report first, or decline it." }),
     ),
     newsroomChecks(content.newsroom_checks),
@@ -662,31 +705,31 @@ function runSection(content) {
     : spend.reported
       ? `Spent ${usd(spend.round_usd)} of a ${usd(spend.budget_usd)} round budget; ${usd(spend.case_usd)} of ${usd(spend.case_budget_usd)} for the case.`
       : "No spend was recorded for this round.";
-  return el(
-    "section",
-    { "aria-labelledby": "run-heading", className: "card" },
-    el("h2", { id: "run-heading", text: "This research round" }),
-    el("p", {}, el("strong", { text: "Research mode: " }), run.mode_label),
-    run.round ? el("p", { text: `Round ${run.round}.` }) : null,
+  const triage = triageLines(content);
+  return [
+    run.stopped ? el("p", { className: "warning" }, el("strong", { text: "The round stopped: " }), run.stopped.message || run.stopped.code) : null,
+    triage.urgent.map((line) => el("p", { className: "warning", text: line })),
+    fold("run", `This research round: ${run.mode_label}${run.round ? `, round ${run.round}` : ""}`, [
     el("p", { text: spendLine }),
-    run.stopped ? el("p", {}, el("strong", { text: "The round stopped: " }), run.stopped.message || run.stopped.code) : null,
+    triage.lines.map((line) => el("p", { text: line })),
     el("h3", { text: `Topics left out (${run.left_out.length})` }),
     list(run.left_out.map((topic) => (topic.reason ? `${topic.topic_id}: ${topic.reason}` : topic.topic_id)), "Every approved topic ran."),
     run.refused.length ? [el("h3", { text: `Topics refused (${run.refused.length})` }), list(run.refused.map((topic) => `${topic.topic_id}: ${topic.reason}`), "")] : null,
     run.lanes.length ? [el("h3", { text: "Lanes that did not complete" }), list(run.lanes.map((lane) => `${lane.topic_id}: ${words(lane.status)}`), "")] : null,
-  );
+    ], { className: "fold strip" }),
+  ];
 }
 
-function triageNotice(content) {
+function triageLines(content) {
   const triage = content.triage;
+  const urgent = [];
   const lines = [];
-  if (triage.state === "missing") lines.push("Triage has not run: leads are ordered by the clue rules and the source checks only.");
-  if (triage.state === "broken") lines.push("Triage results break the triage rules and are not used on this page.");
+  if (triage.state === "missing") urgent.push("Triage has not run: leads are ordered by the clue rules and the source checks only.");
+  if (triage.state === "broken") urgent.push("Triage results break the triage rules and are not used on this page.");
   if (triage.flag_only && triage.notice) lines.push(triage.notice);
   if (triage.state === "ok" && triage.backends?.length) lines.push(`Answered by: ${triage.backends.join(", ")}.`);
   if (content.suggestions === "missing") lines.push("The investigator has not suggested marks: every clue starts unmarked.");
-  if (!lines.length) return null;
-  return el("section", { "aria-labelledby": "triage-heading", className: "card" }, el("h2", { id: "triage-heading", text: "About these results" }), lines.map((line) => el("p", { text: line })));
+  return { urgent, lines };
 }
 
 function leadTags(lead) {
@@ -765,20 +808,20 @@ function clueCard(clue, item, leadsById, index) {
       clue.model_unsure ? el("span", { className: "tag strong", text: "Model unsure" }) : null,
       clue.conflict_answer?.counted ? el("span", { className: "tag", text: `Conflict question: ${words(clue.conflict_answer.value)}` }) : null,
     ),
-    el("p", { className: "quote", text: clue.summary }),
+    el("p", { className: "quote lede", text: clue.summary }),
     clue.warning ? el("p", {}, el("strong", { text: "Warning: " }), clue.warning) : null,
-    el(
+    markGroup(item, options, `Mark for clue ${index + 1}`),
+    item.protected ? el("p", { className: "muted", text: "Watchlist and premise clues cannot be dismissed." }) : null,
+    el("p", { id: `${name}-state` }, changeTag(item)),
+    suggestionLine(item),
+    fold(`clue-leads:${item.key}`, `${clue.lead_ids.length} lead${clue.lead_ids.length === 1 ? "" : "s"} behind this clue`, el(
       "ul",
       { "aria-label": `Leads behind clue ${index + 1}` },
       clue.lead_ids.map((id) => {
         const lead = leadsById.get(id);
         return el("li", { text: lead ? `Lead ${id} (rank ${lead.rank}, ${SECTION_NAMES[lead.section]}): ${lead.summary}` : `Lead ${id}` });
       }),
-    ),
-    suggestionLine(item),
-    el("p", { id: `${name}-state` }, changeTag(item)),
-    markGroup(item, options, `Mark for clue ${index + 1}`),
-    item.protected ? el("p", { className: "muted", text: "Watchlist and premise clues cannot be dismissed." }) : null,
+    )),
     noteField(item),
   );
 }
@@ -808,7 +851,7 @@ function directionCard(direction, item, leads) {
           noteField(item),
         )
       : null,
-    leads.map((lead) => leadCard(lead)),
+    leads.length ? fold(`direction-leads:${label}`, `${leads.length} lead${leads.length === 1 ? "" : "s"} under this direction`, leads.map((lead) => leadCard(lead))) : null,
   );
 }
 
@@ -877,17 +920,17 @@ function researchContent(content, items) {
   const shownDirections = new Set(content.directions.map((direction) => `direction:${direction.direction_id}`));
   const sections = SECTIONS.map(([section, heading, explanation]) => {
     const leads = content.leads.filter((lead) => lead.section === section);
+    if (!leads.length) return null;
     return el(
       "section",
       { "aria-labelledby": `${section}-heading` },
-      el("h2", { id: `${section}-heading`, text: `${heading} (${leads.length})` }),
-      el("p", { className: "muted", text: explanation }),
-      leads.length ? leads.map((lead) => leadCard(lead, directionLabels.get(lead.direction_id) ?? lead.direction_id)) : el("p", { className: "muted", text: "None." }),
+      fold(`section:${section}`, el("h2", { id: `${section}-heading`, text: `${heading} (${leads.length})` }), [
+        el("p", { className: "muted", text: explanation }),
+        leads.map((lead) => leadCard(lead, directionLabels.get(lead.direction_id) ?? lead.direction_id)),
+      ]),
     );
   });
   return [
-    runSection(content),
-    triageNotice(content),
     el(
       "section",
       { "aria-labelledby": "clues-heading" },
@@ -897,6 +940,7 @@ function researchContent(content, items) {
         ? content.clues.map((clue, index) => clueCard(clue, itemsByKey.get(`clue:${clue.clue_id}`), leadsById, index))
         : el("p", { className: "muted", text: "The rules found no clue in these leads." }),
     ),
+    ...runSection(content).flat(),
     el(
       "section",
       { "aria-labelledby": "directions-heading" },
@@ -1208,10 +1252,11 @@ function passagesSection() {
   return el(
     "section",
     { "aria-labelledby": "passages-heading" },
-    el("h2", { id: "passages-heading", text: "Passages worth reading" }),
-    el("p", { className: "muted", text: "Retrieval only: passages from this case's research that may support or contradict each claim. They are not verdicts." }),
-    data.note ? el("p", { className: "muted", text: data.note }) : null,
-    data.claims.map(passageCard),
+    fold("passages", el("h2", { id: "passages-heading", text: "Passages worth reading" }), [
+      el("p", { className: "muted", text: "Retrieval only: passages from this case's research that may support or contradict each claim. They are not verdicts." }),
+      data.note ? el("p", { className: "muted", text: data.note }) : null,
+      data.claims.map(passageCard),
+    ]),
   );
 }
 
@@ -1321,10 +1366,11 @@ function render(next) {
       parts.push(
         el(
           "section",
-          { "aria-labelledby": "blocking-heading", className: "card" },
-          el("h2", { id: "blocking-heading", text: `Blocking failures (${view.blocking.length})` }),
-          el("p", { text: "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
-          list(view.blocking, ""),
+          { "aria-labelledby": "blocking-heading" },
+          fold("blocking", el("h2", { id: "blocking-heading", text: `Blocking failures (${view.blocking.length})` }), [
+            el("p", { text: "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
+            list(view.blocking, ""),
+          ], { className: "fold blocking" }),
         ),
       );
     }
