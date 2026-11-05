@@ -7,7 +7,8 @@
 // review: never a transition or an approval) or hands the request to the model, which keeps
 // every member-facing word. A member message is read by the decision model
 // (stock D1, intent only); when it cannot answer, the model decides, as before.
-// The router never refuses and never stops; it adds no cap.
+// The router never refuses; it adds no cap. It stops a turn in one case only:
+// a repeated refused spawn with no move code can prove (routeRefusedSpawn).
 
 export const ROUTER_MODEL = 'spotlight-code-router';
 // Every router call's id starts with this, so a record of the request history
@@ -15,7 +16,8 @@ export const ROUTER_MODEL = 'spotlight-code-router';
 export const ROUTER_CALL_PREFIX = 'router-';
 
 export type Intent = 'change_request' | 'question' | 'approval_talk' | 'other';
-export type RouterMove = { kind: 'call'; tool: 'spotlight_resolve' | 'open_review'; reason: string } | { kind: 'call'; tool: 'spawn_agent'; arguments: { agent: 'investigator'; task: string }; reason: string } | { kind: 'model'; reason: string };
+export type RouterMove = { kind: 'call'; tool: 'spotlight_resolve' | 'open_review'; reason: string } | { kind: 'call'; tool: 'spawn_agent'; arguments: CodeSpawn; reason: string } | { kind: 'stop'; text: string; reason: string } | { kind: 'model'; reason: string };
+export type CodeSpawn = { agent: string; task: string };
 export type RouterState = {
 	resolved?: Record<string, unknown>;
 	// Tool calls since the last spotlight_resolve result (all calls when there is none).
@@ -105,6 +107,58 @@ function noLoop(state: RouterState, move: RouterMove): RouterMove {
 	return move.kind === 'call' && state.lastRouted === move.tool && state.lastTool === move.tool && !state.member
 		? { kind: 'model', reason: `the router already called ${move.tool} with nothing new since` }
 		: move;
+}
+
+// B11 (qwen-u9-pod.md, qwen-u9-loop-state.md): held-sfc sent one refused analyst
+// spawn 416 times and held-kde a refused fact-checker spawn 353 times. The
+// router's resolve between two spawns resets the loop guard, so nothing in the
+// turn ended it. The second refusal with the same words and the same case
+// records hands the move to code: the one the refusal names when code can prove
+// it, once per state of the records, otherwise an honest stop. Process memory, because a
+// fold drops the transcript this would otherwise be read from.
+export const REFUSED_SPAWNS = 2;
+type RefusedSpawn = { agent: string; refusal: string; count: number };
+export type SpawnRefusals = { digest: string; seen: Map<string, RefusedSpawn>; moved: Set<string>; stopped: boolean };
+
+export const spawnRefusals = (): SpawnRefusals => ({ digest: '', seen: new Map(), moved: new Set(), stopped: false });
+
+export function clearSpawnRefusals(spawns: SpawnRefusals): void {
+	Object.assign(spawns, spawnRefusals());
+}
+
+// Changed records are progress, so the count starts again.
+export function noteRefusedSpawn(spawns: SpawnRefusals, agent: string, refusal: string, digest: string): void {
+	if (spawns.digest !== digest) {
+		spawns.digest = digest;
+		spawns.seen.clear();
+	}
+	const key = JSON.stringify([agent, refusal]);
+	const seen = spawns.seen.get(key);
+	spawns.seen.set(key, { agent, refusal, count: (seen?.count ?? 0) + 1 });
+}
+
+// The member's line: what was refused, where the case is, what they can do.
+export function refusedSpawnStop(agent: string, count: number, resolved: Record<string, unknown> | undefined): string {
+	const missing = Array.isArray(resolved?.missing) ? resolved.missing.map(String) : [];
+	const where = resolved?.phase ? ` The case is at ${String(resolved.phase)}${missing.length ? ` and still needs: ${missing.join('; ')}` : ''}.` : '';
+	return `Spotlight stopped this turn because the ${agent} was refused ${count} times with nothing changed in the case, and code cannot take the next step itself.${where} Say what to change, or ask Spotlight to try again.`;
+}
+
+// Applies only where the turn would go to the model, so the router's own
+// resolve comes first and `prove` reads the case as it is now.
+export function routeRefusedSpawn(state: RouterState, move: RouterMove, spawns: SpawnRefusals, digest: string, prove: (refused: { agent: string; refusal: string }, resolved: Record<string, unknown>) => CodeSpawn | undefined): RouterMove {
+	if (move.kind !== 'model' || spawns.digest !== digest) return move;
+	const repeated = [...spawns.seen.values()].find((spawn) => spawn.count >= REFUSED_SPAWNS);
+	if (!repeated) return move;
+	const proven = state.resolved ? prove(repeated, state.resolved) : undefined;
+	// Per records state: a later cycle that owes the same move has made progress.
+	const key = proven && JSON.stringify([proven.agent, proven.task, digest]);
+	if (proven && key && !spawns.moved.has(key)) {
+		spawns.moved.add(key);
+		return { kind: 'call', tool: 'spawn_agent', arguments: proven, reason: `the ${repeated.agent} spawn was refused ${repeated.count} times; code takes the move` };
+	}
+	spawns.stopped = true;
+	return { kind: 'stop', text: refusedSpawnStop(repeated.agent, repeated.count, state.resolved), reason: `the ${repeated.agent} spawn was refused ${repeated.count} times and code can prove no move` };
 }
 
 // Router on for the local tiers, off for frontier; SPOTLIGHT_CODE_ROUTER forces it.

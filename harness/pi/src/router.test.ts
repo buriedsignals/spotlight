@@ -3,7 +3,9 @@
 // model that only writes text does too").
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ROUTER_MODEL, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
+import { ROUTER_MODEL, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { INPUTS_REFUSED, refusedSpawnMove } from './tools/spotlight.ts';
+import { FACT_CHECKERS_SPENT } from './subagents.ts';
 import { EMPTY_TURN_NUDGE, RUNAWAY_TURN_NUDGE } from './extension.ts';
 
 const resolved = (state: Record<string, unknown>) => ({ role: 'toolResult', toolName: 'spotlight_resolve', content: [{ type: 'text', text: JSON.stringify(state) }] });
@@ -62,4 +64,52 @@ test('the router hands the turn to the model rather than repeat its own call wit
 	assert.equal(routerOn({ SPOTLIGHT_MODEL_TIER: 'frontier' }), false);
 	assert.equal(routerOn({ SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_CODE_ROUTER: 'on' }), true);
 	assert.equal(routerOn({ SPOTLIGHT_MODEL_TIER: '27b', SPOTLIGHT_CODE_ROUTER: 'off' }), false);
+});
+
+// B11: the harness fields of held-sfc and held-kde at the repeat (qwen-u9-loop-state.md).
+const SFC = { phase: 'investigation', status: 'active', missing: ['fresh data/fact-check.json after the investigator\'s update'], follow_up: { instructions: 'x' } };
+const KDE = { phase: 'investigation', status: 'active', missing: ['data/fact-check.json'] };
+const atModel = (state: Record<string, unknown>) => routerState([call('spotlight_resolve', true), resolved(state)]);
+const handed = { kind: 'model', reason: 'the resolver names no code move' } as const;
+const refusedTwice = (agent: string, refusal: string) => {
+	const spawns = spawnRefusals();
+	noteRefusedSpawn(spawns, agent, refusal, 'd');
+	noteRefusedSpawn(spawns, agent, refusal, 'd');
+	return spawns;
+};
+
+test('a spawn refused twice with the same words: code starts the fact-checker the resolver owes, once, then stops for the member', () => {
+	const spawns = refusedTwice('analyst', 'spawn_agent: the analyst runs only at investigation_gate_approval, report, ingest; the case is at investigation.');
+	const move = routeRefusedSpawn(atModel(SFC), handed, spawns, 'd', refusedSpawnMove) as { tool?: string; arguments?: { agent: string; task: string } };
+	assert.equal(move.tool, 'spawn_agent');
+	assert.deepEqual({ agent: move.arguments?.agent, task: move.arguments?.task }, { agent: 'fact-checker', task: '' });
+	const again = routeRefusedSpawn(atModel(SFC), handed, spawns, 'd', refusedSpawnMove) as { kind: string; text?: string };
+	assert.equal(again.kind, 'stop');
+	assert.match(again.text!, /the analyst was refused 2 times/);
+	assert.ok(again.text!.includes(SFC.missing[0]));
+	assert.equal(spawns.stopped, true);
+	// Codex review of B11, P2: a later cycle, with changed records, owes the same move.
+	noteRefusedSpawn(spawns, 'analyst', 'no', 'later');
+	noteRefusedSpawn(spawns, 'analyst', 'no', 'later');
+	assert.equal(routeRefusedSpawn(atModel(SFC), handed, spawns, 'later', refusedSpawnMove).kind, 'call');
+});
+
+test('a refused fact-checker: code sends the investigator the input errors the refusal carries, and never restarts the refused worker', () => {
+	const refusal = `spawn_agent: ${INPUTS_REFUSED}\n  • [investigator] evidence-bundle.json: item D1-E1 has no extraction_confidence`;
+	const repair = routeRefusedSpawn(atModel(KDE), handed, refusedTwice('fact-checker', refusal), 'd', refusedSpawnMove) as { arguments?: { agent: string; task: string } };
+	assert.equal(repair.arguments?.agent, 'investigator');
+	assert.match(repair.arguments!.task, /^MODE: STRUCTURAL CORRECTION\n[\s\S]*D1-E1/);
+	assert.equal(routeRefusedSpawn(atModel(KDE), handed, refusedTwice('fact-checker', FACT_CHECKERS_SPENT), 'd', refusedSpawnMove).kind, 'stop');
+});
+
+test('one refusal, changed records and the router\'s own call all leave the turn as it was', () => {
+	const once = spawnRefusals();
+	noteRefusedSpawn(once, 'analyst', 'no', 'd');
+	assert.deepEqual(routeRefusedSpawn(atModel(KDE), handed, once, 'd', refusedSpawnMove), handed);
+	const twice = refusedTwice('analyst', 'no');
+	assert.deepEqual(routeRefusedSpawn(atModel(KDE), handed, twice, 'changed', refusedSpawnMove), handed);
+	noteRefusedSpawn(twice, 'analyst', 'no', 'changed');
+	assert.deepEqual(routeRefusedSpawn(atModel(KDE), handed, twice, 'changed', refusedSpawnMove), handed, 'the count starts again after a change');
+	const resolve = { kind: 'call', tool: 'spotlight_resolve', reason: 'fresh state first' } as const;
+	assert.deepEqual(routeRefusedSpawn(atModel(SFC), resolve, refusedTwice('analyst', 'no'), 'd', refusedSpawnMove), resolve);
 });

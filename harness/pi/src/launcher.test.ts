@@ -6216,6 +6216,27 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
  });
 });
 
+// B11 (qwen-u9-pod.md): held-sfc sent one refused analyst spawn 416 times, and
+// the router's resolve between two spawns kept the loop guard from ever firing.
+test('with the code router a model that repeats a refused spawn is stopped, the member is told why, and their next turn starts afresh', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Done.' };
+		return fake.requests.length > 40 ? { text: 'The test ended this.' } : { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: 'Write the summary.' } }] };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CODE_ROUTER: 'on' });
+	await settledPrompt(chat, 'Continue.');
+	assert.ok(chat.lines.some((line) => line.includes('Spotlight stopped this turn because the analyst was refused 2 times')), 'the member reads the stop');
+	assert.match(chat.stderr(), /\[router\] stop \(the analyst spawn was refused 2 times and code can prove no move\)/);
+	const asked = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task')).length;
+	assert.ok(asked <= 4, `${asked} model requests`);
+	await settledPrompt(chat, 'Try again.');
+	const after = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task')).length;
+	assert.ok(after > asked, 'the member\'s turn reaches the model again');
+});
+
 // Member consent: code never crosses a gate. At a member gate it acts only when
 // the gate's own check fails (a correction); nothing runs after the gate is
 // ready for the member, and nothing starts Investigation before the approval.

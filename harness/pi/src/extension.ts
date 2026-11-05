@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { ROUTER_CALL_PREFIX, ROUTER_MODEL, harnessTurn, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
+import { ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
@@ -23,9 +23,9 @@ import { fixedStepRunner } from './tools/programs.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
-import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
+import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, recordsDigest, refusedSpawnMove, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
-import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
+import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
@@ -56,6 +56,8 @@ let casePhase: (() => Promise<string>) | undefined;
 // the text-turn nudge (spotlightExtension): declared inside toolsFor it was out
 // of the nudge's scope, so every nudge threw a ReferenceError from a811d655 on.
 const stall: DispatchStall = { key: '', count: 0, digest: '' };
+// Refused orchestrator spawns this member turn (router.ts routeRefusedSpawn).
+const refusedSpawns = spawnRefusals();
 function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	const composition = loadComposition();
 	const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
@@ -91,10 +93,25 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			resetFactCheckerCycle(cycle);
 			// Only the member's own turn lets code start a stalled worker again;
 			// a harness nudge does not (Codex review of simp-redispatch, P1).
-			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) Object.assign(stall, { key: '', count: 0, digest: '', repaired: new Set<string>() });
+			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) {
+				Object.assign(stall, { key: '', count: 0, digest: '', repaired: new Set<string>() });
+				clearSpawnRefusals(refusedSpawns);
+			}
 			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
 			// on a member's message.
 			process.send?.({ kind: 'spotlight-member-turn' });
+		});
+		const spawning = new Map<string, string>();
+		pi.on('tool_execution_start', (event) => {
+			if (event.toolName === 'spawn_agent') spawning.set(event.toolCallId, String((event.args as { agent?: unknown } | undefined)?.agent ?? 'worker'));
+		});
+		pi.on('tool_execution_end', (event) => {
+			const agent = spawning.get(event.toolCallId);
+			spawning.delete(event.toolCallId);
+			if (agent === undefined || !event.isError) return;
+			const said = (event.result?.content ?? []).map((part: { text?: string }) => part.text ?? '').join('\n');
+			// A worker that started and failed is not a refusal.
+			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
 		});
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
@@ -163,6 +180,16 @@ function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?:
 	});
 }
 
+// A message code wrote in the model's place, marked so a record shows it.
+function routerMessage<Part>(model: { api: string; provider: string; id: string }, content: Part[], reason: string, stopReason: 'stop' | 'toolUse') {
+	return {
+		role: 'assistant' as const, content, api: model.api, provider: model.provider, model: model.id,
+		responseModel: ROUTER_MODEL, responseId: `router: ${reason}`,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason, timestamp: Date.now(),
+	};
+}
+
 const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1]['streamSimple']> = (model, context, options) => {
 	const out = createAssistantMessageEventStream();
 	void (async () => {
@@ -181,25 +208,30 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
 				move = routeMember(state, asked.intent);
 				if (move.kind === 'call' && move.tool === 'spawn_agent' && (await casePhase?.()) !== 'methodology_approval') move = { kind: 'model', reason: 'member change_request, but the case is no longer at the methodology review' };
-			} else move = routeWithoutMember(state);
+			} else move = routeRefusedSpawn(state, routeWithoutMember(state), refusedSpawns, refusedSpawns.seen.size ? recordsDigest(required('SPOTLIGHT_CASE_DIR')) : '', refusedSpawnMove);
 		} catch (error) {
 			move = { kind: 'model', reason: `router error: ${(error as Error).message.slice(0, 200)}` };
 		}
-		if (routed) log(`[router] ${move.kind === 'call' ? move.tool : 'model'} (${move.reason})${d1}`);
+		if (routed) log(`[router] ${move.kind === 'call' ? move.tool : move.kind} (${move.reason})${d1}`);
 		if (move.kind === 'model') {
 			for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
 			out.end();
 			return;
 		}
+		if (move.kind === 'stop') {
+			const words = { type: 'text' as const, text: move.text };
+			const stop = routerMessage(model, [words], move.reason, 'stop');
+			out.push({ type: 'start', partial: { ...stop, content: [] } });
+			out.push({ type: 'text_start', contentIndex: 0, partial: { ...stop, content: [{ type: 'text', text: '' }] } });
+			out.push({ type: 'text_end', contentIndex: 0, content: words.text, partial: stop });
+			out.push({ type: 'done', reason: 'stop', message: stop });
+			out.end(stop);
+			return;
+		}
 		// The call id carries the marker on the wire too (ROUTER_CALL_PREFIX): the
 		// request history a capture records keeps tool-call ids, not responseModel.
 		const call = { type: 'toolCall' as const, id: `${ROUTER_CALL_PREFIX}${Date.now().toString(36)}`, name: move.tool, arguments: move.tool === 'spawn_agent' ? move.arguments : {} };
-		const message = {
-			role: 'assistant' as const, content: [call], api: model.api, provider: model.provider, model: model.id,
-			responseModel: ROUTER_MODEL, responseId: `router: ${move.reason}`,
-			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-			stopReason: 'toolUse' as const, timestamp: Date.now(),
-		};
+		const message = routerMessage(model, [call], move.reason, 'toolUse');
 		out.push({ type: 'start', partial: { ...message, content: [] } });
 		out.push({ type: 'toolcall_start', contentIndex: 0, partial: message });
 		out.push({ type: 'toolcall_end', contentIndex: 0, toolCall: call, partial: message });
@@ -421,7 +453,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	if (role === ORCHESTRATOR && tier12b) {
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-		registerTextTurnNudge(pi, () => caseForModel(active, runAdapter), () => stall.count >= STALLED_DISPATCHES);
+		registerTextTurnNudge(pi, () => caseForModel(active, runAdapter), () => stall.count >= STALLED_DISPATCHES || refusedSpawns.stopped);
 	}
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name).filter(offered)));
 }
