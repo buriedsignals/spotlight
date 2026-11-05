@@ -1034,7 +1034,26 @@ function artifactEnvelope(caseDir: string, target: string, submitted: string, me
 	const created = name === 'data/methodology.json' ? 'planned_at' : name === 'data/evidence-bundle.json' ? 'created_at' : undefined;
 	if (created) document[created] = existing?.[created] ?? new Date().toISOString();
 	if (name === 'data/methodology.json') fillMethodology(caseDir, env, document);
+	if (name === 'data/investigation-log.json' && localTier(env)) renameLogAliases(document, notes);
 	return JSON.stringify(document) === before ? merged : `${JSON.stringify(document, null, 2)}\n`;
+}
+
+// qwen-u9-mac.md (P3W-5): the log's methodology keys are techniques_used and tools_used, and a model writes techniques and tools. Code renames them
+// where the right key is absent, so the alias cannot hold a case in correction.
+function renameLogAliases(document: Record<string, unknown>, notes: string[]): void {
+	const renamed = new Set<string>();
+	for (const cycle of Array.isArray(document.cycles) ? document.cycles : []) {
+		const methodology = (cycle as { methodology?: unknown } | null)?.methodology;
+		if (!methodology || typeof methodology !== 'object' || Array.isArray(methodology)) continue;
+		const keys = methodology as Record<string, unknown>;
+		for (const [alias, key] of [['techniques', 'techniques_used'], ['tools', 'tools_used']]) {
+			if (!Object.hasOwn(keys, alias) || Object.hasOwn(keys, key)) continue;
+			keys[key] = keys[alias];
+			delete keys[alias];
+			renamed.add(`${alias} to ${key}`);
+		}
+	}
+	if (renamed.size) notes.push(`Code renamed methodology ${[...renamed].join(' and ')} in data/investigation-log.json.`);
 }
 
 // B23(a) (K5-3: claims and verdicts in one file, 9 rewrites without clearing it): contract 1.1 has one list, claims. A row moves unchanged, and only

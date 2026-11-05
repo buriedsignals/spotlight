@@ -30,6 +30,10 @@ test('a case blocked on a refused amendment ends the turn with code-written word
 	const move = routeWithoutMember(routerState(blocked));
 	assert.equal(move.kind, 'stop');
 	assert.match((move as { text: string }).text, /plan is unchanged[\s\S]*change the methodology[\s\S]*approve it again/);
+	// A format error: no claim about the fact-check, and a way back that fits it.
+	const format = (routeWithoutMember(routerState([call('spotlight_resolve', true), resolved({ status: 'blocked', blocked: { exhausted_attempt: 'structural-correction' } })])) as { text: string }).text;
+	assert.doesNotMatch(format, /fact-check/);
+	assert.match(format, /format check[\s\S]*not in your plan[\s\S]*approve the methodology again[\s\S]*small edit/);
 	// Other blocks and a stale resolve are not this stop's.
 	assert.equal(routeWithoutMember(routerState([call('spotlight_resolve', true), resolved({ status: 'blocked', blocked: { exhausted_attempt: 'investigation-cycle' } })])).kind, 'model');
 	assert.equal((routeWithoutMember(routerState([...blocked, call('spawn_agent'), result('spawn_agent')])) as { tool?: string }).tool, 'spotlight_resolve');
