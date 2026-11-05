@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
@@ -208,7 +208,7 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
 				move = routeMember(state, asked.intent);
 				if (move.kind === 'call' && move.tool === 'spawn_agent' && (await casePhase?.()) !== 'methodology_approval') move = { kind: 'model', reason: 'member change_request, but the case is no longer at the methodology review' };
-			} else move = routeRefusedSpawn(state, routeWithoutMember(state), refusedSpawns, refusedSpawns.seen.size ? recordsDigest(required('SPOTLIGHT_CASE_DIR')) : '', refusedSpawnMove);
+			} else move = routeRefusedSpawn(state, routeWithoutMember(state, state.resolved?.phase === 'complete' ? closingMessage(required('SPOTLIGHT_CASE_DIR')) : undefined), refusedSpawns, refusedSpawns.seen.size ? recordsDigest(required('SPOTLIGHT_CASE_DIR')) : '', refusedSpawnMove);
 		} catch (error) {
 			move = { kind: 'model', reason: `router error: ${(error as Error).message.slice(0, 200)}` };
 		}

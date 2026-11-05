@@ -1250,6 +1250,10 @@ def validate_investigation_log(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+# Bracketed template prompts such as [claim description], [Description of finding 1], [Verdict from fact-check].
+UNFILLED_PLACEHOLDER = re.compile(r"\[(?:claim description|description\b|verdict\b|insert\b|todo\b|tbd\b|fill\b|placeholder\b)[^\]\n]*\](?!\()", re.IGNORECASE)
+
+
 def validate_summary(data: Any, findings_data: Any, factcheck_data: Any) -> list[str]:
     """data/summary.json, the Investigation gate's machine contract (schemas/summary.schema.json)."""
     if not isinstance(data, dict):
@@ -1531,6 +1535,13 @@ def main() -> int:
             if investigation_log_data is not None:
                 all_errors.extend(validate_investigation_log(investigation_log_data))
 
+        # A template placeholder left in the gate summary reaches the member as text.
+        for name in ("summary.md", "data/summary.json"):
+            written = case_dir / name
+            if written.is_file():
+                left = sorted({m.group(0) for m in UNFILLED_PLACEHOLDER.finditer(written.read_text(encoding="utf-8", errors="replace"))})
+                if left:
+                    all_errors.append(f"{name}: unfilled template placeholders {', '.join(left[:5])}; write the real text")
         summary_path = case_dir / "data" / "summary.json"
         if summary_path.exists():
             summary_data, errs = load_json(summary_path)

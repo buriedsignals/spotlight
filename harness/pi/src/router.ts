@@ -29,6 +29,9 @@ export type RouterState = {
 };
 
 type Part = { type?: string; text?: string; name?: string };
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 type Msg = { role?: string; content?: unknown; toolName?: string; responseModel?: string };
 
 // Turns the harness writes into the chat, not the member (step1 intents_build HARNESS).
@@ -75,8 +78,32 @@ export const BLOCKED_STOPS: Record<string, string> = {
 	'amendment-correction': "Spotlight stopped at Research. The changes you marked could not be written into the plan, and the plan is unchanged. To continue, change the methodology (for example keep a direction you marked to drop) and approve it again; Research will run again.",
 };
 
+// The member's closing words at a complete case, from the records alone: the
+// findings and the fact-check's own verdicts, counted. Undefined when either
+// file is unreadable, so nothing is claimed that the records do not hold.
+export function closingMessage(caseDir: string): string | undefined {
+	try {
+		const read = (name: string) => JSON.parse(readFileSync(resolve(caseDir, 'data', name), 'utf8')) as { findings?: unknown; claims?: unknown };
+		const findings = read('findings.json').findings;
+		const claims = read('fact-check.json').claims;
+		if (!Array.isArray(findings) || !Array.isArray(claims)) return undefined;
+		const tally = new Map<string, number>();
+		for (const claim of claims) {
+			const verdict = (claim as { verdict?: unknown } | null)?.verdict;
+			if (typeof verdict === 'string') tally.set(verdict, (tally.get(verdict) ?? 0) + 1);
+		}
+		const checked = new Set(claims.map((claim) => (claim as { finding_id?: unknown } | null)?.finding_id));
+		const unchecked = findings.filter((finding) => !checked.has((finding as { id?: unknown } | null)?.id)).length;
+		const verdicts = [...tally].map(([verdict, count]) => `${count} ${verdict.replaceAll('_', ' ')}`);
+		if (unchecked) verdicts.push(`${unchecked} without a fact-check verdict`);
+		return `Case complete: ${findings.length} ${findings.length === 1 ? 'finding' : 'findings'}${verdicts.length ? `, ${verdicts.join(', ')}` : ''}. The findings and verdicts are in the case files.`;
+	} catch {
+		return undefined;
+	}
+}
+
 // The move when no member message is waiting.
-export function routeWithoutMember(state: RouterState): RouterMove {
+export function routeWithoutMember(state: RouterState, closing?: string): RouterMove {
 	// The page is open: the turn ends with the model's words (registerEndTurnOnOpen).
 	if (state.lastTool === 'open_review') return { kind: 'model', reason: 'the review page was just opened' };
 	let move: RouterMove;
@@ -85,7 +112,8 @@ export function routeWithoutMember(state: RouterState): RouterMove {
 	else if (state.resolved.status === 'blocked' && BLOCKED_STOPS[String((state.resolved.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt)]) {
 		const kind = String((state.resolved.blocked as { exhausted_attempt?: unknown }).exhausted_attempt);
 		return { kind: 'stop', text: BLOCKED_STOPS[kind], reason: `the case is blocked (${kind}); code says why` };
-	} else move = { kind: 'model', reason: 'the resolver names no code move' };
+	} else if (state.resolved.phase === 'complete' && closing) return { kind: 'stop', text: closing, reason: 'the case is complete; code states the counts' };
+	else move = { kind: 'model', reason: 'the resolver names no code move' };
 	return noLoop(state, move);
 }
 
