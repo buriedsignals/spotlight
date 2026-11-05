@@ -2350,6 +2350,10 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 	};
 }
 
+const claimKey = (claim: unknown) => String(claim).normalize('NFKC').toLowerCase().replace(/[\s\p{P}]+/gu, ' ').trim();
+const sameClaim = (a: unknown, b: unknown) => claimKey(a) === claimKey(b);
+const hasPassage = (context: ToolContext, findingId: string) => recordRows(recordDocument(context, 'data/source-expressions.json').expressions).some((passage) => recordRows(passage.finding_links).some((link) => link.finding_id === findingId));
+
 export function recordTools(tools: ToolDefinition[], context: ToolContext): ToolDefinition[] {
 	const role = context.env.SPOTLIGHT_ROLE;
 	if (role !== 'investigator' && role !== 'fact-checker') return [];
@@ -2403,7 +2407,12 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 				if (active && row.confidence === 'disputed') throw new ToolArgumentError('record_finding: activated findings use confidence high, medium or low; record uncertainty in the claim and grounding.');
 				if (!row.id) {
 					const prefix = context.env.SPOTLIGHT_DIRECTION ? `${context.env.SPOTLIGHT_DIRECTION}-F` : 'F';
-					const same = rows.find((item) => typeof item.id === 'string' && item.id.startsWith(prefix) && item.claim === row.claim);
+					// Local tiers (u9mac-rd3b81 F2, F3): a claim differing only in case or punctuation is the same claim, and
+					// once it holds a passage a second cite would overwrite good lines, so the first stands. Without a passage
+					// this is the repair route, which keeps the id. Same direction only: an empty direction is dispatched again.
+					const local = localTier(context.env);
+					const same = rows.find((item) => typeof item.id === 'string' && item.id.startsWith(prefix) && (local ? sameClaim(item.claim, row.claim) : item.claim === row.claim));
+					if (same && local && active && hasPassage(context, String(same.id))) return textResult(`This claim is already recorded as ${String(same.id)}, so nothing was written. Record a different claim, or finish.`);
 					let next = 1;
 					const taken = new Set(rows.map((item) => item.id));
 					while (taken.has(`${prefix}${next}`)) next++;

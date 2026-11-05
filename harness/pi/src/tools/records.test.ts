@@ -429,6 +429,48 @@ test('a worker\'s bundle write keeps the receipt fields of a cited capture\'s it
 });
 
 // qwen real launch: the investigator cited lines of fetch's short leads file that only the page (X.raw) holds, was refused, and repeated the same cite until the worker ended.
+// u9mac-rd3b81 F2 and F3: one claim, differing in case, recorded twice on different lines, and both went to the fact-checker.
+test('on the local tiers a claim already recorded with its passage is not recorded again; the worker is told and carries on', async t => {
+	const page = 'research/people.md.raw';
+	const text = ['Kendra Albert is on the Board of Directors.', 'Navigation.', 'Sarah Gran is on the Board of Directors.'];
+	const setup = async (tier: string) => {
+		const made = await fixture(t, 'investigator', { SPOTLIGHT_MODEL_TIER: tier });
+		await mkdir(join(made.caseDir, 'research'), { recursive: true });
+		await writeFile(join(made.caseDir, page), `${text.join('\n')}\n`);
+		registerCapture(made.context.env.SPOTLIGHT_HARNESS_DATA!, made.caseDir, page, 'https://example.org/people', 'investigator');
+		return made;
+	};
+	const record = (claim: string, line: number) => ({ finding: { claim, confidence: 'medium' }, cite: [{ path: page, line_start: line, line_end: line }] });
+	const said = (done: { content: Array<{ type: string; text?: string }> }) => done.content.map((part) => part.text ?? '').join('\n');
+	const rows = async (json: (name: string) => Promise<{ findings: Array<{ id: string; claim: string; evidence: string[] }> }>) => (await json('findings.json')).findings.filter((row) => /albert|gran/i.test(row.claim));
+
+	const local = await setup('12b');
+	await local.live('record_finding', record('Kendra Albert is on the Board of Directors for the Tor Project.', 1));
+	const [first] = await rows(local.json);
+	const passages = (await local.json('source-expressions.json')).expressions.length;
+	const again = await local.live('record_finding', record('kendra albert is on the board of  directors for the Tor Project', 2));
+	assert.match(said(again), new RegExp(`already recorded as ${first.id}`));
+	assert.deepEqual(await rows(local.json), [first], 'the first row and its lines stand');
+	assert.equal((await local.json('source-expressions.json')).expressions.length, passages);
+	// Continuity: the next claim records as usual.
+	await local.live('record_finding', record('Sarah Gran is on the Board of Directors for the Tor Project.', 3));
+	assert.equal((await rows(local.json)).length, 2);
+
+	// A row with no passage yet is the repair route: the same claim fills it, under its id.
+	const repair = await setup('12b');
+	await repair.call('record_finding', { finding: { claim: 'Sarah Gran is on the Board.', evidence: 'x', sources: [], confidence: 'medium' } });
+	await repair.live('record_finding', record('Sarah Gran is on the Board.', 3));
+	const repaired = await rows(repair.json);
+	assert.equal(repaired.length, 1);
+	assert.deepEqual(repaired[0].evidence, [text[2]]);
+
+	// Frontier keeps its route: differing text is a new finding.
+	const frontier = await setup('frontier');
+	await frontier.live('record_finding', record('Kendra Albert is on the Board.', 1));
+	await frontier.live('record_finding', record('kendra albert is on the board', 2));
+	assert.equal((await rows(frontier.json)).length, 2);
+});
+
 test('a cite outside fetch\'s leads file is recorded on its .raw page on the local tiers, and refused on frontier', async t => {
 	const page = 'research/craft.co/executives.md';
 	const lines = Array.from({ length: 8 }, (_, index) => `line ${index + 1} of the page`);
