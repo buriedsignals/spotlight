@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { DECISION_RECORDED, MEMBER_DECIDED, ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
@@ -16,7 +16,7 @@ import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinking, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
-import { READ_TRUNCATED, canonicalWriteCall, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
+import { READ_TRUNCATED, canonicalWriteCall, localTier, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { dispatchRunner } from './tools/review.ts';
 import { fixedStepRunner } from './tools/programs.ts';
@@ -25,9 +25,9 @@ import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/h
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, recordsDigest, refusedSpawnMove, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
-import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
+import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool, withProgress } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
+import { PAGE_NOT_OPENED, REVIEW_HOLD_MS, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { deliverablePasses, evidenceValidates, hasDeliverableCheck, validateFactCheckBatch } from './validators.ts';
 
@@ -88,18 +88,24 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
-		pi.on('before_agent_start', (event) => {
-			if (event.messageType !== 'user') return;
+		const progress: { say?: (text: string) => void } = {};
+		// What a member's message resets. A decision on a held review page counts too:
+		// its fresh run fires agent_start but not before_agent_start.
+		const memberTurn = (byHarness = false) => {
 			resetFactCheckerCycle(cycle);
 			// Only the member's own turn lets code start a stalled worker again;
 			// a harness nudge does not (Codex review of simp-redispatch, P1).
-			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) {
+			if (!byHarness) {
 				Object.assign(stall, { key: '', count: 0, digest: '', repaired: new Set<string>() });
 				clearSpawnRefusals(refusedSpawns);
 			}
 			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
 			// on a member's message.
 			process.send?.({ kind: 'spotlight-member-turn' });
+		};
+		pi.on('before_agent_start', (event, ctx) => {
+			if (localTier(process.env)) progress.say = (text) => ctx.ui.notify(text, 'info');
+			if (event.messageType === 'user') memberTurn(harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim()));
 		});
 		const spawning = new Map<string, string>();
 		pi.on('tool_execution_start', (event) => {
@@ -113,10 +119,10 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			// A worker that started and failed is not a refusal.
 			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
 		});
-		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
+		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle, progress);
+		tools.push(...spotlightTools(active, runAdapter, role, (retry, signal) => withProgress(progress.say, 'research round', requestResearchRound(retry, signal)), () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
 		tools.push(spawnTool);
-		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir)), localTier(process.env) ? { ms: reviewHoldMs(process.env), say: (text) => progress.say?.(text), resolved: () => resolveCase(active, runAdapter), decided: () => { log('the decision on the page counts as the member\'s turn'); memberTurn(); } } : undefined));
 		casePhase = async () => String((await resolveCase(active, runAdapter)).phase ?? '');
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, casePhase!)));
 	}
@@ -890,6 +896,8 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 			return;
 		}
 		if (message.stopReason !== 'stop' || nudged || held() || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
+		// The run that ends a held review: the decision's own fresh run follows (registerEndTurnOnOpen).
+		if (parts.some((part) => part.text === DECISION_RECORDED)) return;
 		let status: Record<string, unknown>;
 		try {
 			status = await resolve();
@@ -1190,15 +1198,27 @@ export function reviewRefusalStop(refusal: string): string {
 // member and the test driver act only between turns. Every phase skill ends
 // the turn at the page, so once it opens the harness ends the turn before the
 // next model request and the member sees this line.
+// SPOTLIGHT_REVIEW_HOLD_MS=0 turns the hold off.
+const reviewHoldMs = (env: NodeJS.ProcessEnv) => { const ms = Number(env.SPOTLIGHT_REVIEW_HOLD_MS ?? REVIEW_HOLD_MS); return Number.isFinite(ms) && ms >= 0 ? ms : REVIEW_HOLD_MS; };
+
 export const REVIEW_OPEN_STOP = 'Spotlight opened the review page in your browser and is waiting for your decision there. Say here when you are done.';
 
 function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 	let opened = false;
+	let decided = false;
 	pi.on('agent_start', () => {
 		opened = false;
 	});
 	pi.on('tool_execution_end', (event) => {
 		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { opened?: unknown } | undefined)?.opened === true) opened = true;
+		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { decided?: unknown } | undefined)?.decided === true) decided = true;
+	});
+	// A decision on the page is the member's turn: a follow-up queued here starts a
+	// fresh run, so every per-turn reset applies, before Osaurus's turn settles.
+	pi.on('agent_end', () => {
+		if (!decided) return;
+		decided = false;
+		pi.sendUserMessage(MEMBER_DECIDED, { deliverAs: 'followUp' });
 	});
 	pi.on('before_provider_request', (_event, ctx) => {
 		if (opened) ctx.abort();

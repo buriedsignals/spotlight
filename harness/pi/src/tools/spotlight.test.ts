@@ -7,7 +7,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
 import { FACT_CHECKERS_SPENT } from '../subagents.ts';
-import { INPUTS_REFUSED, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { INPUTS_REFUSED, NEXT_GATE_OWED, nextFixedStep, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 import { batchBlockedFile, factCheckHash, missingForApproval } from './review.ts';
 
@@ -401,4 +401,15 @@ test('every state the resolver can return names a next step, and only member dec
 	process.env.SPOTLIGHT_EDITION = 'newsroom';
 	assert.equal(await missingForApproval(dir, { phase: 'ingest', ingest: { resume_at: 'decision' } }), undefined);
 	delete process.env.SPOTLIGHT_EDITION;
+});
+
+// Codex R2: at the gate a failed summary step stops with the member, not another resolve.
+test('a failed summary step on a local tier ends the turn honestly; frontier keeps its next step', (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	const failed = { phase: 'investigation_gate_approval', missing: ['summary.md'], fixed_steps: [{ step: 'summary', ok: false, output: 'no verdict' }] };
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	assert.equal(nextAction(failed), nextFixedStep('summary', true));
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	assert.equal(nextAction(failed), NEXT_GATE_OWED);
 });

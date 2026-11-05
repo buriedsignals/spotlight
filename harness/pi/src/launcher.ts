@@ -787,7 +787,7 @@ function checkContext(harness: Harness) {
 
 // The role's deliverable for this spawn (roles.ts deliverableFor), read at the spawn.
 async function deliverable(harness: Harness, role: string, task: string, status: Record<string, unknown>): Promise<Deliverable | undefined> {
-	if (role === 'analyst' && status.phase === 'ingest') return analystDeliverable(harness.active.caseDir, routeFor(harness.config).model);
+	if (role === 'analyst' && status.phase === 'ingest') return analystDeliverable(harness.active.caseDir, routeFor(harness.config).model, harness.config.modelTier !== 'frontier');
 	if (role === 'fact-checker') {
 		const correction = correctionDeliverable(harness.active.caseDir, readCheckDocs(harness.active.caseDir), task, harness.config.modelTier !== 'frontier');
 		if (correction) return correction;

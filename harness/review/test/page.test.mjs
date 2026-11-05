@@ -103,3 +103,18 @@ test("a solo gate asks for no name and its follow-up needs only the note", async
   page.getElementById("follow-up-note").listeners.input({ target: { value: "Recheck the filing date." } });
   assert.equal(page.getElementById("request-follow-up").attributes["aria-disabled"], "false");
 });
+
+// Tom, 2026-11-05: a page with nothing to approve holds no turn, so a decline there
+// carries nothing on. The member is told where to go next.
+test("a decline with nothing offered sends the member back to the chat; any other decision keeps the usual line", async (t) => {
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "report") }).view("report");
+  const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+  const said = async (gate, content, decision) => words((await renderClient({ ...view, gate, content: { ...view.content, ...content }, pending_gate: null, receipt: { decision, approved_by: "Member" } })).getElementById("app"));
+  const back = "Go back to the Spotlight chat and say what to do next.";
+
+  assert.ok((await said("report", { draft_ready: false }, "declined")).includes(back));
+  assert.ok((await said("ingest", { batch: { state: "empty", records: [] } }, "declined")).includes(back));
+  assert.ok(!(await said("report", { draft_ready: true }, "declined")).includes(back));
+  assert.ok(!(await said("ingest", { batch: { state: "ready", records: [{}] } }, "declined")).includes(back));
+  assert.ok(!(await said("report", { draft_ready: true }, "completed")).includes(back));
+});

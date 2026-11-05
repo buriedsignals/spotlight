@@ -14,6 +14,8 @@ import type { TestContext } from 'node:test';
 import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } from './test-support/fake-openai.ts';
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
+import { DECISION_RECORDED } from './router.ts';
+import { REVIEW_HOLD_NOTICE } from './tools/review.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { registerCapture } from './test-support/receipts.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
@@ -2707,6 +2709,111 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
  });
 });
 
+// P6: the notice must reach the RPC client as a notify request and stay out of what the model reads.
+test('on a local tier a worker\'s start and end reach the chat client as notices, outside the transcript; frontier sends none', async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Stopped.' })));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await caseAtIngest(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+		await settledPrompt(chat, 'Continue.');
+		const notices = chat.lines.map((line) => JSON.parse(line) as { type?: string; method?: string; message?: string }).filter((record) => record.type === 'extension_ui_request' && record.method === 'notify').map((record) => record.message);
+		assert.deepEqual(notices, tier === 'frontier' ? [] : ['The analyst started.', 'The analyst finished.'], tier);
+		assert.doesNotMatch(JSON.stringify(fake.requests.at(-1)!.messages), /The analyst started/);
+	}
+});
+
+// Option D (paperwork-p5-option-d.md): members expect the case to go on once they decide in the browser.
+const atGate = (space: Workspace) => {
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	return caseDir;
+};
+const holdScript = (request: ChatRequest): Reply => (request.messages.some((message) => message.role === 'tool') ? { text: 'Done.' } : { toolCalls: [{ name: 'open_review', arguments: {} }] });
+const notices = (chat: { lines: string[] }) => chat.lines.map((line) => JSON.parse(line) as { method?: string; message?: string }).filter((record) => record.method === 'notify').map((record) => record.message ?? '');
+const settles = (chat: { lines: string[] }) => chat.lines.filter((line) => line.includes('"type":"agent_settled"')).length;
+
+test('on a local tier open_review holds the turn; a decision on the record carries the case on in the same chat turn, as a member turn', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_CODE_ROUTER: 'on' });
+
+	const turn = settledPrompt(chat, 'Continue.', 30_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 15_000);
+	assert.equal(settles(chat), 0, 'the turn stays open while the member decides');
+	assert.match(REVIEW_HOLD_NOTICE, /press Stop/);
+	memberApprovesGate(caseDir);
+	await turn;
+
+	assert.equal(settles(chat), 1, 'one chat turn from the page to the next step');
+	assert.equal(chat.lines.filter((line) => line.includes('"type":"message_end"') && line.includes(DECISION_RECORDED)).length, 1, 'the member sees the decision taken up, once');
+	assert.ok(chat.lines.filter((line) => line.includes('"type":"agent_start"')).length >= 2, 'a fresh run, so per-run limits start over');
+	assert.match(chat.stderr(), /the decision on the page counts as the member's turn/, 'and the member-turn resets, which a fresh run does not fire');
+	assert.notEqual(lastResolution(chat).phase, 'investigation_gate_approval', 'code resolved past the gate');
+	assert.ok(!chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)));
+});
+
+test('past the limit, the turn ends as it always did; Stop ends the hold at once; frontier never holds', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	for (const [name, env] of [['limit', { SPOTLIGHT_REVIEW_HOLD_MS: '300' }], ['frontier', { SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_MODEL_TIER: 'frontier' }]] as const) {
+		const fake = await startFakeOpenAI(holdScript);
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		atGate(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), ...env });
+		await settledPrompt(chat, 'Continue.', 20_000);
+		assert.equal(fake.requests.length, 1, name);
+		assert.equal(notices(chat).includes(REVIEW_HOLD_NOTICE), name === 'limit', name);
+		assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), `${name}: the fallback line`);
+	}
+
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000' });
+	const turn = settledPrompt(chat, 'Continue.', 10_000 + 20_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 15_000);
+	const stopped = Date.now();
+	chat.send({ type: 'abort' });
+	await turn;
+	assert.ok(Date.now() - stopped < 8_000, 'inside Osaurus\'s 8 s Stop grace');
+	// A decision after Stop keeps option B: the member's next message moves the case.
+	memberApprovesGate(caseDir);
+	await settledPrompt(chat, 'I decided.', 20_000);
+	assert.equal(settles(chat), 2, 'the chat is free again after Stop');
+});
+
+// qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
+// carries a skeleton whose placeholders the builder refuses until they are filled.
+test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {
+	const skeleton = (request: ChatRequest) => JSON.parse(userText(request).match(/"proposal_skeleton":(\{.*?"story_arcs":\[\]\})/)![1]);
+	const write = (proposal: unknown) => ({ toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(proposal) } }] });
+	const fake = await startFakeOpenAI(
+		delegateToAnalyst((request) => {
+			const done = toolResults(request).length;
+			if (done === 0) return write(skeleton(request));
+			if (done > 1) return { text: 'Proposed.' };
+			const proposal = skeleton(request);
+			const [claim] = proposal.claims;
+			return write({ ...proposal, claims: [{ ...claim, proposition: 'Acme paid Doe.', statement: { subject: { text: 'Acme' }, predicate: 'paid' }, attributed: claim.attributed ?? false }] });
+		}),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).at(-1)!);
+	assert.match(results[0], /^refused: data\/knowledge-proposal\.json/, 'an unfilled skeleton never passes');
+	assert.match(results[1], /wrote data\/knowledge-proposal\.json/);
+	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the case goes on to the Ingest page');
+});
+
 // LFM3 r3 kde stage 3 on Osaurus (ecbcd23e): a schema-valid proposal broke the
 // builder's cross-record rules, which the analyst never saw in its turn.
 test('an analyst proposal the builder\'s cross-record rules refuse is refused when written', async (t) => {
@@ -4020,6 +4127,9 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
 	assert.equal(lane.status, 'completed');
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+	// P6: a round is a long silence too; on the default local tier it reports as a worker does.
+	const notices = chat.lines.map((line) => JSON.parse(line) as { method?: string; message?: string }).filter((record) => record.method === 'notify').map((record) => record.message);
+	assert.ok(notices.includes('The research round started.') && notices.includes('The research round finished.'), JSON.stringify(notices));
 });
 
 // Constellation G5b through the launcher: a decision endpoint that fails with
@@ -5581,14 +5691,11 @@ test('after the member approves the gate, spotlight_resolve builds the provenanc
 	assert.match(await readFile(join(caseDir, 'review.html'), 'utf8'), /<!doctype html>/i);
 });
 
-test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open_review reaches the report gate; the analyst writes the summary and the draft', async (t) => {
+test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open_review reaches the report gate; code writes the summary and the analyst the draft', async (t) => {
 	const space = await workspace(t);
 	const caseDir = caseAtGate(space);
-	const summaryMd = await readFile(join(caseDir, 'summary.md'), 'utf8');
-	// P3W-1 (pod-3way-qwen35-9b.md): the file as Qwen3.5-9B wrote it, no title, status, summary or generated_at, findings with claim_text.
-	// Code completes it from the findings and the fact-check, and the case reaches the report gate.
+	// P4 (qwen-u9-mac.md): r3 left summary.md a template. On a local tier no analyst writes it.
 	const [finding] = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')).findings;
-	const summaryJson = JSON.stringify({ schema_version: '1.0', project: 'offline-demo', findings: [{ id: finding.id, claim_text: finding.claim }] });
 	await unlink(join(caseDir, 'summary.md'));
 	await unlink(join(caseDir, 'data', 'summary.json'));
 	const fake = await startFakeOpenAI((request) => {
@@ -5597,9 +5704,7 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 			// The analyst writes only prose into the structure the harness wrote.
 			const skeleton = () => JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
 			const prose = () => ({ ...skeleton(), title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments });
-			return /report-draft\.json/.test(userText(request))
-				? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(prose()) } }] }
-				: { toolCalls: [{ name: 'write_file', arguments: { path: 'summary.md', content: summaryMd } }, { name: 'write_file', arguments: { path: 'data/summary.json', content: summaryJson } }] };
+			return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(prose()) } }] };
 		}
 		const last = request.messages.at(-1)!;
 		if (last.role !== 'tool') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
@@ -5619,11 +5724,11 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
 	const called = orchestrator.flatMap((request) => (request.messages.filter((message) => message.role === 'assistant').flatMap((message) => (message.tool_calls ?? []) as Array<{ function: { name: string } }>)).map((call) => call.function.name));
 	assert.deepEqual([...new Set(called)].sort(), ['open_review', 'spawn_agent', 'spotlight_resolve']);
-	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), summaryMd);
+	assert.ok((await readFile(join(caseDir, 'summary.md'), 'utf8')).includes(finding.claim));
 	const completed = JSON.parse(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8'));
 	assert.deepEqual(completed.findings, [{ id: 'F1', claim: finding.claim, confidence: 'high', fact_check_verdict: 'verified', source_count: 1 }]);
 	assert.match(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir], { encoding: 'utf8' }), /PASS|valid/i, 'the completed file passes the check that stopped the Qwen run');
-	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /write title, summary, key_conclusions and limitations; code fills the rest/);
+	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /report-draft\.json/, 'the first analyst is the Report one');
 	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, caveats: [], next_steps: [] });
 	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)))!), /holds the report's structure/);
 	// report-direct-quote-diff.md: the Report analyst reads which passages are

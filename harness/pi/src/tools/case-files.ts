@@ -943,7 +943,9 @@ function completeSummary(caseDir: string, merged: string, notes: string[]): stri
 		return merged;
 	}
 	if (!summary || typeof summary !== 'object' || Array.isArray(summary) || !Array.isArray(findings) || !Array.isArray(claims)) return merged;
-	const verdicts = new Map(claims.map((claim) => [claim?.finding_id, claim?.verdict]));
+	// A finding with several fact-check rows is verified only if every row is (Codex R2).
+	const verdicts = new Map<unknown, unknown>();
+	for (const claim of claims) if (!verdicts.has(claim?.finding_id) || verdicts.get(claim?.finding_id) === 'verified') verdicts.set(claim?.finding_id, claim?.verdict);
 	const rows = findings.map((finding) => ({ id: finding?.id, claim: finding?.claim, confidence: finding?.confidence, fact_check_verdict: verdicts.get(finding?.id), ...(Array.isArray(finding?.sources) ? { source_count: finding.sources.length } : {}) }));
 	if (rows.some((row) => typeof row.fact_check_verdict !== 'string')) return merged;
 	const counts = new Map<unknown, number>();
@@ -959,6 +961,45 @@ function completeSummary(caseDir: string, merged: string, notes: string[]): stri
 		notes.push('Code wrote a plain count as title and summary where they were empty; write your own in their place.');
 	}
 	return `${JSON.stringify(filled, null, 2)}\n`;
+}
+
+// P4 (qwen-u9-mac.md: r3 left summary.md an unfilled template): on a local tier
+// code writes both gate summaries from the records, so the text is the case's
+// own: the lead, verified claims word for word, the open gaps. It reads plainer
+// than a model's overview and adds nothing the records do not hold. generated_at
+// is in both files, so a regenerated summary is never stale by hash (stale_summaries).
+export function writeGateSummary(caseDir: string): string {
+	const record = (path: string): Record<string, unknown> => {
+		try {
+			const value = JSON.parse(readFileSync(join(caseDir, path), 'utf8'));
+			return value && typeof value === 'object' ? value : {};
+		} catch {
+			return {};
+		}
+	};
+	const texts = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : []);
+	const methodology = record('data/methodology.json');
+	const cycles = Array.isArray(record('data/investigation-log.json').cycles) ? (record('data/investigation-log.json').cycles as { gaps_remaining?: unknown }[]) : [];
+	const lead = typeof methodology.lead === 'string' ? methodology.lead.trim() : '';
+	const limitations = [...new Set([...texts(cycles.at(-1)?.gaps_remaining), ...texts(methodology.limitations)])];
+	const title = lead.length > 120 ? `${lead.slice(0, lead.lastIndexOf(' ', 117))}...` : lead;
+	const done = completeSummary(caseDir, JSON.stringify({ title, cycles: Math.max(cycles.length, 1), limitations }), []);
+	const summary = JSON.parse(done) as { title: string; generated_at?: string; cycles: number; summary: string; findings?: { id: string; claim: string; confidence: unknown; fact_check_verdict: string; source_count?: number }[] };
+	if (!summary.findings || !summary.generated_at) throw new Error('the gate summary needs data/findings.json and a fact-check verdict for every finding');
+	const conclusions = summary.findings.filter((row) => row.fact_check_verdict === 'verified').map((row) => row.claim);
+	const cell = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replaceAll('|', '\\|');
+	const list = (items: string[], none: string) => (items.length ? items.map((item) => `- ${item}`).join('\n') : none);
+	const markdown = [
+		`# ${summary.title}`,
+		`**Date:** ${summary.generated_at} | **Cycles:** ${summary.cycles} | **Status:** Pending review`,
+		`## Overview\n\n${lead ? `Asked: ${lead}\n\n` : ''}${summary.summary}`,
+		`## Key Conclusions\n\n${list(conclusions, 'No finding is verified.')}`,
+		`## Findings\n\n${summary.findings.length ? ['| # | Claim | Confidence | Verdict | Sources |', '|---|-------|------------|---------|---------|', ...summary.findings.map((row) => `| ${[row.id, row.claim, row.confidence, row.fact_check_verdict, row.source_count ?? ''].map(cell).join(' | ')} |`)].join('\n') : 'No finding was recorded.'}`,
+		`## Limitations\n\n${list(limitations, 'None recorded.')}`,
+	].join('\n\n');
+	writeConfined(caseDir, caseDir, 'data/summary.json', `${JSON.stringify({ ...summary, key_conclusions: conclusions }, null, 2)}\n`);
+	writeConfined(caseDir, caseDir, 'summary.md', `${markdown}\n`);
+	return `code wrote summary.md and data/summary.json: ${summary.summary}`;
 }
 
 // Only documented path fields get the case-root alias; other text is evidence

@@ -9,6 +9,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createReviewOpener, describeOpenResult } from '../../../review/open.mjs';
 import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { REVIEW_DECIDED } from '../router.ts';
 import { RECEIPTS, runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
 import { NEXT_METHODOLOGY_FAILING, draftWritten, resolveCase } from './spotlight.ts';
@@ -109,7 +110,42 @@ export async function missingForApproval(caseDir: string, resolved: Record<strin
 	return undefined;
 }
 
-export function openReviewTool(caseDir: string, casesRoot: string, opener?: Opener, check?: GateCheck, note?: () => Promise<string | undefined>): ToolDefinition {
+// Option D (paperwork-p5-option-d.md): members expect the case to go on once
+// they decide in the browser, but Osaurus shows nothing outside a turn, so on a
+// local tier open_review holds the turn until the decision lands. The time limit
+// stays under the page's 45 idle minutes; past it the turn ends as it always did.
+export const REVIEW_HOLD_MS = 30 * 60_000;
+const HOLD_POLL_MS = 2_000;
+export const REVIEW_HOLD_NOTICE = 'Waiting for your decision on the review page. The case carries on here once you decide. To use this chat now, press Stop: the page stays open.';
+// Osaurus shows nothing between turns, so code cannot post after a decline on a page
+// that holds no turn; this is the last point it can reach the chat.
+export const REVIEW_DECLINE_NOTICE = 'If you decline on the page, come back to this chat and say what to do next.';
+export type ReviewHold = { ms: number; say?: (text: string) => void; resolved: () => Promise<Record<string, unknown>>; decided?: () => void };
+
+// Whether the gate moved within the limit. Decisions write data/orchestration.json,
+// so the resolver runs only when that file changes. The starting point is taken
+// before the page opens, so a quick decision is not part of it (Codex R3).
+const orchestrationRecord = (caseDir: string) => {
+	try { return readFileSync(join(caseDir, 'data/orchestration.json'), 'utf8'); } catch { return ''; }
+};
+async function decisionLanded(caseDir: string, hold: ReviewHold, start: { seen: string; before: string }, signal?: AbortSignal): Promise<boolean> {
+	const record = () => orchestrationRecord(caseDir);
+	let { seen } = start;
+	const { before } = start;
+	const deadline = Date.now() + hold.ms;
+	for (let first = true; Date.now() < deadline && !signal?.aborted; first = false) {
+		if (!first) await new Promise<void>((done) => {
+			const timer = setTimeout(done, Math.min(HOLD_POLL_MS, Math.max(deadline - Date.now(), 0)));
+			signal?.addEventListener('abort', () => { clearTimeout(timer); done(); }, { once: true });
+		});
+		if (record() === seen) continue;
+		seen = record();
+		if (JSON.stringify(await hold.resolved()) !== before) return true;
+	}
+	return false;
+}
+
+export function openReviewTool(caseDir: string, casesRoot: string, opener?: Opener, check?: GateCheck, note?: () => Promise<string | undefined>, hold?: ReviewHold): ToolDefinition {
 	const open: Opener = opener ?? createReviewOpener({ casesRoot });
 	return {
 		name: 'open_review',
@@ -117,11 +153,21 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 		description:
 			'Open the review page for the gate this case is waiting on, in the member\'s browser. Call it when a phase skill reaches a gate, then end your turn; the member decides on the page.',
 		parameters: Type.Object({}),
-		async execute() {
+		async execute(_id, _params, signal) {
 			const failed = await check?.();
 			if (failed) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
+			const start = hold?.ms ? { seen: orchestrationRecord(caseDir), before: JSON.stringify(await hold.resolved()) } : undefined;
 			const result = await open({ caseDir });
 			const missing = result.status === 'opened' ? await note?.() : undefined;
+			// A page with nothing to approve needs the chat, so it holds nothing.
+			if (hold?.ms && result.status === 'opened' && missing) hold.say?.(REVIEW_DECLINE_NOTICE);
+			if (hold && start && result.status === 'opened' && !missing) {
+				hold.say?.(REVIEW_HOLD_NOTICE);
+				if (await decisionLanded(caseDir, hold, start, signal)) {
+					hold.decided?.();
+					return { content: [{ type: 'text', text: REVIEW_DECIDED }], details: { opened: false, decided: true } };
+				}
+			}
 			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: { opened: result.status === 'opened' } };
 		},
 	};
