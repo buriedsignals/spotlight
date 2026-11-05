@@ -75,6 +75,7 @@ export function routerState(messages: readonly unknown[]): RouterState {
 // that approval clears the block (transitions.py approve). Written by code so
 // no model blames a file (r3 blamed brief-directions.txt).
 export const BLOCKED_STOPS: Record<string, string> = {
+	'structural-correction': "Spotlight stopped the investigation. The investigator could not fix the structural errors in its findings after two tries, so no fact-check was run. To continue, change the methodology and approve it again; the investigation will start again.",
 	'amendment-correction': "Spotlight stopped at Research. The changes you marked could not be written into the plan, and the plan is unchanged. To continue, change the methodology (for example keep a direction you marked to drop) and approve it again; Research will run again.",
 };
 

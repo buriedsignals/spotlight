@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { taskMode } from './roles.ts';
-import { canonicalWriteCall } from './tools/case-files.ts';
+import { canonicalWriteCall, localTier } from './tools/case-files.ts';
 import { onJsonlRecords } from './pi-process.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
 
@@ -162,8 +162,9 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 				const result = await promise;
 				if (!result.ok) {
 					// U9 held-kde: refused spawns spent the cap with no fact-checker run,
-					// which closed the repair path. Only a started worker is an attempt.
-					if (agent === 'fact-checker' && result.notStarted && !signal?.aborted && generation === (cycle.generation ?? 0)) {
+					// which closed the repair path. Only a started worker is an attempt,
+					// on the local tiers; frontier keeps the cap as it was.
+					if (agent === 'fact-checker' && result.notStarted && localTier(process.env) && !signal?.aborted && generation === (cycle.generation ?? 0)) {
 						cycle.spawns = Math.max(0, cycle.spawns - 1);
 						cycle.corrections = corrections;
 					}

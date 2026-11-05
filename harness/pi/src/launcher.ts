@@ -50,7 +50,7 @@ import { withInvestigationPacket } from './investigation-packet.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { INPUTS_REFUSED, batchDraftError, bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments, withPlanCheck } from './tools/spotlight.ts';
+import { INPUTS_REFUSED, batchDraftError, bindActiveCase, dispatchAt, inputsRepair, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments, withPlanCheck } from './tools/spotlight.ts';
 import { batchBlocked, batchBlockedFile, factCheckHash, gateCheck } from './tools/review.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { PLANNING_PHASES, factCheckDefects, validateAfterWorker, validateFactCheckBatch, validateInvestigationInputs } from './validators.ts';
@@ -354,6 +354,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		let amending = false;
 		let codeBuilt = false;
 		let rounding = false;
+		let structural = false;
 		let started = false;
 		const factCheckProgress = new Set<string>();
 		const validatedBatch = (ids: string[]) => { for (const id of ids) factCheckProgress.add(id); };
@@ -380,7 +381,12 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			const fixing = request.agent === 'fact-checker' && Boolean(taskMode(request.task)?.endsWith('CORRECTION'));
 			const fresh = fixing ? await factCheckDefects(checkContext(harness), controller.signal) : '';
 			if (fresh) harness.lastFactCheckReport = fresh;
-			const workerTask = request.agent === 'fact-checker' ? factCheckerTask(request.task, harness.lastFactCheckReport) : amending ? amendmentTask(status) : rounding ? roundTask(harness, status) : request.task;
+			// On the local tiers the structural correction's task is built from the
+			// validator's own text, never the orchestrator's retyping of it, and
+			// every correction that leaves the errors in place counts (qwen-u9-mac.md).
+			structural = request.agent === 'investigator' && harness.config.modelTier !== 'frontier' && taskMode(request.task) === 'STRUCTURAL CORRECTION';
+			const built = structural ? await structuralTask(harness, status, controller.signal) : undefined;
+			const workerTask = built ?? (request.agent === 'fact-checker' ? factCheckerTask(request.task, harness.lastFactCheckReport) : amending ? amendmentTask(status) : rounding ? roundTask(harness, status) : request.task);
 			if (workerTask !== request.task) harness.log(`${request.agent}: the orchestrator's task text (${request.task.length} characters) was not passed on; the harness built the task`);
 			await activateNewCase(harness, request.agent, controller.signal);
 			if (request.agent === 'fact-checker') {
@@ -495,6 +501,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			}
 		})
 			.then((text) => (codeBuilt ? text : withValidation(harness, request.agent, text)))
+			.then(async (text) => (structural ? `${text}\n\n${await countStructuralCorrection(harness, controller.signal)}` : text))
 			.then(async (text) => (codeBuilt ? await recordAmendment(harness, undefined, true) : amending ? `${text}\n\n${await applyAmendment(harness)}` : rounding ? `${text}\n\n${await applyRound(harness)}` : text))
 			.then(async (text) => {
 				// Earlier batches may have completed before a later batch stopped.
@@ -566,6 +573,35 @@ async function applyRound(harness: Harness): Promise<string> {
 		mkdirSync(dirname(refusedFile), { recursive: true, mode: 0o700 });
 		writeFileSync(refusedFile, `${hash}\n`, { mode: 0o600 });
 		return `[Harness: the research round was refused; resolving again sends the investigator this refusal.]\n${harness.lastRoundRefusal}`;
+	}
+}
+
+// The investigator's structural errors as validate-case reports them now: the
+// resolver's own line when it names them, else the inputs check the fact-checker
+// is refused over.
+async function structuralTask(harness: Harness, status: Record<string, unknown>, signal: AbortSignal): Promise<string | undefined> {
+	const dispatched = dispatchAt(status);
+	if (dispatched?.agent === 'investigator' && dispatched.step.startsWith('investigator STRUCTURAL CORRECTION')) return dispatched.task;
+	const checked = await validateInvestigationInputs(checkContext(harness), signal);
+	return checked.passed ? undefined : inputsRepair(`${INPUTS_REFUSED}\n${checked.report}`)?.task;
+}
+
+// A correction after which the inputs still fail is a failed correction
+// (phase-investigation: two exhaust the case). Code counts it; the model never
+// did (qwen-u9-mac.md: 43 corrections, attempts empty).
+async function countStructuralCorrection(harness: Harness, signal: AbortSignal): Promise<string> {
+	try {
+		const checked = await validateInvestigationInputs(checkContext(harness), signal);
+		if (checked.passed) return '[Harness: the structural errors are fixed.]';
+		const { config, active } = harness;
+		const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
+		await runAdapter(transitionArguments('recordAttempt', { kind: 'structural-correction', gap: harness.redact(checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
+		const after = await caseStatus(harness);
+		return after.status === 'blocked'
+			? '[Harness: the structural errors remain after the second correction, so the case is blocked. Call spotlight_resolve and present it.]'
+			: '[Harness: the structural errors remain; this correction was counted (2 end the case).]';
+	} catch (error) {
+		return `[Harness: the correction could not be counted: ${harness.redact((error as Error).message).slice(0, 300)}]`;
 	}
 }
 

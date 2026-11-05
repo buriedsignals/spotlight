@@ -6631,3 +6631,33 @@ test('when the fact-checker is refused over invalid findings, resolve sends the 
 	assert.doesNotMatch(String(resolveResults(chat).at(-1)!.next_action), /spawn the fact-checker/, 'the resolver does not ask for the worker that was just refused');
 	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 0).length, 1, 'with the findings repaired the fact-checker starts');
 });
+
+// qwen-u9-mac.md (aca1e074): the orchestrator retyped the validator's keys into
+// its correction task, the investigator never fixed them, nothing counted, and
+// the loop ran 43 corrections. On a local tier code builds the task from the
+// validator and counts a correction that leaves the errors; two end the case.
+test('on a local tier a structural correction that leaves the errors is built from the validator, counted, and ends the case at two', async (t) => {
+	const mangled = { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: STRUCTURAL CORRECTION\nTHE RESOLVER REPORTS:\nmethodology.techniquesÑ is required' } }] };
+	const fake = await startFakeOpenAI((request) => {
+		if (systemText(request).includes('You were delegated a task')) return { text: 'Done.' };
+		return [mangled, mangled, mangled][toolResults(request).length] ?? { text: 'Stopping here.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8'));
+	findings.findings[0].confidence = 'bogus';
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify(findings));
+	await settledPrompt(launch(t, baseEnv(space, fake.baseURL)), 'Continue.');
+	const started = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).map(userText);
+	assert.equal(started.length, 2, 'two corrections ran, the third spawn was refused');
+	for (const task of started) {
+		assert.match(task, /^MODE: STRUCTURAL CORRECTION\n[\s\S]*• \[investigator\] findings\.json\[0\]: 'confidence' must be one of/);
+		assert.doesNotMatch(task, /techniquesÑ/);
+	}
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.equal(state.attempts['structural-correction'], 2);
+	assert.equal(state.blocked.exhausted_attempt, 'structural-correction');
+});

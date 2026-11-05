@@ -62,6 +62,21 @@ test('validated progress refunds one allowance once per finding and stale or can
 	assert.equal(cycle.spawns, 1, 'a worker that started and failed is an attempt');
 });
 
+test('on frontier a fact-checker launch that threw still spends its attempt', async (t) => {
+	const oldSend = process.send;
+	const oldTier = process.env.SPOTLIGHT_MODEL_TIER;
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	t.after(() => { process.send = oldSend; if (oldTier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = oldTier; });
+	const cycle = { spawns: 0, generation: 0 };
+	const tool = spawnAgentTool(['fact-checker'], cycle);
+	process.send = ((message: { kind: string; id: string }) => {
+		if (message.kind === 'spotlight-spawn') queueMicrotask(() => process.emit('message', { kind: 'spotlight-result', id: message.id, ok: false, error: 'ENOENT: no such file', notStarted: true }));
+		return true;
+	}) as typeof process.send;
+	await assert.rejects(tool.execute('call', { agent: 'fact-checker', task: 'Check assigned findings.' }, undefined, undefined, undefined as never), /ENOENT/);
+	assert.equal(cycle.spawns, 1);
+});
+
 async function scratch(t: TestContext): Promise<string> {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-subagents-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
