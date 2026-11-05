@@ -5916,7 +5916,7 @@ test('open_review at the Methodology gate refuses a navigator status outside the
 // once the worker finishes.
 // A researched case whose Research gate the member approved: the resolver
 // is at research/amendment.
-function caseAtAmendment(space: Workspace, dismissClues = false): string {
+function caseAtAmendment(space: Workspace, dismissClues = false, mark = 'dismiss'): string {
 	const caseDir = join(space.casesRoot, 'case-a');
 	const prepare = [
 		'import importlib.util, json, sys',
@@ -5932,7 +5932,7 @@ function caseAtAmendment(space: Workspace, dismissClues = false): string {
 		'm.write_json(case / "data/leads.json", json.loads(m.LEADS_SAMPLE.read_text(encoding="utf-8")))',
 		'm.write_json(case / "data/clues.json", json.loads(m.CLUES_SAMPLE.read_text(encoding="utf-8")))',
 		'm.prepare_research_gate(case)',
-		...(dismissClues ? ['marks = {f"clue:{clue[\'clue_id\']}": "dismiss" for clue in json.loads(m.CLUES_SAMPLE.read_text(encoding="utf-8"))["clues"]}', 'm.write_json(case / "data/research-review.json", {"schema_version": "spotlight-review/v1", "gate": "research", "reviewer": "journalist:fixture", "items": {t: {"target": t, "final": mark} for t, mark in marks.items()}})'] : []),
+		...(dismissClues ? [`marks = {f"clue:{clue[\'clue_id\']}": "${mark}" for clue in json.loads(m.CLUES_SAMPLE.read_text(encoding="utf-8"))["clues"]}`, 'm.write_json(case / "data/research-review.json", {"schema_version": "spotlight-review/v1", "gate": "research", "reviewer": "journalist:fixture", "items": {t: {"target": t, "final": mark} for t, mark in marks.items()}})'] : []),
 		'seam("approve", "research", *m.APPROVER)',
 	].join('\n');
 	execFileSync(PYTHON, ['-c', prepare, caseDir]);
@@ -6048,6 +6048,23 @@ test('when no mark changes the plan no worker retypes it, whether the model spaw
  });
 });
 
+// Marked amendments on the local tiers are built in code (research.py build_marked_amendment).
+test('on a local tier a pursued clue is added to the plan by code and no worker runs the amendment', async (t) => {
+	const space = await workspace(t);
+	const caseDir = caseAtAmendment(space, true, 'pursue');
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Amended.' };
+		return toolResults(request).length > 0 ? { text: 'Done.' } : { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
+	});
+	t.after(() => fake.close());
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && userText(request).startsWith('MODE: AMENDMENT')).length, 0, 'no worker ran the amendment');
+	const steps = JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')).investigation_plan[0].steps;
+	assert.deepEqual(steps.at(-1).cites, ['clue:clue-1']);
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.ok(state.approvals.research.amended_methodology_sha256, 'the amendment was recorded');
+});
+
 test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment, for a whole methodology or only the changed direction', async (t) => {
  for (const shape of ['whole', 'fragment', 'fragment-changed'] as const) await t.test(shape, async (t) => {
 	const space = await workspace(t);
@@ -6068,7 +6085,7 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 			: { text: 'Done.' };
 	});
 	t.after(() => fake.close());
-	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
 
 	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
 	assert.ok(worker.length > 0, 'the investigator ran');
@@ -6138,7 +6155,7 @@ test('a second amendment worker that writes nothing does not re-apply the refuse
 		return { text: 'Done.' };
 	});
 	t.after(() => fake.close());
-	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
 	const status = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir], { env: { PATH: process.env.PATH ?? '', PYTHONNOUSERSITE: '1', SPOTLIGHT_RESEARCH_SWARMS: 'on' } }).toString());
 	assert.notEqual(status.status, 'blocked', 'the unchanged amendment was not submitted a second time');
 	assert.equal(status.research?.resume_at, 'amendment');
@@ -6169,7 +6186,7 @@ test('an amendment whose recordAmendment failed with a resolver error is applied
 		return { text: 'Done.' };
 	});
 	t.after(() => fake.close());
-	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_PYTHON: python }), 'Continue.');
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_PYTHON: python }), 'Continue.');
 	const status = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir], { env: { PATH: process.env.PATH ?? '', PYTHONNOUSERSITE: '1', SPOTLIGHT_RESEARCH_SWARMS: 'on' } }).toString());
 	assert.equal(status.phase, 'investigation', 'the unchecked amendment was applied on the retry');
 	const results = toolResults(fake.requests.at(-1)!);

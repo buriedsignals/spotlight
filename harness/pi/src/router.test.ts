@@ -25,6 +25,16 @@ test('the code router resolves after any event, follows open_review, and otherwi
 	assert.equal(routeWithoutMember(routerState([call('spotlight_resolve', true), resolved({ phase: 'brief', next_action: 'Next: restate the lead.' })])).kind, 'model');
 });
 
+test('a case blocked on a refused amendment ends the turn with code-written words, not a model turn', () => {
+	const blocked = [call('spotlight_resolve', true), resolved({ phase: 'blocked', status: 'blocked', blocked: { exhausted_attempt: 'amendment-correction' } })];
+	const move = routeWithoutMember(routerState(blocked));
+	assert.equal(move.kind, 'stop');
+	assert.match((move as { text: string }).text, /plan is unchanged[\s\S]*change the methodology[\s\S]*approve it again/);
+	// Other blocks and a stale resolve are not this stop's.
+	assert.equal(routeWithoutMember(routerState([call('spotlight_resolve', true), resolved({ status: 'blocked', blocked: { exhausted_attempt: 'investigation-cycle' } })])).kind, 'model');
+	assert.equal((routeWithoutMember(routerState([...blocked, call('spawn_agent'), result('spawn_agent')])) as { tool?: string }).tool, 'spotlight_resolve');
+});
+
 test('a member message: approval talk writes the brief only while the Brief resolve is the latest event; an unanswered intent goes to the model', () => {
 	const brief = [call('spotlight_resolve', true), resolved({ phase: 'brief' })];
 	assert.equal(routeMember(routerState([...brief, member('Yes, go ahead.')]), 'approval_talk').kind, 'model');

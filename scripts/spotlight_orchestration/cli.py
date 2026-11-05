@@ -69,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     research_round = commands.add_parser("start-research-round")
     add_case_boundary(research_round)
     amendment = commands.add_parser("record-amendment")
+    amendment.add_argument("--build", action="store_true")
     add_case_boundary(amendment)
     without_research = commands.add_parser("continue-without-research")
     add_case_boundary(without_research)
@@ -153,7 +154,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     elif args.command == "start-research-round":
         start_research_round(args.case_dir, **boundary)
     elif args.command == "record-amendment":
-        record_amendment(args.case_dir, **boundary)
+        record_amendment(args.case_dir, build=args.build, **boundary)
     elif args.command == "continue-without-research":
         continue_without_research(args.case_dir, **boundary)
     elif args.command == "request-follow-up":

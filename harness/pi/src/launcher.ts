@@ -368,7 +368,9 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			// Every way to this worker comes here, from a resolve's dispatch or the
 			// model's own spawn, and a resumed case resolves back to this step, so
 			// no worker retypes a plan no mark changes (qwen-u9-mac.md).
-			if (amending && (status.research as { no_change?: unknown }).no_change === true) {
+			// On the local tiers code also builds a marked amendment (research.py
+			// build_marked_amendment); frontier keeps the worker's.
+			if (amending && ((status.research as { no_change?: unknown }).no_change === true || harness.config.modelTier !== 'frontier')) {
 				codeBuilt = true;
 				return '';
 			}
@@ -493,7 +495,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			}
 		})
 			.then((text) => (codeBuilt ? text : withValidation(harness, request.agent, text)))
-			.then(async (text) => (codeBuilt ? await recordAmendment(harness) : amending ? `${text}\n\n${await applyAmendment(harness)}` : rounding ? `${text}\n\n${await applyRound(harness)}` : text))
+			.then(async (text) => (codeBuilt ? await recordAmendment(harness, undefined, true) : amending ? `${text}\n\n${await applyAmendment(harness)}` : rounding ? `${text}\n\n${await applyRound(harness)}` : text))
 			.then(async (text) => {
 				// Earlier batches may have completed before a later batch stopped.
 				// Revalidate surviving results before granting continuation credit.
@@ -600,11 +602,11 @@ async function applyAmendment(harness: Harness): Promise<string> {
 	});
 }
 
-async function recordAmendment(harness: Harness, reached?: () => void): Promise<string> {
+async function recordAmendment(harness: Harness, reached?: () => void, build = false): Promise<string> {
 	const { config, active } = harness;
 	const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
 	try {
-		await runAdapter(transitionArguments('recordAmendment', {}, active, ORCHESTRATOR, true));
+		await runAdapter([...transitionArguments('recordAmendment', {}, active, ORCHESTRATOR, true), ...(build ? ['--build'] : [])]);
 		reached?.();
 		// A refusal is recorded, not raised (transitions.py record_amendment):
 		// the resolver's state says which it was.
@@ -614,7 +616,7 @@ async function recordAmendment(harness: Harness, reached?: () => void): Promise<
 			const refused = (after.research as { refused?: unknown } | undefined)?.refused;
 			return `[Harness: recordAmendment refused the amendment. Spawn the investigator once more; its task carries these problems.]\n${harness.redact(JSON.stringify(refused ?? [])).slice(0, 1500)}`;
 		}
-		return `[Harness: recordAmendment applied; ${reached ? 'the amendment' : 'no mark changes the plan, so code built the amendment from the approved methodology and no worker ran. It'} passed the check against the member's marks. Call spotlight_resolve.]`;
+		return `[Harness: recordAmendment applied; ${reached ? 'the amendment' : 'code built the amendment from the approved methodology and the marks the member set, and no worker ran. It'} passed the check against the member's marks. Call spotlight_resolve.]`;
 	} catch (error) {
 		return `[Harness: recordAmendment did not reach an outcome (the resolver failed), so the amendment was not checked or counted. Spawn the investigator again to retry it.]\n${harness.redact((error as Error).message).slice(0, 1500)}`;
 	}

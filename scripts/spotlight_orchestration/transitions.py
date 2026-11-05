@@ -20,6 +20,7 @@ from .contract import (
     RESEARCH_OUTPUTS,
     RESEARCH_REVIEW,
     RESEARCH_ROUND,
+    RESEARCH_SUGGESTIONS,
     SCRIPT_DIR,
 )
 from .dependencies import (
@@ -327,7 +328,7 @@ def start_research_round(case: Path, data_descriptor: int) -> None:
     _publish(case, data_descriptor, state, extra={"data/methodology.json": updated})
 
 
-def record_amendment(case: Path, data_descriptor: int) -> None:
+def record_amendment(case: Path, data_descriptor: int, build: bool = False) -> None:
     """Check AMENDMENT mode's proposal against the member's marks (D8).
 
     On a pass the proposal becomes data/methodology.json and its hash is
@@ -339,7 +340,8 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     When no mark asks for a change the amendment is the approved methodology,
     so its bytes are taken as it stands and every check below still runs: a
     model that retypes the file only adds risk (qwen-u9-mac.md). The ledger
-    entry records that code built it.
+    entry records that code built it. With ``build`` (the local tiers) code
+    builds a marked amendment the same way (research.build_marked_amendment).
     """
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
@@ -348,25 +350,40 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
         raise OrchestrationError("the case is not waiting for a methodology amendment")
     approved = research_rules.read_case_json(case, "data/methodology.json")
     review_doc = research_rules.read_case_json(case, RESEARCH_REVIEW)
+    if build and review_doc is None:
+        review_doc = {}  # no marks were saved, so none asks for a change
     built_by_code = research_rules.checks().leaves_plan_unchanged(review_doc)
-    source = "data/methodology.json" if built_by_code else METHODOLOGY_AMENDMENT
-    amendment_path = case_path(case, source)
-    if not amendment_path.is_file():
-        raise OrchestrationError(f"{source} is missing")
-    amendment_bytes = amendment_path.read_bytes()
-    try:
-        amended = json.loads(amendment_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise OrchestrationError(f"cannot read {source}: {exc}") from exc
+    unplaced: list[str] = []
+    if build and not built_by_code and isinstance(approved, dict) and isinstance(review_doc, dict):
+        amended, unplaced = research_rules.build_marked_amendment(
+            approved, review_doc,
+            research_rules.read_case_json(case, "data/clues.json"),
+            research_rules.read_case_json(case, RESEARCH_SUGGESTIONS),
+        )
+        amendment_bytes = (json.dumps(amended, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        built_by_code = True
+    else:
+        source = "data/methodology.json" if built_by_code else METHODOLOGY_AMENDMENT
+        amendment_path = case_path(case, source)
+        if not amendment_path.is_file():
+            raise OrchestrationError(f"{source} is missing")
+        amendment_bytes = amendment_path.read_bytes()
+        try:
+            amended = json.loads(amendment_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise OrchestrationError(f"cannot read {source}: {exc}") from exc
     if not isinstance(amended, dict) or not isinstance(approved, dict):
         raise OrchestrationError("the methodology and its amendment must be JSON objects")
     problems = research_rules.checks().d8_amendment(
         approved, amended, review_doc if isinstance(review_doc, dict) else None
     )
-    problems += _schema_problems(amended)
+    problems += _schema_problems(amended) + unplaced
     if problems:
         attempts = state["attempts"]
         attempts[AMENDMENT_CORRECTION] = attempts.get(AMENDMENT_CORRECTION, 0) + 1
+        if built_by_code:
+            # Code would build the same amendment again, so a second try is pointless.
+            attempts[AMENDMENT_CORRECTION] = ATTEMPT_LIMITS[AMENDMENT_CORRECTION]
         state["open_amendment"] = {"problems": problems[:50]}
         if attempts[AMENDMENT_CORRECTION] >= ATTEMPT_LIMITS[AMENDMENT_CORRECTION]:
             state["blocked"] = {

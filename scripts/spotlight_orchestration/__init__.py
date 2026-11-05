@@ -111,12 +111,12 @@ def continue_without_research(
 
 
 def record_amendment(
-    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+    case_dir: str | Path, *, build: bool = False, authorized_cases_root: str | Path | None = None
 ) -> None:
     """Check AMENDMENT mode's data/methodology-amendment.json against the
     member's Research marks (D8); apply and bind it, or send it back."""
     _transition(
-        case_dir, transitions.record_amendment, authorized_cases_root=authorized_cases_root
+        case_dir, transitions.record_amendment, build, authorized_cases_root=authorized_cases_root
     )
 
 

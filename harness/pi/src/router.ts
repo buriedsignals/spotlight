@@ -67,6 +67,14 @@ export function routerState(messages: readonly unknown[]): RouterState {
 	return { resolved, callsSince, member: member || undefined, lastTool, lastRouted };
 }
 
+// What a blocked case says, by the attempt that ran out (transitions.py
+// ATTEMPT_LIMITS). The only way on is a changed methodology approved again:
+// that approval clears the block (transitions.py approve). Written by code so
+// no model blames a file (r3 blamed brief-directions.txt).
+export const BLOCKED_STOPS: Record<string, string> = {
+	'amendment-correction': "Spotlight stopped at Research. The changes you marked could not be written into the plan, and the plan is unchanged. To continue, change the methodology (for example keep a direction you marked to drop) and approve it again; Research will run again.",
+};
+
 // The move when no member message is waiting.
 export function routeWithoutMember(state: RouterState): RouterMove {
 	// The page is open: the turn ends with the model's words (registerEndTurnOnOpen).
@@ -74,7 +82,10 @@ export function routeWithoutMember(state: RouterState): RouterMove {
 	let move: RouterMove;
 	if (!state.resolved || state.callsSince > 0) move = { kind: 'call', tool: 'spotlight_resolve', reason: state.resolved ? `${state.callsSince} call(s) since the last resolve` : 'no resolve yet' };
 	else if (typeof state.resolved.next_action === 'string' && state.resolved.next_action.includes('open_review')) move = { kind: 'call', tool: 'open_review', reason: 'the resolver names open_review' };
-	else move = { kind: 'model', reason: 'the resolver names no code move' };
+	else if (state.resolved.status === 'blocked' && BLOCKED_STOPS[String((state.resolved.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt)]) {
+		const kind = String((state.resolved.blocked as { exhausted_attempt?: unknown }).exhausted_attempt);
+		return { kind: 'stop', text: BLOCKED_STOPS[kind], reason: `the case is blocked (${kind}); code says why` };
+	} else move = { kind: 'model', reason: 'the resolver names no code move' };
 	return noLoop(state, move);
 }
 
