@@ -849,6 +849,44 @@ test('code repairs only worker paperwork it can prove, on local tiers, and says 
 			assert.deepEqual([empty.title, empty.summary, empty.verified_findings, empty.findings], ['0 verified findings', '0 findings.', 0, []]);
 		});
 
+		await t.test('research refs', async (t) => {
+			// D10 (K3, K4, K5, qwen-65k.md): findings with no direction link held the case at Investigation.
+			const plan = (...ids: string[]) => JSON.stringify({ research_plan: { topics: [] }, investigation_plan: ids.map((direction_id) => ({ direction: direction_id, direction_id })) });
+			const finding = (id: string, research_refs?: string[]) => ({ id, claim: id, ...(research_refs ? { research_refs } : {}) });
+			const refs = async (caseDir: string) => Object.fromEntries(JSON.parse(await readFile(data(caseDir, 'findings.json'), 'utf8')).findings.map((row: { id: string; research_refs?: string[] }) => [row.id, row.research_refs]));
+			const write = (call: (name: string, params: Record<string, unknown>) => Promise<string>, ...findings: object[]) => call('write_file', { path: 'data/findings.json', content: JSON.stringify({ project: 'p', findings }) });
+
+			const one = await fixture(t, undefined, 'investigator', env);
+			await writeFile(data(one.caseDir, 'methodology.json'), plan('d1'));
+			await writeFile(data(one.caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: [] }));
+			const reply = await write(one.call, finding('F1'), finding('F2', ['d1']), finding('F3', ['clue:k1']));
+			assert.deepEqual(await refs(one.caseDir), local ? { F1: ['direction:d1'], F2: ['direction:d1'], F3: ['clue:k1', 'direction:d1'] } : { F1: undefined, F2: ['d1'], F3: ['clue:k1'] });
+			assert.equal(/Code set research_refs of F1, F2, F3 to direction:d1/.test(reply), local);
+
+			const split = await fixture(t, undefined, 'investigator', { ...env, SPOTLIGHT_DIRECTION: 'D2' });
+			await writeFile(data(split.caseDir, 'methodology.json'), plan('d1', 'd2'));
+			await writeFile(data(split.caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: [finding('D1-F1')] }));
+			await write(split.call, finding('D2-F1'));
+			assert.deepEqual(await refs(split.caseDir), local ? { 'D1-F1': undefined, 'D2-F1': ['direction:d2'] } : { 'D1-F1': undefined, 'D2-F1': undefined }, 'only this worker\'s direction, only its findings');
+
+			// After an amendment the plan is renumbered: findings not in this write and ids of an older tag prove nothing.
+			const renumbered = await fixture(t, undefined, 'investigator', env);
+			await writeFile(data(renumbered.caseDir, 'methodology.json'), plan('d2'));
+			await writeFile(data(renumbered.caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: [finding('D1-F1'), finding('F9')] }));
+			await write(renumbered.call, finding('D1-F2'), finding('F1'));
+			assert.deepEqual(await refs(renumbered.caseDir), local ? { 'D1-F1': undefined, F9: undefined, 'D1-F2': undefined, F1: ['direction:d2'] } : { 'D1-F1': undefined, F9: undefined, 'D1-F2': undefined, F1: undefined });
+
+			// Two directions and no assigned one, or no research plan: nothing proves a direction.
+			const both = await fixture(t, undefined, 'investigator', env);
+			await writeFile(data(both.caseDir, 'methodology.json'), plan('d1', 'd2'));
+			await writeFile(data(both.caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: [] }));
+			assert.doesNotMatch(await write(both.call, finding('F1')), /Code set/);
+			const none = await fixture(t, undefined, 'investigator', env);
+			await writeFile(data(none.caseDir, 'methodology.json'), JSON.stringify({ investigation_plan: [{ direction: 'd1', direction_id: 'd1' }] }));
+			await writeFile(data(none.caseDir, 'findings.json'), JSON.stringify({ project: 'p', findings: [] }));
+			assert.doesNotMatch(await write(none.call, finding('F1')), /Code set/);
+		});
+
 		await t.test('report draft', async (t) => {
 			const { caseDir, call } = await fixture(t, undefined, 'analyst', env);
 			await writeFile(data(caseDir, 'source-expressions.json'), JSON.stringify({ expressions: [{ id: 'SX1' }, { id: 'SX2' }, { id: 'SX3' }] }));

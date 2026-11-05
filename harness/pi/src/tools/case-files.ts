@@ -11,7 +11,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
-import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
+import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, planDirections, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, factCheckerSourceURLs, fetchedFile, registeredCapture } from './fetch.ts';
 import { missingValues } from './claim-values.ts';
@@ -1076,6 +1076,43 @@ function dropAnsweredVerdicts(merged: string, written: string, notes: string[]):
 	return `${JSON.stringify(document, null, 2)}\n`;
 }
 
+// D10 (K3, K4, K5, qwen-65k.md: verified findings held at Investigation for want of a direction link). A research case's findings must name their direction, and
+// code knows it in two cases: a split worker's own direction, for the findings it owns, and the only direction of a one-direction plan. It adds that ref and reads a
+// bare direction id as that ref. Only findings in this write count: an amendment renumbers directions, so a D2- id from an older plan proves nothing (Codex P2), and an
+// id carrying a tag is never claimed by an untagged worker. Anything else stays the worker's: a pursued clue's ref, another direction's, every uncertain case.
+function fillResearchRefs(context: Pick<ToolContext, 'caseDir' | 'env'>, written: string, merged: string, notes: string[]): string {
+	if (!localTier(context.env)) return merged;
+	let document: { findings?: unknown };
+	let researched: unknown;
+	let submitted: Set<unknown>;
+	try {
+		document = JSON.parse(merged);
+		const rows = JSON.parse(written).findings;
+		submitted = new Set((Array.isArray(rows) ? rows : []).map((row) => row?.id));
+		researched = JSON.parse(readFileSync(join(context.caseDir, 'data', 'methodology.json'), 'utf8')).research_plan;
+	} catch {
+		return merged;
+	}
+	if (!researched || !Array.isArray(document?.findings)) return merged;
+	const tag = context.env?.SPOTLIGHT_DIRECTION;
+	const directions = planDirections(context.caseDir);
+	const owner = tag ? directions.find((direction) => direction.tag === tag) : directions.length === 1 ? directions[0] : undefined;
+	if (!owner) return merged;
+	const bare = owner.ref.slice('direction:'.length);
+	const changed: string[] = [];
+	for (const finding of document.findings as Record<string, unknown>[]) {
+		if (!finding || typeof finding !== 'object' || !submitted.has(finding.id) || (tag ? !String(finding.id).startsWith(`${tag}-`) : /^D\d+-/.test(String(finding.id)))) continue;
+		const refs = Array.isArray(finding.research_refs) ? finding.research_refs : [];
+		const next = [...new Set([...refs.map((ref) => (ref === bare ? owner.ref : ref)), owner.ref])];
+		if (isDeepStrictEqual(next, refs)) continue;
+		finding.research_refs = next;
+		changed.push(String(finding.id));
+	}
+	if (changed.length === 0) return merged;
+	notes.push(`Code set research_refs of ${changed.join(', ')} to ${owner.ref}: the findings of this direction.`);
+	return `${JSON.stringify(document, null, 2)}\n`;
+}
+
 // B14, B23(c) (K2-13: rejected for one top-level "model"; K5-4: bare strings, then {id, text, source_ref}). Only that field goes, never another unknown one.
 // A selection becomes {expression_id} when it names one passage on record; the quote's text always comes from that passage, so a typed copy is dropped.
 function repairDraft(caseDir: string, document: Record<string, unknown>, notes: string[]): void {
@@ -1404,6 +1441,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 		filledReceipt = [];
 		const merged = mergedWrite(target, content, exactEdit);
 		if (caseRelative(caseDir, target) === 'data/fact-check.json' && localTier(context.env)) return dropAnsweredVerdicts(merged, content, filledReceipt);
+		if (caseRelative(caseDir, target) === 'data/findings.json' && role === 'investigator') return fillResearchRefs(context, content, merged, filledReceipt);
 		if (caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return merged;
 		const { text, kept, filled } = keepReceiptFields(context, currentText(target), merged);
 		keptReceipt = kept;
