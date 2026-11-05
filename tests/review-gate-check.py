@@ -85,6 +85,36 @@ class ReviewGate(CaseFixture):
         (forged / "data/orchestration.json").write_text(json.dumps(bare), encoding="utf-8")
         self.assertEqual(self.phase(forged), "methodology_approval")
 
+    def test_a_code_default_research_plan_shows_a_drop_and_the_case_goes_on_without_it(self) -> None:
+        case = self.build("research-drop", "methodology")
+        path = case / "data/methodology.json"
+        methodology = json.loads(path.read_text(encoding="utf-8"))
+        plan = {"code_default": True, "mode": "openrouter_swarm", "round_budget_usd": 1, "case_budget_usd": 1, "keys": [],
+                "egress": [{"topic_id": "d1-ad-hoc", "destination": "public_web"}], "consent": {"swarm": True},
+                "topics": [{"topic_id": "d1-ad-hoc", "direction_id": "d1", "lane_type": "ad-hoc", "questions": ["Who?"], "token_budget": 200000}]}
+        path.write_text(json.dumps({**methodology, "research_plan": plan}), encoding="utf-8")
+        shown = self.view(case, "methodology")
+        self.assertTrue(shown["content"]["research_plan"]["code_default"])
+        self.assertEqual([item["key"] for item in shown["items"]], ["selection:research_plan"])
+        self.assertFalse(shown["items"][0]["required"], "keeping the plan needs no mark")
+
+        after = self.edit(case, "methodology", {"kind": "mark", "key": "selection:research_plan", "value": False})
+        self.assertNotIn("research_plan", json.loads(path.read_text(encoding="utf-8")))
+        self.assertNotEqual(after["digest"], shown["digest"], "the page now approves the plan without research")
+        self.assertTrue(after["content"]["research_dropped"])
+        self.assertEqual(after["items"], [])
+        # Continuity: the member approves on the new digest and the case goes to Investigation.
+        self.page_approve(case, "methodology", self.nonce(case, "methodology"), after["digest"])
+        self.assertEqual(self.phase(case), "investigation")
+
+        # A plan the model wrote offers no drop here; a correction changes it.
+        own = self.build("research-own", "methodology")
+        path = own / "data/methodology.json"
+        written = {key: value for key, value in plan.items() if key != "code_default"}
+        path.write_text(json.dumps({**json.loads(path.read_text(encoding="utf-8")), "research_plan": written}), encoding="utf-8")
+        self.assertEqual(self.view(own, "methodology")["items"], [])
+        self.edit(own, "methodology", {"kind": "mark", "key": "selection:research_plan", "value": False}, expect=3)
+
     def test_replayed_nonce_is_refused(self) -> None:
         case = self.build("replay", "methodology")
         nonce = self.nonce(case, "methodology")

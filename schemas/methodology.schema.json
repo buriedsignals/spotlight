@@ -201,6 +201,7 @@
       "description": "Opt-in Research phase between Methodology and Investigation. Absent: the case goes straight to Investigation. Each topic brief runs as one lane; code starts the lanes once the methodology is approved, never the model.",
       "required": ["round_budget_usd", "case_budget_usd", "mode", "consent", "keys", "egress", "topics"],
       "properties": {
+        "code_default": {"type": "boolean", "description": "Code added this plan because Research is on and the methodology had none; the member can drop it at the review."},
         "round_budget_usd": {
           "type": "number",
           "exclusiveMinimum": 0,

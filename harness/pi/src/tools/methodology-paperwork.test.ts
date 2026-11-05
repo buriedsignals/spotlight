@@ -2,11 +2,13 @@
 // changes is completed from the approved methodology. The scenario is in
 // launcher.test.ts ("code-built TASK: AMEND").
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { completeAmendment } from './methodology-paperwork.ts';
+import { CHECKOUT_ROOT } from '../roles.ts';
+import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
 
 test('a changed direction sent by its name replaces the approved one that code numbered, never a duplicate', async (t) => {
 	const caseDir = await mkdtemp(join(tmpdir(), 'spotlight-amend-'));
@@ -25,4 +27,47 @@ test('a changed direction sent by its name replaces the approved one that code n
 	// A name two approved directions share matches neither: the entry is new, for D8 to judge.
 	await writeFile(join(caseDir, 'data', 'methodology.json'), JSON.stringify({ ...approved, investigation_plan: [approved.investigation_plan[0], { ...approved.investigation_plan[1], direction: 'Ownership' }] }));
 	assert.equal((completeAmendment(caseDir, { investigation_plan: [changed] })!.investigation_plan as unknown[]).length, 3);
+});
+
+// Case 2026-11-05-938c2a6a: Research was on, the prompt said so, and r3's one write had no research_plan, so Research was skipped in silence.
+test('with Research on and no plan, code adds a default ad-hoc plan that D1 accepts; every other route is unchanged', async (t) => {
+	const caseDir = await mkdtemp(join(tmpdir(), 'spotlight-default-plan-'));
+	t.after(() => rm(caseDir, { recursive: true, force: true }));
+	await mkdir(join(caseDir, 'data'));
+	const on = { SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_MODEL_TIER: '12b' };
+	const methodology = () => ({ schema_version: '1.0', project: 'p', investigation_plan: [{ direction: 'Ownership', questions: ['Who owns it?'], steps: [] }, { direction: 'Money', steps: [] }] });
+	const filled = (env: Record<string, string>, extra: Record<string, unknown> = {}) => {
+		const document: Record<string, unknown> = { ...methodology(), ...extra };
+		fillMethodology(caseDir, env, document);
+		return document;
+	};
+	const plan = filled(on).research_plan as { code_default: boolean; mode: string; consent: unknown; round_budget_usd: number; topics: Array<Record<string, unknown>> };
+	assert.equal(plan.code_default, true);
+	assert.deepEqual(plan.topics.map(({ topic_id, direction_id, lane_type, questions }) => ({ topic_id, direction_id, lane_type, questions })), [
+		{ topic_id: 'd1-ad-hoc', direction_id: 'd1', lane_type: 'ad-hoc', questions: ['Who owns it?'] },
+		{ topic_id: 'd2-ad-hoc', direction_id: 'd2', lane_type: 'ad-hoc', questions: ['Money'] },
+	]);
+	assert.equal(plan.round_budget_usd, 1);
+	// Continuity: the check the Methodology gate runs takes the plan, so the case reaches the gate.
+	await writeFile(join(caseDir, 'data', 'methodology.json'), JSON.stringify(filled(on)));
+	const d1 = JSON.parse(execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'research_checks.py'), 'd1', caseDir], { encoding: 'utf8', env: { ...process.env, ...on, SPOTLIGHT_CONFIG: join(caseDir, 'none.json') } })) as { ok: boolean; problems?: string[] };
+	assert.deepEqual(d1.problems ?? [], []);
+	await rm(join(caseDir, 'data', 'methodology.json'));
+
+	for (const [why, env] of [
+		['switch off', { ...on, SPOTLIGHT_RESEARCH_SWARMS: 'off' }],
+		['frontier', { ...on, SPOTLIGHT_MODEL_TIER: 'frontier' }],
+		['sensitive', { ...on, SPOTLIGHT_SENSITIVE: 'true' }],
+		['newsroom', { ...on, SPOTLIGHT_EDITION: 'newsroom' }],
+	] as const) assert.equal(filled(env).research_plan, undefined, why);
+	// The model's own plan stands.
+	const own = { topics: [{ direction_id: 'd1', lane_type: 'web', questions: ['Q'] }] };
+	assert.equal((filled(on, { research_plan: own }).research_plan as Record<string, unknown>).code_default, undefined);
+	// After approval a write is never given a plan the member did not approve.
+	await writeFile(join(caseDir, 'data', 'orchestration.json'), JSON.stringify({ approvals: { methodology: { approved_by: 'm' } } }));
+	assert.equal(filled(on).research_plan, undefined, 'approved');
+	await rm(join(caseDir, 'data', 'orchestration.json'));
+	// A plan the member dropped at the review is not added back by a correction.
+	await writeFile(join(caseDir, 'data', 'methodology-review.json'), JSON.stringify({ items: { 'selection:research_plan': { final: false } } }));
+	assert.equal(filled(on).research_plan, undefined, 'dropped');
 });

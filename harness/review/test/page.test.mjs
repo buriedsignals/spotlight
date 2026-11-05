@@ -134,3 +134,16 @@ test("the gate page lists verified findings first and the rest under a clear war
   assert.ok(main?.includes("A verified claim.") && !main.includes("An invented name."), main);
   assert.ok(doubtful?.includes("An invented name."), doubtful);
 });
+
+test("the methodology page offers the drop for a plan code added, and says when it is dropped", async (t) => {
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "methodology") }).view("methodology");
+  const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+  const plan = { code_default: true, topics: [], consent: {}, keys: [], mode: "openrouter_swarm" };
+  const item = { key: "selection:research_plan", kind: "selection", target: "research_plan", suggested: true, final: true, suggestion_source: "Research switch", suggestion_reason: "", note: "", required: false };
+  const shown = words((await renderClient({ ...view, content: { ...view.content, research_plan: plan }, items: [item], pending_gate: "methodology" })).getElementById("app"));
+  assert.match(shown, /Spotlight added this plan/);
+  assert.match(shown, /Run Research on this case/);
+  const dropped = words((await renderClient({ ...view, content: { ...view.content, research_dropped: true }, items: [], pending_gate: "methodology" })).getElementById("app"));
+  assert.match(dropped, /Research is dropped for this case/);
+  assert.doesNotMatch(dropped, /Run Research on this case/);
+});

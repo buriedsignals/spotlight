@@ -204,7 +204,7 @@ function list(items, empty) {
   return el("ul", {}, items.map((item) => el("li", { text: item })));
 }
 
-function methodologyContent(content) {
+function methodologyContent(content, items) {
   return el(
     "section",
     { "aria-labelledby": "plan-heading" },
@@ -230,6 +230,8 @@ function methodologyContent(content) {
       ? el("p", { className: "card", text: `Indicator Framework: ${content.indicator_framework.on ? "on" : "off"}${content.indicator_framework.reason ? ` — ${content.indicator_framework.reason}` : ""}` })
       : null,
     content.research_plan ? researchPlanContent(content.research_plan) : null,
+    items.filter((item) => item.key === "selection:research_plan").map((item) => selectionCard(item, null, "Run Research on this case")),
+    content.research_dropped ? el("p", { className: "card", text: "Research is dropped for this case. To plan it again, ask for a change." }) : null,
     content.anomaly ? anomalyPlanContent(content.anomaly) : null,
   );
 }
@@ -263,6 +265,7 @@ function researchPlanContent(plan) {
   const consent = plan.consent;
   return [
     el("h3", { text: "Research plan" }),
+    plan.code_default ? el("p", { text: "Research is on, so Spotlight added this plan: one web research topic per direction. It runs when you approve, unless you drop it below." }) : null,
     el("p", {
       text: `Cloud research (topic briefs sent to a cloud model): ${consent.swarm ? "yes" : "no"}. Journalist input to the local corpus lane: ${consent.journalist_input ? "yes" : "no"}. Approving this plan records this consent under your name and the time you approve.`,
     }),
@@ -1411,7 +1414,7 @@ function render(next) {
         ),
       );
     }
-    if (view.gate === "methodology") parts.push(methodologyContent(view.content));
+    if (view.gate === "methodology") parts.push(methodologyContent(view.content, view.items));
     if (view.gate === "research") parts.push(...researchContent(view.content, view.items));
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(...reportContent(view.content));
