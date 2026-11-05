@@ -24,6 +24,9 @@ export type RouterState = {
 	callsSince: number;
 	member?: string;
 	lastTool?: string;
+	// The last open_review held the turn and the member decided; resumed once the fresh run began.
+	decided?: boolean;
+	resumed?: boolean;
 	// The last assistant message was the router's own call of this tool.
 	lastRouted?: string;
 };
@@ -35,6 +38,10 @@ import { resolve } from 'node:path';
 type Msg = { role?: string; content?: unknown; toolName?: string; responseModel?: string };
 
 // Turns the harness writes into the chat, not the member (step1 intents_build HARNESS).
+// The tool result of a held open_review (tools/review.ts); the context the router reads carries no details.
+export const REVIEW_DECIDED = 'The member decided on the review page.';
+export const DECISION_RECORDED = 'Your decision is recorded. Spotlight is carrying on.';
+export const MEMBER_DECIDED = 'I decided on the review page.';
 const HARNESS_TURN = /^(The conversation history before this point was compacted|Your turn ended with text)/;
 // review-simp.md #4: the empty-turn and runaway-turn nudges (extension.ts), matched
 // whole so a member message that merely starts the same way stays the member's.
@@ -63,11 +70,13 @@ export function routerState(messages: readonly unknown[]): RouterState {
 	const callsSince = list.slice(resolvedAt + 1).filter((message) => message.role === 'assistant').flatMap((message) => parts(message.content).filter((part) => part.type === 'toolCall')).length;
 	const last = [...list].reverse().find((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult');
 	const said = last?.role === 'user' ? text(last.content).trim() : '';
-	const member = said && !HARNESS_TURN.test(said) && !HARNESS_NUDGES.includes(said) ? said : undefined;
+	const member = said && said !== MEMBER_DECIDED && !HARNESS_TURN.test(said) && !HARNESS_NUDGES.includes(said) ? said : undefined;
 	const lastTool = [...list].reverse().find((message) => message.role === 'toolResult')?.toolName;
 	const lastAssistant = [...list].reverse().find((message) => message.role === 'assistant');
 	const lastRouted = lastAssistant?.responseModel === ROUTER_MODEL ? parts(lastAssistant.content).find((part) => part.type === 'toolCall')?.name : undefined;
-	return { resolved, callsSince, member: member || undefined, lastTool, lastRouted };
+	const toolResult = [...list].reverse().find((message) => message.role === 'toolResult');
+	const decided = toolResult?.toolName === 'open_review' && text(toolResult.content).trim() === REVIEW_DECIDED;
+	return { resolved, callsSince, member: member || undefined, lastTool, lastRouted, decided, resumed: said === MEMBER_DECIDED };
 }
 
 // What a blocked case says, by the attempt that ran out (transitions.py
@@ -106,7 +115,10 @@ export function closingMessage(caseDir: string): string | undefined {
 // The move when no member message is waiting.
 export function routeWithoutMember(state: RouterState, closing?: string): RouterMove {
 	// The page is open: the turn ends with the model's words (registerEndTurnOnOpen).
-	if (state.lastTool === 'open_review') return { kind: 'model', reason: 'the review page was just opened' };
+	if (state.lastTool === 'open_review' && !state.decided) return { kind: 'model', reason: 'the review page was just opened' };
+	// A held page was decided: this run ends on code's line, and the fresh run
+	// the extension queues (the decision as a member turn) resolves the case.
+	if (state.lastTool === 'open_review' && !state.resumed) return { kind: 'stop', text: DECISION_RECORDED, reason: 'the member decided on the page' };
 	let move: RouterMove;
 	if (!state.resolved || state.callsSince > 0) move = { kind: 'call', tool: 'spotlight_resolve', reason: state.resolved ? `${state.callsSince} call(s) since the last resolve` : 'no resolve yet' };
 	else if (typeof state.resolved.next_action === 'string' && state.resolved.next_action.includes('open_review')) move = { kind: 'call', tool: 'open_review', reason: 'the resolver names open_review' };

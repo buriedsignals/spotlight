@@ -14,6 +14,8 @@ import type { TestContext } from 'node:test';
 import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } from './test-support/fake-openai.ts';
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
+import { DECISION_RECORDED } from './router.ts';
+import { REVIEW_HOLD_NOTICE } from './tools/review.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { registerCapture } from './test-support/receipts.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
@@ -2715,6 +2717,68 @@ test('on a local tier a worker\'s start and end reach the chat client as notices
 		assert.deepEqual(notices, tier === 'frontier' ? [] : ['The analyst started.', 'The analyst finished.'], tier);
 		assert.doesNotMatch(JSON.stringify(fake.requests.at(-1)!.messages), /The analyst started/);
 	}
+});
+
+// Option D (paperwork-p5-option-d.md): members expect the case to go on once they decide in the browser.
+const atGate = (space: Workspace) => {
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	return caseDir;
+};
+const holdScript = (request: ChatRequest): Reply => (request.messages.some((message) => message.role === 'tool') ? { text: 'Done.' } : { toolCalls: [{ name: 'open_review', arguments: {} }] });
+const notices = (chat: { lines: string[] }) => chat.lines.map((line) => JSON.parse(line) as { method?: string; message?: string }).filter((record) => record.method === 'notify').map((record) => record.message ?? '');
+const settles = (chat: { lines: string[] }) => chat.lines.filter((line) => line.includes('"type":"agent_settled"')).length;
+
+test('on a local tier open_review holds the turn; a decision on the record carries the case on in the same chat turn, as a member turn', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_CODE_ROUTER: 'on' });
+
+	const turn = settledPrompt(chat, 'Continue.', 30_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 15_000);
+	assert.equal(settles(chat), 0, 'the turn stays open while the member decides');
+	assert.match(REVIEW_HOLD_NOTICE, /press Stop/);
+	memberApprovesGate(caseDir);
+	await turn;
+
+	assert.equal(settles(chat), 1, 'one chat turn from the page to the next step');
+	assert.equal(chat.lines.filter((line) => line.includes('"type":"message_end"') && line.includes(DECISION_RECORDED)).length, 1, 'the member sees the decision taken up, once');
+	assert.ok(chat.lines.filter((line) => line.includes('"type":"agent_start"')).length >= 2, 'a fresh run, so per-run limits start over');
+	assert.match(chat.stderr(), /the decision on the page counts as the member's turn/, 'and the member-turn resets, which a fresh run does not fire');
+	assert.notEqual(lastResolution(chat).phase, 'investigation_gate_approval', 'code resolved past the gate');
+	assert.ok(!chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)));
+});
+
+test('past the limit, the turn ends as it always did; Stop ends the hold at once; frontier never holds', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	for (const [name, env] of [['limit', { SPOTLIGHT_REVIEW_HOLD_MS: '300' }], ['frontier', { SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_MODEL_TIER: 'frontier' }]] as const) {
+		const fake = await startFakeOpenAI(holdScript);
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		atGate(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), ...env });
+		await settledPrompt(chat, 'Continue.', 20_000);
+		assert.equal(fake.requests.length, 1, name);
+		assert.equal(notices(chat).includes(REVIEW_HOLD_NOTICE), name === 'limit', name);
+		assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), `${name}: the fallback line`);
+	}
+
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000' });
+	const turn = settledPrompt(chat, 'Continue.', 10_000 + 20_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 15_000);
+	const stopped = Date.now();
+	chat.send({ type: 'abort' });
+	await turn;
+	assert.ok(Date.now() - stopped < 8_000, 'inside Osaurus\'s 8 s Stop grace');
+	// A decision after Stop keeps option B: the member's next message moves the case.
+	memberApprovesGate(caseDir);
+	await settledPrompt(chat, 'I decided.', 20_000);
+	assert.equal(settles(chat), 2, 'the chat is free again after Stop');
 });
 
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task

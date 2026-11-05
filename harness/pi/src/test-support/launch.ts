@@ -22,6 +22,8 @@ export async function workspace(t: TestContext): Promise<Workspace> {
 
 export function baseEnv(space: Workspace, modelBaseURL: string, caseId = 'case-a'): Record<string, string> {
 	return {
+		// open_review's hold waits for a member no test has; the hold tests turn it on.
+		SPOTLIGHT_REVIEW_HOLD_MS: '0',
 		PATH: process.env.PATH ?? '',
 		HOME: process.env.HOME ?? '',
 		SPOTLIGHT_MODEL_BASE_URL: modelBaseURL,
