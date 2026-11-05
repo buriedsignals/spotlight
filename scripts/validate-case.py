@@ -652,16 +652,17 @@ def validate_source_positions(data: Any, findings_data: Any, expressions_data: A
 def unexplained_empty_pass(case_dir: Path, reason: Any) -> list[str]:
     """On the local tiers, an empty pass over fetched pages must say which pages
     were read (qwen real launch ab7e6c04: eleven pages fetched, then a reason
-    that named none). A page counts as named by its file name."""
+    that named none). A page counts as named by its whole file name, as a token:
+    a bare stem like "page" is ordinary prose (Codex R1)."""
     if os.environ.get("SPOTLIGHT_MODEL_TIER", "12b").strip() == "frontier" or not isinstance(reason, str):
         return []
-    pages = sorted(path for path in (case_dir / "research").glob("**/*.raw") if path.is_file())
+    pages = sorted(path for folder in ("research", "evidence") for path in (case_dir / folder).glob("**/*.raw") if path.is_file())
     if not pages:
         return []
     said = reason.lower()
     for page in pages:
-        name = page.name[: -len(".raw")]
-        if name.lower() in said or name.rsplit(".", 1)[0].lower() in said:
+        name = re.escape(page.name[: -len(".raw")].lower())
+        if re.search(rf"(?<![\w-]){name}(?![\w-])", said):
             return []
     return [
         f"findings.json: 'no_qualifying_findings' names nothing that was read, but the case holds {len(pages)} fetched page(s). "

@@ -2089,14 +2089,14 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 
 	// step3c (reports/step3c-commit-design.md): an investigator that only reads
 	// and never records gets a commit step on the local tiers. A cite of lines
-	// it was never shown leaves no finding, nothing_found changes nothing, and a
-	// cite clipped to the lines it was shown is recorded through the real tool.
+	// it was never shown leaves no finding and reads them, nothing_found changes
+	// nothing, and a cite of lines it was shown is recorded through the real tool.
 	// On frontier no commit request is ever made, even with the switch forced on.
 	for (const tier of ['12b', 'frontier'] as const) await t.test(`commit step (${tier})`, async (t) => {
 		const answers = [
 			{ name: 'record_finding', arguments: { finding: { claim: 'The page is about something else.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 4, line_end: 4 }] } },
 			{ name: 'nothing_found', arguments: { reason: 'Not sure yet.' } },
-			{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 1, line_end: 3 }] } },
+			{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } },
 		];
 		// inv-retest-def8674f.md: LFM3 answered with two record_finding calls; the first that passes is kept, the other named.
 		const second = { name: 'record_finding', arguments: { finding: { claim: 'The licence allows redistribution.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } };
@@ -2161,13 +2161,13 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.equal(commits.length, 3, 'three commit attempts, four turns apart');
 		assert.deepEqual(toolNames(commits[0]), ['nothing_found', 'record_finding']);
 		assert.match(JSON.stringify(commits[0].messages.at(-1)), /Commit step \(from the harness, not the member\)/);
-		// Only the clipped, shown line is recorded; the unseen cite and nothing_found left nothing.
+		// Only the shown line is recorded; the unseen cite and nothing_found left nothing.
 		assert.ok(!findings.findings.some((row) => row.claim === 'The page is about something else.'));
 		// The dropped cite was not silent: the turn says so and reads the lines it named, and the worker then sees them.
 		const read = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined).at(-1)!.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>).find((call) => call.function.name === 'read_file' && call.id.startsWith('commit-'))!;
 		assert.deepEqual(JSON.parse(read.function.arguments), { path: 'research/licence-page.md', offset: 4, limit: 1 });
 		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'investigator') && toolResults(request).some((text) => text.includes('Unrelated footer.'))));
-		assert.ok(fake.requests.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('research/licence-page.md lines 4-4 (not shown to you'))));
+		assert.ok(fake.requests.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('Commit step: reading the cited lines; not recorded: the finding, because its cite names lines not shown to you'))));
 		const committed = findings.findings.find((row) => row.claim === 'The licence permits modification.')!;
 		assert.deepEqual(committed.evidence, ['You may modify the software'], 'a one-cite commit keeps evidence as a list of the cited text');
 		// inv-retest-def8674f.md: the bundle the commit created carries its schema_version, the case validates and the fact-checker starts.

@@ -352,8 +352,9 @@ const commitStream: StreamFn = (model, context, options) => {
 				}
 				// The worker sees why its cite was dropped and gets the lines; the next commit step can then keep it.
 				if ('read' in accepted && accepted.read && getCurrentTools(context.messages).some((tool) => tool.name === 'read_file')) {
-					log(`[commit] read_file at tool turn ${state.turns} (${accepted.note})`);
-					emitCommit(out, answer, 'read_file', accepted.read, [`the finding, whose cite names ${accepted.note}`], 'Commit step: reading the cited lines', 'commit step: cited lines not shown');
+					log(`[commit] read_file at tool turn ${state.turns} (${JSON.stringify(accepted.read)})`);
+					// A fixed note: the path is the model's text, and it travels only as the call's argument.
+					emitCommit(out, answer, 'read_file', accepted.read, ['the finding, because its cite names lines not shown to you; cite it again once you have read them'], 'Commit step: reading the cited lines', 'commit step: cited lines not shown');
 					return;
 				}
 				reason = accepted.reason;

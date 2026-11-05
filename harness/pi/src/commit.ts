@@ -3,12 +3,12 @@
 // recorded, code makes one extra request offering only a narrowed
 // record_finding and nothing_found, with tool_choice required. The model
 // writes the claim, the confidence and which lines support it; code keeps only
-// the cited lines the model was actually shown and hands the call to the real
-// record_finding, which checks everything as before. Any other outcome sends
+// cites the model was actually shown and hands the call to the real
+// record_finding, which checks everything as before; a cite of other lines
+// reads them instead. Any other outcome sends
 // the model's own request unchanged. Never a gate, cap, stop or refusal; code
 // never writes a claim. The model offers no honest "nothing found" (probe E:
-// it invents a cite), so the step fires only on shown, unrecorded lines and a
-// cite of unseen lines is dropped.
+// it invents a cite), so the step fires only on shown, unrecorded lines.
 
 import { relative, resolve, sep } from 'node:path';
 
@@ -22,6 +22,8 @@ export const COMMIT_GAP_TURNS = 4;
 const GREP_LINE_CHARS = 400;
 const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
 const CAPTURE = /^(?:research|evidence)\//;
+// A cited path offered for a read; it is the model's text, so no whitespace (Codex R1).
+const READABLE = /^(?:research|evidence)\/\S+$/;
 // The most lines one read of a dropped cite asks for.
 const CITE_READ_LINES = 60;
 // case-files.ts readPage's note, the row before READ_TRUNCATED.
@@ -135,18 +137,21 @@ export function commitDue(state: CommitState, requestsSinceAttempt = Infinity): 
 	return requestsSinceAttempt >= COMMIT_GAP_TURNS;
 }
 
-// The model's commit answer, with each cite clipped to the lines it was shown
-// and has not recorded (runs of consecutive shown lines become separate cites);
-// or why it is not used. `unseen`: the capture ranges it cited and was not shown.
+// The model's commit answer, its cites as the lines it was shown and has not
+// recorded (runs of consecutive lines become separate cites); or why it is not
+// used. A cite reaching lines it was not shown is not clipped to the rest: the
+// rest need not support the claim (u9mac-s856 commit 1: a claim about the
+// director, cited to navigation lines and to lines it never saw; Codex R1).
+// `unseen`: those ranges, for the read.
 export type CommitArgs = { finding: { claim: string; confidence: string }; cite: Array<{ path: string; line_start: number; line_end: number }> };
 type Range = { path: string; line_start: number; line_end: number };
-function acceptCommit(name: string | undefined, args: unknown, shown: Shown, recorded: ReadonlySet<string>): { args: CommitArgs; unseen: Range[] } | { reason: string; unseen: Range[] } {
+function acceptCommit(name: string | undefined, args: unknown, shown: Shown, recorded: ReadonlySet<string>): { args: CommitArgs } | { reason: string; unseen?: Range[] } {
 	const unseen: Range[] = [];
-	if (name === 'nothing_found') return { reason: 'the model answered nothing_found', unseen };
-	if (name !== 'record_finding') return { reason: `the model answered ${name ?? 'no tool call'}`, unseen };
+	if (name === 'nothing_found') return { reason: 'the model answered nothing_found' };
+	if (name !== 'record_finding') return { reason: `the model answered ${name ?? 'no tool call'}` };
 	const input = args as { finding?: { claim?: unknown; confidence?: unknown }; cite?: unknown };
 	const claim = input?.finding?.claim, confidence = input?.finding?.confidence;
-	if (typeof claim !== 'string' || !claim.trim() || !['high', 'medium', 'low'].includes(String(confidence))) return { reason: 'the commit answer has no claim or confidence', unseen };
+	if (typeof claim !== 'string' || !claim.trim() || !['high', 'medium', 'low'].includes(String(confidence))) return { reason: 'the commit answer has no claim or confidence' };
 	const cite: Range[] = [];
 	let repeated = false;
 	for (const entry of Array.isArray(input.cite) ? (input.cite as Array<{ path?: unknown; line_start?: unknown; line_end?: unknown }>) : []) {
@@ -160,7 +165,7 @@ function acceptCommit(name: string | undefined, args: unknown, shown: Shown, rec
 		let first = start, last = end;
 		while (seen?.has(first)) first++;
 		while (seen?.has(last)) last--;
-		if (first <= last && CAPTURE.test(path)) unseen.push({ path, line_start: first, line_end: last });
+		if (first <= last) unseen.push({ path, line_start: first, line_end: last });
 		let run: Range | undefined;
 		for (const line of [...(seen?.keys() ?? [])].filter((line) => line >= start && line <= end).sort((a, b) => a - b)) {
 			if (recorded.has(`${path}:${line}`)) { repeated = true; continue; }
@@ -169,26 +174,24 @@ function acceptCommit(name: string | undefined, args: unknown, shown: Shown, rec
 			else { run = { path, line_start: line, line_end: line }; cite.push(run); }
 		}
 	}
-	if (!cite.length) return { reason: repeated ? 'the commit answer cites lines already recorded' : 'the commit answer cites no line the model was shown', unseen };
-	return { args: { finding: { claim: claim.trim(), confidence: String(confidence) }, cite }, unseen };
+	if (unseen.length) return { reason: cite.length || repeated ? 'the commit answer cites lines the model was not shown' : 'the commit answer cites no line the model was shown', unseen };
+	if (!cite.length) return { reason: repeated ? 'the commit answer cites lines already recorded' : 'the commit answer cites no line the model was shown' };
+	return { args: { finding: { claim: claim.trim(), confidence: String(confidence) }, cite } };
 }
-
-const unseenNote = ({ path, line_start, line_end }: Range) => `${path} lines ${line_start}-${line_end} (not shown to you: read them with read_file, then cite them)`;
 
 // inv-retest-def8674f.md: LFM3's commit answer carried two record_finding calls
 // and the one-call rule dropped both. The first call that passes the cite rules
 // is kept; every other call is dropped and named, so the model sees it. With
-// none kept, `read` is the first unseen range: the commit turn reads it, and
-// `note` says why, so a dropped cite is never silent.
-export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unknown }>, shown: Shown, recorded: ReadonlySet<string> = new Set()): { args: CommitArgs; dropped: string[] } | { reason: string; read?: { path: string; offset: number; limit: number }; note?: string } {
+// none kept, `read` is the first unseen capture range: the commit turn reads
+// it, so a dropped cite is never silent.
+export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unknown }>, shown: Shown, recorded: ReadonlySet<string> = new Set()): { args: CommitArgs; dropped: string[] } | { reason: string; read?: { path: string; offset: number; limit: number } } {
 	const answers = calls.map((call) => acceptCommit(call.name, call.arguments, shown, recorded));
 	const kept = answers.findIndex((answer) => 'args' in answer);
 	if (kept < 0) {
 		const reason = answers.flatMap((answer) => ('reason' in answer ? [answer.reason] : [])).join('; ') || 'the model answered no tool call';
-		const range = answers.flatMap((answer) => answer.unseen)[0];
-		return range && !/already recorded/.test(reason) ? { reason, read: { path: range.path, offset: range.line_start, limit: Math.min(range.line_end - range.line_start + 1, CITE_READ_LINES) }, note: unseenNote(range) } : { reason };
+		const range = answers.flatMap((answer) => ('unseen' in answer ? answer.unseen ?? [] : [])).find(({ path }) => READABLE.test(path));
+		return range ? { reason, read: { path: range.path, offset: range.line_start, limit: Math.min(range.line_end - range.line_start + 1, CITE_READ_LINES) } } : { reason };
 	}
-	const accepted = answers[kept] as { args: CommitArgs; unseen: Range[] };
 	// Calls are named by number, tool and reason only: the model's own text
 	// never reappears as harness prose (Codex review of simp-commit2, P2).
 	const dropped = calls.flatMap((call, index) => {
@@ -199,7 +202,7 @@ export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unk
 			: 'reason' in answer ? answer.reason : 'not used';
 		return [`call ${index + 1} (${call.name === 'record_finding' || call.name === 'nothing_found' ? call.name : 'another tool'}: ${why})`];
 	});
-	return { args: accepted.args, dropped: [...dropped, ...accepted.unseen.map(unseenNote)] };
+	return { args: (answers[kept] as { args: CommitArgs }).args, dropped };
 }
 
 // B18 (fine-tuning briefs/b18.md): the same step for a worker whose deliverable

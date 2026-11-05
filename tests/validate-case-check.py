@@ -402,6 +402,12 @@ def main() -> int:
         os.environ.pop("SPOTLIGHT_MODEL_TIER", None)
         check("findings: empty pass over a fetched page that names none of them", vc.validate_findings(empty("No findings were generated."), Path(raw_case)), True)
         check("findings: empty pass that names the page it read", vc.validate_findings(empty("Read research/tor-people.md; it names no holder."), Path(raw_case)), False)
+        (Path(raw_case) / "research/page.md.raw").write_text("page\n", encoding="utf-8")
+        check("findings: a page's bare stem in prose is not naming it", vc.validate_findings(empty("The page contained no qualifying claims."), Path(raw_case)), True)
+        with tempfile.TemporaryDirectory() as evidence_case:
+            (Path(evidence_case) / "evidence").mkdir()
+            (Path(evidence_case) / "evidence/source.md.raw").write_text("page\n", encoding="utf-8")
+            check("findings: a page fetched under evidence/ counts too", vc.validate_findings(empty("No findings were generated."), Path(evidence_case)), True)
         os.environ["SPOTLIGHT_MODEL_TIER"] = "frontier"
         check("findings: frontier is not asked to name its pages", vc.validate_findings(empty("No findings were generated."), Path(raw_case)), False)
         os.environ.pop("SPOTLIGHT_MODEL_TIER", None)
