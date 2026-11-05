@@ -117,6 +117,9 @@ export async function missingForApproval(caseDir: string, resolved: Record<strin
 export const REVIEW_HOLD_MS = 30 * 60_000;
 const HOLD_POLL_MS = 2_000;
 export const REVIEW_HOLD_NOTICE = 'Waiting for your decision on the review page. The case carries on here once you decide. To use this chat now, press Stop: the page stays open.';
+// Osaurus shows nothing between turns, so code cannot post after a decline on a page
+// that holds no turn; this is the last point it can reach the chat.
+export const REVIEW_DECLINE_NOTICE = 'If you decline on the page, come back to this chat and say what to do next.';
 export type ReviewHold = { ms: number; say?: (text: string) => void; resolved: () => Promise<Record<string, unknown>>; decided?: () => void };
 
 // Whether the gate moved within the limit. Decisions write data/orchestration.json,
@@ -157,6 +160,7 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 			const result = await open({ caseDir });
 			const missing = result.status === 'opened' ? await note?.() : undefined;
 			// A page with nothing to approve needs the chat, so it holds nothing.
+			if (hold?.ms && result.status === 'opened' && missing) hold.say?.(REVIEW_DECLINE_NOTICE);
 			if (hold && start && result.status === 'opened' && !missing) {
 				hold.say?.(REVIEW_HOLD_NOTICE);
 				if (await decisionLanded(caseDir, hold, start, signal)) {

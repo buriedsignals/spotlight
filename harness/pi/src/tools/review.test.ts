@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { gateCheck, missingForApproval, openReviewTool } from './review.ts';
+import { REVIEW_DECLINE_NOTICE, gateCheck, missingForApproval, openReviewTool } from './review.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { bindActiveCase, pythonAdapter } from './spotlight.ts';
 
@@ -156,5 +156,5 @@ test('a hold ends on a decision, not on an edit, and a page with nothing to appr
 
 	const free = await run(async () => 'No report draft is written yet.');
 	assert.deepEqual(free.details, { opened: true });
-	assert.equal(said.length, 2, 'no hold notice');
+	assert.deepEqual(said.slice(2), [REVIEW_DECLINE_NOTICE], 'no hold; the chat says where to come back, the last point code can reach it');
 });

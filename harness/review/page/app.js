@@ -1132,6 +1132,13 @@ function recordedThrough(receipt) {
   return "the command line";
 }
 
+// A page with no draft or batch holds no chat turn (open_review), so a decline
+// there carries nothing on by itself.
+function nothingOffered() {
+  if (view.gate === "report") return !view.content?.draft_ready;
+  return view.gate === "ingest" && !view.content?.batch?.records?.length;
+}
+
 function receiptSection() {
   const receipt = view.receipt;
   if (!receipt) {
@@ -1149,7 +1156,7 @@ function receiptSection() {
     { "aria-labelledby": "receipt-heading", className: "card" },
     el("h2", { id: "receipt-heading", tabindex: "-1", text: "Decision recorded" }),
     el("dl", {}, rows.flatMap(([name, value]) => [el("dt", { text: name }), el("dd", { text: value })])),
-    el("p", { text: "The review is read-only. You can close this tab. The case carries on in your chat; if nothing happens there, send a message." }),
+    el("p", { text: receipt.decision === "declined" && nothingOffered() ? "The review is read-only. You can close this tab. Go back to the Spotlight chat and say what to do next." : "The review is read-only. You can close this tab. The case carries on in your chat; if nothing happens there, send a message." }),
   );
 }
 
