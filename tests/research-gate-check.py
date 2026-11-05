@@ -162,6 +162,20 @@ class ResearchGate(SeamCase):
 
     # -- the amendment -----------------------------------------------------
 
+    def test_a_cases_root_spelled_in_another_case_is_the_same_root_on_a_case_insensitive_disk(self) -> None:
+        root = Path(self.temp.name) / "cases"
+        case = self.new_case("cases/case-a")
+        if not (Path(self.temp.name) / "CASES").exists():
+            self.skipTest("this disk tells cases from CASES")
+        self.seam("status", "--json", "--authorized-cases-root", str(Path(self.temp.name) / "CASES"), case=case)
+        outside = Path(self.temp.name) / "elsewhere"
+        outside.mkdir()
+        self.assertIn("outside the authorized cases root",
+                      self.seam("status", "--json", "--authorized-cases-root", str(outside), case=case, expect=3).stderr)
+        self.assertIn("outside the authorized cases root",
+                      self.seam("status", "--json", "--authorized-cases-root", str(case), case=case, expect=3).stderr)
+        self.assertTrue(root.is_dir())
+
     def test_a_review_no_mark_changes_needs_no_amendment_file(self) -> None:
         self.to_research_gate({"clue:clue-1": "dismiss"})
         self.seam("approve", "research", *APPROVER)

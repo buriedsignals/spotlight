@@ -2,8 +2,9 @@
 // its environment, holds the capability URL, and opens it in the member's
 // browser. Callers get a status, never the URL.
 import { spawn as nodeSpawn } from "node:child_process";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCaseBridge, safeChildEnvironment, which as findExecutable } from "./case-bridge.mjs";
 
@@ -90,8 +91,33 @@ export function createReviewSessionManager({
   which = findExecutable,
   platform = process.platform,
   env = process.env,
+  logFile = env.SPOTLIGHT_HARNESS_DATA ? join(env.SPOTLIGHT_HARNESS_DATA, "review-start.log") : "",
 } = {}) {
   let active = null;
+  let lastStderr = "";
+
+  // Why a start failed, for the person who debugs the install. The model never
+  // sees it: the child's stderr stays out of every reply. A local file, owner
+  // only, bounded per entry.
+  function record(error) {
+    if (!logFile) return;
+    try {
+      mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
+      const entry = {
+        at: new Date().toISOString(),
+        code: String(error?.code ?? "").slice(0, 40),
+        message: String(error?.message ?? error).slice(0, 300),
+        node: nodeExecutable,
+        child: childPath,
+        cwd: process.cwd(),
+        casesRoot,
+        stderr: lastStderr.slice(-2000),
+      };
+      appendFileSync(logFile, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    } catch {
+      // A log that cannot be written must not change the result.
+    }
+  }
 
   function send(current, message) {
     current.child.stdin.write(`${JSON.stringify(message)}\n`);
@@ -120,8 +146,11 @@ export function createReviewSessionManager({
     });
     const current = { caseDir, child: process_, url: "", events: [], waiters: [], exited: exited(process_) };
     active = current;
-    // stderr is diagnostic only and is never forwarded.
-    process_.stderr.on("data", () => {});
+    // stderr is never forwarded; the last of it goes to the start log if the start fails.
+    lastStderr = "";
+    process_.stderr.on("data", (chunk) => {
+      lastStderr = (lastStderr + chunk.toString("utf8")).slice(-4000);
+    });
     let bytes = 0;
     let buffer = "";
     const fail = (error) => {
@@ -187,6 +216,19 @@ export function createReviewSessionManager({
   // Start the server for a case, or give a running one a fresh capability.
   // view "wiki" lets it start with no gate pending, for the Wiki changes view.
   async function start(rawCaseDir, view = "") {
+    try {
+      return await startPage(rawCaseDir, view);
+    } catch (error) {
+      // A page with no pending gate is an answer, not a failure.
+      if (error?.code !== "no-pending-gate") {
+        await new Promise((settle) => setTimeout(settle, 50)); // the child's stderr may trail its error event
+        record(error);
+      }
+      throw error;
+    }
+  }
+
+  async function startPage(rawCaseDir, view) {
     if (!isAbsolute(rawCaseDir ?? "")) throw new Error("the case directory must be absolute");
     // One spelling per case, so an alias of the open case is not a new one; a
     // missing case is left to the child to refuse.

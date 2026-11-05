@@ -36,6 +36,19 @@ async function viewThrough(url) {
   return { view: JSON.parse(text), origin: parsed.origin, cookie };
 }
 
+test("a start that fails leaves its code and the child's stderr in the start log, and no reply carries them", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate", "--clean");
+  const logFile = join(root, "data", "review-start.log");
+  // A casing of the cases root that is a different path on a case-sensitive disk is refused either way here.
+  const { sessions } = manager(t, root, { casesRoot: join(root, "elsewhere"), logFile });
+  await assert.rejects(sessions.start(caseDir), (error) => error.code === "start-failed");
+  const entry = JSON.parse(readFileSync(logFile, "utf8").trim().split("\n").at(-1));
+  assert.equal(entry.code, "start-failed");
+  assert.match(entry.stderr, /outside the authorized cases root/);
+  assert.equal((await createReviewOpener({ sessions })({ caseDir })).status, "start-failed");
+});
+
 test("a page reopened after the session expired shows the marks saved before", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "investigation_gate", "--clean");
