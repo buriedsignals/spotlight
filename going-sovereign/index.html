@@ -1386,8 +1386,16 @@ Over-constrain a small model and it gets blocked. Under-constrain it and it wand
         <div class="q-body">
         <p>
         Spotlight's local tier now runs on qwen3.5-9b-spotlight-r3-mlx, with thinking on for the fact-checker. On held-out
-        cases it passed all 10 gold checks on one, level with base Qwen, and a repeated spawn ended
-        another. Each of those results is a single run.
+        cases it passed all 10 gold checks on one, level with base Qwen. On another, the retry loop that had trapped it was
+        gone, and it reached the Investigation gate but didn't finish. Each of those results is a single run.
+        </p>
+        <p>
+        On a Mac, the 4-bit model reached the Investigation gate on a real Tor case in 19.5 minutes, with a peak of 19.33 GiB.
+        That run verified one finding, so it's a thin result, and code built the amendment with no model call.
+        </p>
+        <p>
+        A 65,536-token window starts at a 24 GB Mac and a 131,072-token window starts at 32 GB. Peaks across my runs went
+        from 19.0 to 20.4 GiB, and I measured them on a 48 GB Mac, so both tiers may be slow.
         </p>
         </div>
       </div>
