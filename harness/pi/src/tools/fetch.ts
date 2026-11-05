@@ -244,7 +244,10 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 // has no tool to add one).
 // sha256 is the saved text's hash: a file changed after the fetch is not that
 // fetch any more (Codex review of #274b).
-export type Fetched = { url: string; accessed: string; provider?: string; sha256: string; acquired_by?: string };
+export type Fetched = { url: string; accessed: string; provider?: string; sha256: string; acquired_by?: string; distilled?: Distilled };
+// A distilled fetch's result without its leads text, and the hash of the leads
+// file: all a later fetch of the same URL needs to return it.
+type Distilled = { lead_file_sha256: string; result: Record<string, unknown> };
 function fetchedPath(context: ToolContext): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
 	return dataDir ? resolve(dataDir, 'work', 'fetched', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
@@ -327,6 +330,33 @@ export function factCheckerAlternative(context: ToolContext, relative: string): 
 	}
 }
 
+// gate9 ab7e6c04: an investigator fetched the same page 7 and 6 times under
+// new names, each time for the same leads. On the local tiers its fetch of a
+// URL it already holds returns that capture: no scrape, no helper call, no new
+// file. Only the investigator's, so the fact-checker keeps acquiring its own;
+// and only while the raw page and its leads are unchanged since the fetch.
+const sameURL = (a: string, b: unknown) => typeof b === 'string' && a.split('#')[0] === b.split('#')[0];
+function reusedCapture(context: ToolContext, url: string): Record<string, unknown> | undefined {
+	const registry = fetchedPath(context);
+	if (!registry || !localTier(context.env) || context.env.SPOTLIGHT_ROLE !== 'investigator') return undefined;
+	let captures: Record<string, Fetched>;
+	try { captures = JSON.parse(readFileSync(registry, 'utf8')) as Record<string, Fetched>; } catch { return undefined; }
+	for (const [rawPath, capture] of Object.entries(captures)) {
+		const kept = capture.distilled;
+		if (!kept || capture.acquired_by !== 'investigator' || !(sameURL(url, capture.url) || sameURL(url, kept.result.requested_url)) || !registeredCapture(context, rawPath)) continue;
+		let leadFile: string;
+		try { leadFile = readFileSync(readTarget(context.caseDir, String(kept.result.saved_to)), 'utf8'); } catch { continue; }
+		if (sha256(leadFile) !== kept.lead_file_sha256) continue;
+		return {
+			...kept.result,
+			reused: true,
+			note: `Already fetched in this case at ${capture.accessed}: this is that capture, kept as ${String(kept.result.saved_to)}, and nothing new was saved. Read the lines you need from ${rawPath}, or go to the next source.`,
+			leads: leadFile.slice(leadFile.indexOf('\n\n') + 2, -1),
+		};
+	}
+	return undefined;
+}
+
 export function fetchTool(context: ToolContext): ToolDefinition {
 	return {
 		name: 'fetch',
@@ -343,6 +373,8 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			}
 			const rlm = rlmEndpoint(context.env);
 			if (rlm && !input.save_as) throw new Error('fetch: on this tier fetch needs save_as, so the raw page is kept beside its leads.');
+			const reused = rlm ? reusedCapture(context, input.url) : undefined;
+			if (reused) return jsonResult(reused);
 			const prior = priorFailure(context, input.url);
 			if (prior) throw new Error(prior);
 			const viaTor = anonymizedFetch(context.env);
@@ -420,7 +452,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			const { leads, inspected, total, selections } = selected;
 			const leadFile = `${LEAD_MARKER} ${page.final_url}\n# (extracts; raw source: ${basename(rawPath)}; inspected lines 1-${inspected} of ${total})\n\n${leads}\n`;
 			const saved = writeConfined(context.caseDir, context.writeRoot, leadPath, leadFile);
-			return jsonResult({
+			const answer = {
 				...page,
 				distilled: true,
 				saved_to: saved,
@@ -432,8 +464,9 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 				raw_path: rawPath,
 				raw_sha256: sha256(markdown),
 				truncated: leads.length > MAX_RETURNED_CHARS,
-				leads: leads.slice(0, MAX_RETURNED_CHARS),
-			});
+			};
+			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown), distilled: { lead_file_sha256: sha256(leadFile), result: answer } });
+			return jsonResult({ ...answer, leads: leads.slice(0, MAX_RETURNED_CHARS) });
 		},
 	};
 }

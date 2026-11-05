@@ -244,6 +244,41 @@ test('an investigator\'s leads add the raw lines that match its direction, with 
 	assert.deepEqual((await run({ SPOTLIGHT_MODEL_TIER: 'frontier' })).selections, [{ path: 'research/people.md.raw', line_start: 2, line_end: 2 }]);
 });
 
+// gate9 case-ab7e6c04: an investigator fetched the people page 7 and 6 times under different names.
+test('an investigator\'s second fetch of a URL returns the capture it already has, on the local tiers only', async (t) => {
+	const dataDir = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-reuse-')));
+	t.after(() => rm(dataDir, { recursive: true, force: true }));
+	const setup = async (env: Record<string, string> = {}) => {
+		const back = await standInRLM(t);
+		return { back, ...(await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: back.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own', SPOTLIGHT_ROLE: 'investigator', SPOTLIGHT_HARNESS_DATA: join(dataDir, String(Math.random())), ...env })) };
+	};
+	const { back, caseDir, call } = await setup();
+	const first = await call({ url: PAGE_URL, save_as: 'research/a.md' });
+	const again = await call({ url: `${PAGE_URL}#board`, save_as: 'research/b.md' });
+	assert.equal(back.requests.length, 1, 'the helper is not asked again');
+	assert.equal(again.reused, true);
+	assert.equal(again.saved_to, 'research/a.md');
+	assert.equal(again.raw_path, first.raw_path);
+	assert.deepEqual(again.selections, first.selections);
+	assert.equal(again.leads, first.leads);
+	assert.equal(again.fetched_at, first.fetched_at);
+	assert.match(String(again.note), /already fetched.*research\/a\.md/i);
+	assert.ok(!existsSync(join(caseDir, 'research/b.md')) && !existsSync(join(caseDir, 'research/b.md.raw')));
+	// A capture changed since it was fetched is no capture: the page is fetched afresh.
+	await writeFile(join(caseDir, 'research/a.md.raw'), 'edited');
+	const fresh = await call({ url: PAGE_URL, save_as: 'research/c.md' });
+	assert.equal(fresh.reused, undefined);
+	assert.equal(fresh.saved_to, 'research/c.md');
+	assert.equal(back.requests.length, 2);
+	// The fact-checker's capture stays its own acquisition, and frontier fetches as before.
+	for (const env of [{ SPOTLIGHT_ROLE: 'fact-checker' }, { SPOTLIGHT_MODEL_TIER: 'frontier' }]) {
+		const other = await setup(env);
+		await other.call({ url: PAGE_URL, save_as: 'research/a.md' });
+		assert.equal((await other.call({ url: PAGE_URL, save_as: 'research/b.md' })).reused, undefined);
+		assert.equal(other.back.requests.length, 2);
+	}
+});
+
 test('bounded chunks expose late exact passages and disclose uninspected tail', async (t) => {
 	for (const rangeCount of [1, 14]) await t.test(`${rangeCount} exact ranges per selected chunk`, async (t) => {
 		// Each pick keeps three lines below it (the chunk's end bounds it above); picks that touch merge into one range.
