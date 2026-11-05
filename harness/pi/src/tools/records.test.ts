@@ -1,7 +1,7 @@
 // Typed canonical writes use the same production merge/refusal/quote boundary.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -426,4 +426,28 @@ test('a worker\'s bundle write keeps the receipt fields of a cited capture\'s it
 	registerCapture(context.env.SPOTLIGHT_HARNESS_DATA!, caseDir, other, 'https://ec.europa.eu/eurostat/y', 'investigator');
 	await assert.rejects(live('record_finding', { finding: { claim: 'The September 2026 euro area unemployment rate was 6.5%.', confidence: 'medium' }, cite: [{ path: other, line_start: 2, line_end: 2 }] }),
 		(error: Error) => error.message.includes(`passage ${broken.id}`) && error.message.includes(`item ${item.id}`) && error.message.includes(item.sha256) && !error.message.includes('a corrected cite'));
+});
+
+// qwen real launch: the investigator cited lines of fetch's short leads file that only the page (X.raw) holds, was refused, and repeated the same cite until the worker ended.
+test('a cite outside fetch\'s leads file is recorded on its .raw page on the local tiers, and refused on frontier', async t => {
+	const page = 'research/craft.co/executives.md';
+	const lines = Array.from({ length: 8 }, (_, index) => `line ${index + 1} of the page`);
+	lines[5] = 'Isabela Fernandes / Executive Director';
+	for (const tier of ['12b', 'frontier']) {
+		const { caseDir, context, live, json } = await fixture(t, 'investigator', { SPOTLIGHT_MODEL_TIER: tier });
+		await mkdir(join(caseDir, 'research/craft.co'), { recursive: true });
+		await writeFile(join(caseDir, page), '# RLM-distilled leads from https://craft.co/x\n- a lead\n');
+		await writeFile(join(caseDir, `${page}.raw`), `${lines.join('\n')}\n`);
+		registerCapture(context.env.SPOTLIGHT_HARNESS_DATA!, caseDir, `${page}.raw`, 'https://craft.co/x', 'investigator');
+		const cite = { finding: { claim: 'Isabela Fernandes is Executive Director.', confidence: 'medium' }, cite: [{ path: page, line_start: 6, line_end: 6 }] };
+		if (tier === 'frontier') {
+			await assert.rejects(live('record_finding', cite), /lines 6-6 are outside the file \(lines 1-2\)/);
+			continue;
+		}
+		const done = await live('record_finding', cite);
+		assert.match(done.content.map((part: { text?: string }) => part.text ?? '').join('\n'), /Passage\(s\) \S+ recorded/);
+		const finding = (await json('findings.json')).findings.find((row: { claim: string }) => row.claim.startsWith('Isabela'));
+		assert.deepEqual(finding.evidence, ['Isabela Fernandes / Executive Director']);
+		assert.equal(finding.sources[0].local_file, `${page}.raw`);
+	}
 });
