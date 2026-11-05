@@ -584,8 +584,10 @@ test('the summary step writes both gate files from the records, can be regenerat
 	assert.deepEqual(summary.key_conclusions, ['Isabela | Bagueros leads it.'], 'only verified claims conclude, word for word');
 	assert.deepEqual(summary.limitations, ['The board is not named.', 'Public sources only.'], 'the last cycle\'s gaps');
 	const markdown = await readFile(join(dir, 'summary.md'), 'utf8');
-	assert.match(markdown, /\| F1 \| Isabela \\\| Bagueros leads it\. \| high \| verified \| 1 \|/);
-	assert.match(markdown, /\| F2 \| A board exists\. \| low \| unverified \| 0 \|/);
+	const [main, doubtful] = markdown.split('## Not verified, check before use');
+	assert.match(main, /\| F1 \| Isabela \\\| Bagueros leads it\. \| high \| verified \| 1 \|/);
+	assert.doesNotMatch(main, /A board exists/, 'an unverified claim stays out of the overview and the main list');
+	assert.match(doubtful, /\| F2 \| A board exists\. \| low \| unverified \| 0 \|/);
 
 	await new Promise((done) => setTimeout(done, 2));
 	await step('summary');

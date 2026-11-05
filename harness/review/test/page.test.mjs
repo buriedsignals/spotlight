@@ -118,3 +118,19 @@ test("a decline with nothing offered sends the member back to the chat; any othe
   assert.ok(!(await said("ingest", { batch: { state: "ready", records: [{}] } }, "declined")).includes(back));
   assert.ok(!(await said("report", { draft_ready: true }, "completed")).includes(back));
 });
+
+// Invented names appear in unverified findings, so the page keeps them apart and says so.
+test("the gate page lists verified findings first and the rest under a clear warning", async (t) => {
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "investigation_gate") }).view("investigation_gate");
+  const finding = (id, claim, verdict) => ({ ...view.content.findings[0], id, claim, verdict });
+  const content = { ...view.content, findings: [finding("F1", "A verified claim.", "verified"), finding("F2", "An invented name.", "unverified")] };
+  const items = [{ key: "disposition:F2", kind: "disposition", target: "finding:F2", suggested: null, final: null, suggestion_reason: "" }];
+  const page = await renderClient({ ...view, content, items, pending_gate: "investigation_gate" });
+  const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+  const sections = (node) => [...(node.tag === "section" ? [node] : []), ...(node.children ?? []).flatMap((child) => (typeof child === "object" ? sections(child) : []))];
+  const all = sections(page.getElementById("app")).map(words);
+  const main = all.find((text) => text.includes("Verified findings (1)"));
+  const doubtful = all.find((text) => text.includes("Not verified, check before use"));
+  assert.ok(main?.includes("A verified claim.") && !main.includes("An invented name."), main);
+  assert.ok(doubtful?.includes("An invented name."), doubtful);
+});

@@ -986,15 +986,20 @@ export function writeGateSummary(caseDir: string): string {
 	const done = completeSummary(caseDir, JSON.stringify({ title, cycles: Math.max(cycles.length, 1), limitations }), []);
 	const summary = JSON.parse(done) as { title: string; generated_at?: string; cycles: number; summary: string; findings?: { id: string; claim: string; confidence: unknown; fact_check_verdict: string; source_count?: number }[] };
 	if (!summary.findings || !summary.generated_at) throw new Error('the gate summary needs data/findings.json and a fact-check verdict for every finding');
-	const conclusions = summary.findings.filter((row) => row.fact_check_verdict === 'verified').map((row) => row.claim);
+	// Unverified findings can hold invented names, so they stay out of the overview and the main list.
+	const verified = summary.findings.filter((row) => row.fact_check_verdict === 'verified');
+	const doubtful = summary.findings.filter((row) => row.fact_check_verdict !== 'verified');
+	const conclusions = verified.map((row) => row.claim);
 	const cell = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replaceAll('|', '\\|');
+	const findingTable = (rows: NonNullable<typeof summary.findings>, none: string) => (rows.length ? ['| # | Claim | Confidence | Verdict | Sources |', '|---|-------|------------|---------|---------|', ...rows.map((row) => `| ${[row.id, row.claim, row.confidence, row.fact_check_verdict, row.source_count ?? ''].map(cell).join(' | ')} |`)].join('\n') : none);
 	const list = (items: string[], none: string) => (items.length ? items.map((item) => `- ${item}`).join('\n') : none);
 	const markdown = [
 		`# ${summary.title}`,
 		`**Date:** ${summary.generated_at} | **Cycles:** ${summary.cycles} | **Status:** Pending review`,
 		`## Overview\n\n${lead ? `Asked: ${lead}\n\n` : ''}${summary.summary}`,
 		`## Key Conclusions\n\n${list(conclusions, 'No finding is verified.')}`,
-		`## Findings\n\n${summary.findings.length ? ['| # | Claim | Confidence | Verdict | Sources |', '|---|-------|------------|---------|---------|', ...summary.findings.map((row) => `| ${[row.id, row.claim, row.confidence, row.fact_check_verdict, row.source_count ?? ''].map(cell).join(' | ')} |`)].join('\n') : 'No finding was recorded.'}`,
+		`## Findings\n\n${findingTable(verified, summary.findings.length ? 'No finding is verified.' : 'No finding was recorded.')}`,
+		...(doubtful.length ? [`## Not verified, check before use\n\n${findingTable(doubtful, '')}`] : []),
 		`## Limitations\n\n${list(limitations, 'None recorded.')}`,
 	].join('\n\n');
 	writeConfined(caseDir, caseDir, 'data/summary.json', `${JSON.stringify({ ...summary, key_conclusions: conclusions }, null, 2)}\n`);

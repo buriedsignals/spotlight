@@ -465,19 +465,22 @@ function investigationContent(content, items) {
   const flags = items.filter((item) => item.kind === "disposition");
   const selection = items.filter((item) => item.kind === "selection");
   const open = flags.filter((item) => item.final === null).length;
+  // Unverified findings can hold invented names, so they stay out of the main list.
+  const verified = content.findings.filter((finding) => finding.verdict === "verified");
   return [
     el(
       "section",
       { "aria-labelledby": "findings-heading" },
-      el("h2", { id: "findings-heading", text: `Findings (${content.findings.length})` }),
-      content.findings.length
-        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note", "Sources"], content.findings.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
-        : el("p", { className: "muted", text: "The case records no findings." }),
+      el("h2", { id: "findings-heading", text: `Verified findings (${verified.length})` }),
+      verified.length
+        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note", "Sources"], verified.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
+        : el("p", { className: "muted", text: content.findings.length ? "No finding is verified." : "The case records no findings." }),
     ),
     el(
       "section",
       { "aria-labelledby": "flags-heading" },
-      el("h2", { id: "flags-heading", text: `Flags needing a disposition (${open} open of ${flags.length})` }),
+      el("h2", { id: "flags-heading", text: `Not verified, check before use (${flags.length})` }),
+      flags.length ? el("p", { className: "muted", text: `Each one needs your decision. ${open} still open.` }) : null,
       flags.length ? flags.map((item) => dispositionCard(item, findings.get(item.target))) : el("p", { className: "muted", text: "No findings are flagged." }),
     ),
     el(
