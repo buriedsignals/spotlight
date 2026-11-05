@@ -26,6 +26,7 @@ Boundaries:
 
     python -m integrations.case_search --case DIR --claim TEXT
     python -m integrations.case_search --case DIR --findings [--for fact-checker] [--format json|prompt]
+    python -m integrations.case_search --case DIR --finding F1 --finding F2 ...   (one fact-check batch's claims)
 """
 
 from __future__ import annotations
@@ -475,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
     which = parser.add_mutually_exclusive_group(required=True)
     which.add_argument("--claim", help="one claim")
     which.add_argument("--findings", action="store_true", help="every claim in data/findings.json")
+    which.add_argument("--finding", action="append", help="the claim of this finding id in data/findings.json (repeatable; a fact-check batch)")
     parser.add_argument("--for", dest="role", choices=("fact-checker",), help="leave out what that role may not read")
     parser.add_argument("--format", choices=("json", "prompt"), default="json")
     args = parser.parse_args(argv)
@@ -484,6 +486,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"case search refused: {exc}")
     if args.findings:
         claims = findings_claims(case)
+    elif args.finding:
+        wanted = {f"finding:{finding_id}" for finding_id in args.finding}
+        claims = [claim for claim in findings_claims(case) if claim["target"] in wanted]
     else:
         claims = [{"target": "claim", "label": "Claim", "claim": args.claim.strip()}] if args.claim.strip() else []
     answer = search_claims(case, claims, fact_checker=args.role == "fact-checker" or args.format == "prompt")

@@ -22,6 +22,8 @@ from . import (
     review_view,
     seal_investigation_gate,
     start_research_round,
+    write_report_skeleton,
+    report_quotes,
 )
 from .contract import RECORDABLE_ATTEMPTS
 from .review import REVIEW_GATES, ReviewDigestChanged
@@ -67,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     research_round = commands.add_parser("start-research-round")
     add_case_boundary(research_round)
     amendment = commands.add_parser("record-amendment")
+    amendment.add_argument("--build", action="store_true")
     add_case_boundary(amendment)
     without_research = commands.add_parser("continue-without-research")
     add_case_boundary(without_research)
@@ -77,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
     # Without a page nonce the follow-up is the agent's; the harness names
     # the requesting role (default orchestrator), never a member.
     follow_up.add_argument("--requested-by-role")
+    follow_up.add_argument("--shown-gate", choices=("report",))
+    follow_up.add_argument("--shown-digest")
     add_case_boundary(follow_up)
     seal = commands.add_parser("seal-investigation-gate")
     add_case_boundary(seal)
@@ -99,6 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
     passages = commands.add_parser("review-passages")
     passages.add_argument("gate", choices=REVIEW_GATES)
     add_case_boundary(passages)
+    skeleton = commands.add_parser("report-skeleton")
+    add_case_boundary(skeleton)
     edit = commands.add_parser("review-edit")
     edit.add_argument("gate", choices=REVIEW_GATES)
     edit.add_argument("--edit", required=True, help="one edit as a JSON object")
@@ -116,6 +123,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         return review_passages(args.case_dir, args.gate, **boundary)
     if args.command == "issue-review-nonce":
         return {"nonce": issue_review_nonce(args.case_dir, args.gate, **boundary)}
+    if args.command == "report-skeleton":
+        return {"written": write_report_skeleton(args.case_dir, **boundary), "quotes": report_quotes(args.case_dir, **boundary)}
     if args.command == "review-edit":
         try:
             edit = json.loads(args.edit)
@@ -145,7 +154,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     elif args.command == "start-research-round":
         start_research_round(args.case_dir, **boundary)
     elif args.command == "record-amendment":
-        record_amendment(args.case_dir, **boundary)
+        record_amendment(args.case_dir, build=args.build, **boundary)
     elif args.command == "continue-without-research":
         continue_without_research(args.case_dir, **boundary)
     elif args.command == "request-follow-up":
@@ -155,6 +164,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
             **receipt,
             **decider,
             requested_by_role=args.requested_by_role,
+            shown_gate=args.shown_gate,
+            shown_digest=args.shown_digest,
             **boundary,
         )
     elif args.command == "seal-investigation-gate":

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -174,6 +175,74 @@ def main() -> int:
                 f"\nSTDOUT:\n{legacy_data_result.stdout}\nSTDERR:\n{legacy_data_result.stderr}"
             )
 
+        # Entitlement enables discovery; it does not force a lookup when the
+        # task already has its sources, nor authorize egress forbidden by policy.
+        for outcome, reason in [
+            ("not-needed", "The brief supplies the two official release URLs; search/fetch suffice."),
+            ("unavailable", "Navigator CLI is not installed; use the local catalogue if needed."),
+            ("policy-skipped", "Sensitive case: external tool discovery is prohibited."),
+        ]:
+            skipped_on_demand = methodology_without_navigator()
+            skipped_on_demand["navigator"] = {
+                "required": False, "used": False, "outcome": outcome,
+                "fallback_reason": reason, "queries": [],
+            }
+            write_json(methodology_path, skipped_on_demand)
+            result = run(case_dir, config)
+            if result.returncode:
+                raise AssertionError(f"truthful {outcome} must pass on entitled install\n{result.stderr}")
+            skipped_on_demand["navigator"]["fallback_reason"] = ""
+            write_json(methodology_path, skipped_on_demand)
+            result = run(case_dir, config)
+            if result.returncode == 0 or "fallback_reason" not in result.stderr:
+                raise AssertionError(f"{outcome} without reason must fail\n{result.stderr}")
+
+        receipt_path = "research/navigator/12345678-1234-1234-1234-123456789abc-receipt.json"
+        response_json = '{"tools":[{"id":"registry"}],"score":1e-7}'
+        receipt = {
+            "outcome": "used", "action": "find", "query": "corporate ownership registry",
+            "argv": ["navigator", "tools", "find", "--json", "--", "corporate ownership registry"],
+            "retrieved_at": "2026-11-01T12:00:00.000Z", "response_json": response_json,
+            "response_sha256": hashlib.sha256(response_json.encode()).hexdigest(),
+        }
+        write_json(case_dir / receipt_path, receipt)
+        recorded = methodology_without_navigator()
+        recorded["navigator"] = {"required": False, "used": True, "outcome": "used", "queries": [{
+            "interface": "cli", "receipt_path": receipt_path, "response_path": receipt_path,
+            "command": json.dumps(receipt["argv"], separators=(",", ":")),
+            "retrieved_at": receipt["retrieved_at"], "response_sha256": receipt["response_sha256"],
+        }]}
+        write_json(methodology_path, recorded)
+        result = run(case_dir, config)
+        if result.returncode:
+            raise AssertionError(f"actual code-owned receipt should validate without invented catalogue/direction\n{result.stderr}")
+        recorded["navigator"]["queries"][0]["retrieved_at"] = "invented"
+        write_json(methodology_path, recorded)
+        result = run(case_dir, config)
+        if result.returncode == 0 or "provenance differs" not in result.stderr:
+            raise AssertionError(f"invented receipt metadata must fail\n{result.stderr}")
+        recorded["navigator"]["queries"][0]["retrieved_at"] = receipt["retrieved_at"]
+        write_json(methodology_path, recorded)
+        receipt["response_json"] = '{"tools":[]}'
+        write_json(case_dir / receipt_path, receipt)
+        result = run(case_dir, config)
+        if result.returncode == 0 or "digest differs" not in result.stderr:
+            raise AssertionError(f"tampered response bytes must fail\n{result.stderr}")
+
+        fabricated_skip = methodology_with_navigator()
+        fabricated_skip["navigator"].update(required=False, used=False, outcome="not-needed", fallback_reason="No lookup needed")
+        write_json(methodology_path, fabricated_skip)
+        result = run(case_dir, config)
+        if result.returncode == 0 or "skipped" not in result.stderr:
+            raise AssertionError(f"skipped lookup must not claim performed queries/steps\n{result.stderr}")
+
+        malformed_used = methodology_with_navigator()
+        malformed_used["navigator"]["queries"][0].pop("response_path")
+        write_json(methodology_path, malformed_used)
+        result = run(case_dir, config)
+        if result.returncode == 0 or "response_path" not in result.stderr:
+            raise AssertionError(f"performed discovery without response provenance must fail\n{result.stderr}")
+
         write_json(config, base_config(required=False))
         skipped = methodology_without_navigator()
         skipped["navigator"] = {
@@ -296,6 +365,25 @@ def main() -> int:
         )
         if new_plan.returncode == 0 or "must match the current reviewed CTI revision" not in new_plan.stderr:
             raise AssertionError("new methodology should require the current reviewed revision")
+
+        # e2e r1 (31B): the gate passed navigator.status "not-needed" and the
+        # methodology schema refused it in research-triage.py after approval.
+        # The gate applies that schema: an on-demand status passes both, and a
+        # status outside the schema is refused at the gate.
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import schema_check
+        write_json(config, base_config(required=False))
+        for status, passes in (("not-needed", True), ("bogus", False)):
+            plan = methodology_without_navigator()
+            plan["navigator"] = {"required": False, "used": False, "status": status, "queries": [],
+                                 "fallback_used": False, "fallback_reason": "Public records are enough."}
+            write_json(methodology_path, plan)
+            gate = run(case_dir, config)
+            triage_errors = schema_check.load(ROOT / "schemas" / "methodology.schema.json").errors(plan)
+            if passes and (gate.returncode != 0 or triage_errors):
+                raise AssertionError(f"status {status} must pass the gate and the triage schema: {gate.stderr} {triage_errors}")
+            if not passes and (gate.returncode == 0 or "navigator.status" not in gate.stderr):
+                raise AssertionError(f"status {status} must be refused at the gate: {gate.stdout} {gate.stderr}")
 
     print("methodology navigator checks: OK")
     return 0

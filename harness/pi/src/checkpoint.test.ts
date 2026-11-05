@@ -3,6 +3,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest } from './test-support/fake-openai.ts';
@@ -14,8 +17,10 @@ const OLD_TURN = 'OLD-TURN-MARKER';
 const CHECKPOINT = 'CHECKPOINT-SENTINEL';
 // About 20,000 tokens at Pi's four-characters-per-token estimate. With the
 // recent turn (about 5,000 tokens, more than the 12b tier keeps verbatim) the
-// conversation passes the 12b fold point (16,384) but stays well under the
-// 65,536-token window's default threshold (65,536 - 16,384).
+// conversation passes a 20,480 fold point, pinned with SPOTLIGHT_COMPACT_AT
+// (the derived point for a 65,536 window is higher; config.test.ts covers it),
+// but stays well under the 65,536-token window's default threshold
+// (65,536 - 16,384), which the frontier tier keeps.
 const LONG_TURN = `${OLD_TURN} ${'The registry lists the fixture company. '.repeat(2000)}`;
 const RECENT_TURN = `Next step. ${'The member asked for the filing history. '.repeat(500)}`;
 
@@ -31,25 +36,51 @@ function compactions(chat: Chat): Array<Record<string, unknown>> {
 
 const WELL_FORMED = `## Goal\nFind the owner.\n## Progress\n${CHECKPOINT}\n## Decisions\nNone.\n## Next\nResolve.\n## Open gate\nNone.`;
 
-async function twoTurns(t: test.TestContext, tier: string, env: Record<string, string> = {}, sessionSummary = WELL_FORMED) {
+async function twoTurns(t: test.TestContext, tier: string, env: Record<string, string> = {}, sessionSummary = WELL_FORMED, settleMs?: number) {
 	const fake = await startFakeOpenAI((request) => (isSummaryRequest(request) ? { text: sessionSummary } : { text: 'Noted.' }));
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	const chat = launch(t, {
 		...baseEnv(space, fake.baseURL),
 		SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536',
+		SPOTLIGHT_COMPACT_AT: '20480',
 		SPOTLIGHT_MODEL_TIER: tier,
 		SPOTLIGHT_PROVIDER_REQUEST_BODY: '{"provider":{"zdr":true}}',
 		...env,
 	});
-	await settledPrompt(chat, LONG_TURN);
-	await settledPrompt(chat, RECENT_TURN);
-	await settledPrompt(chat, 'Continue.');
+	await settledPrompt(chat, LONG_TURN, settleMs);
+	await settledPrompt(chat, RECENT_TURN, settleMs);
+	await settledPrompt(chat, 'Continue.', settleMs);
 	return { fake, chat };
 }
 
-test('the local tier folds a conversation past its threshold into one checkpoint the next request carries', async (t) => {
-	const { fake, chat } = await twoTurns(t, '12b');
+// Codex review of simp-route (P2): with the code router on, the checkpoint
+// request (no tools) is not an orchestrator turn and goes to the model, even
+// when the decision model reads its text as a member message to resolve on.
+async function decisionsAnswering(choice: string) {
+	const server = createServer((request, response) => {
+		let body = '';
+		request.on('data', (chunk) => (body += chunk));
+		request.on('end', () => {
+			const questions = (JSON.parse(body) as { questions: Record<string, unknown> }).questions;
+			response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ model: 'd1-test', answers: Object.fromEntries(Object.keys(questions).map((key) => [key, { choice, probabilities: { [choice]: 0.9 } }])) }));
+		});
+	});
+	await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+	return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/systemone`, close: () => new Promise<void>((done) => server.close(() => done())) };
+}
+
+test('the local tier folds a conversation past its threshold into one checkpoint the next request carries, with the code router off or on', async (t) => {
+ for (const router of ['off', 'on'] as const) await t.test(router, async (t) => {
+	let env: Record<string, string> = {};
+	if (router === 'on') {
+		const decisions = await decisionsAnswering('other');
+		t.after(() => decisions.close());
+		const config = join(tmpdir(), `router-checkpoint-${process.pid}.json`);
+		writeFileSync(config, JSON.stringify({ integrations: { decisions: { endpoint: { url: decisions.url, api: 'openrouter-decisions' } } } }));
+		env = { SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_CONFIG: config };
+	}
+	const { fake, chat } = await twoTurns(t, '12b', env);
 
 	assert.equal(compactions(chat).length, 1);
 	const summaries = fake.requests.filter(isSummaryRequest);
@@ -62,6 +93,7 @@ test('the local tier folds a conversation past its threshold into one checkpoint
 	const last = fake.requests.filter((request) => !isSummaryRequest(request)).at(-1)!;
 	assert.match(requestText(last), new RegExp(CHECKPOINT));
 	assert.doesNotMatch(requestText(last), new RegExp(OLD_TURN));
+ });
 });
 
 // r1 on 97f066b6: the 12B wrote its own checkpoints from ~24k tokens of
@@ -101,6 +133,67 @@ test('a checkpoint out of shape from the RLM falls back once to the session mode
 		assert.match(requestText(last), new RegExp(CHECKPOINT), name);
 		assert.doesNotMatch(requestText(last), /thinking process/i, name);
 	}
+});
+
+// arms on 8699f11d (ds-spectator): the RLM answered HTTP 400 to a long
+// conversation, the throw skipped the session fallback and every fold was
+// cancelled until the fact-checker overflowed at 87.6k.
+test('an RLM error on the checkpoint falls back to the session model, and the conversation folds', async (t) => {
+	const rlm = await startFakeOpenAI(() => ({ status: 400 }));
+	t.after(() => rlm.close());
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL });
+	assert.equal(rlm.requests.length, 1);
+	assert.equal(fake.requests.filter(isSummaryRequest).length, 1, 'the session model writes the checkpoint');
+	assert.equal(compactions(chat).length, 1, 'the conversation folded');
+	assert.match(carriedSummary(chat), /^## Goal\n/);
+});
+
+// Constellation G4b: a helper that takes the checkpoint request and never
+// answers. An abort cancels the fold by design, so only the helper's own
+// timeout can hand the checkpoint to the session model; SPOTLIGHT_RLM_TIMEOUT_MS
+// shortens the real 120 s wait here.
+test('a helper that never answers the checkpoint request times out and the session model writes it', async (t) => {
+	const sockets = new Set<import('node:net').Socket>();
+	const asked: string[] = [];
+	const rlm = createServer((request, response) => {
+		if (request.url === '/props') {
+			response.writeHead(404).end();
+			return;
+		}
+		asked.push(request.url ?? '');
+	});
+	rlm.on('connection', (socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+	await new Promise<void>((resolve) => rlm.listen(0, '127.0.0.1', resolve));
+	t.after(() => new Promise<void>((resolve) => { for (const socket of sockets) socket.destroy(); rlm.close(() => resolve()); }));
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: `http://127.0.0.1:${(rlm.address() as AddressInfo).port}/v1`, SPOTLIGHT_RLM_TIMEOUT_MS: '500' });
+	assert.equal(asked.length, 1, 'the helper was asked once');
+	assert.equal(fake.requests.filter(isSummaryRequest).length, 1, 'the session model writes the checkpoint');
+	assert.equal(compactions(chat).length, 1, 'the conversation folded');
+	assert.match(carriedSummary(chat), /^## Goal\n/);
+});
+
+// arms on 8699f11d: the e4b RLM served 24,576 tokens per slot while a
+// 98k-window fold sent about 57k, so every checkpoint request was refused. A
+// conversation past the RLM's context (from /props, or SPOTLIGHT_RLM_CONTEXT)
+// goes straight to the session model.
+test('a checkpoint the RLM\'s context cannot hold is written by the session model, without asking the RLM', async (t) => {
+	let chats = 0;
+	const server = createServer((request, response) => {
+		if (request.url === '/props') {
+			response.writeHead(200, { 'content-type': 'application/json' });
+			response.end(JSON.stringify({ default_generation_settings: { n_ctx: 2048 } }));
+			return;
+		}
+		chats += 1;
+		response.writeHead(400, { 'content-type': 'application/json' });
+		response.end('{"error":"the request exceeds the available context size"}');
+	});
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1` });
+	assert.equal(chats, 0, 'the RLM is not asked');
+	assert.equal(fake.requests.filter(isSummaryRequest).length, 1);
+	assert.equal(compactions(chat).length, 1);
 });
 
 test('a checkpoint\'s preamble before ## Goal is cut, and one with no sections from both writers leaves the conversation unfolded', async (t) => {
@@ -177,7 +270,7 @@ test('after a fold the same skill loads in full again, with its phase lines', as
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_MODEL_TIER: '12b' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_COMPACT_AT: '20480', SPOTLIGHT_MODEL_TIER: '12b' });
 
 	await settledPrompt(chat, 'Load the skill.');
 	await settledPrompt(chat, 'Load the skill once more.');
@@ -191,7 +284,7 @@ test('after a fold the same skill loads in full again, with its phase lines', as
 	const loads = fake.requests
 		.filter((request) => !isSummaryRequest(request) && request.messages.at(-1)?.role === 'tool')
 		.map((request) => toolText(request.messages.at(-1)!.content));
-	const phaseLine = /- Ingest, the wiki write \(orchestrator only, solo edition\)/;
+	const phaseLine = /- Ingest, the wiki write and the seal \(orchestrator only\)/;
 	assert.match(loads[0], phaseLine, 'the first load carries the phase lines');
 	assert.equal(loads[1], skillAlreadyLoaded('phase-ingest'), 'a repeat before the fold points back at the first load');
 	const last = loads.at(-1)!;
@@ -210,7 +303,7 @@ test('after a fold an unchanged file read again returns its text', async (t) => 
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_MODEL_TIER: '12b' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_COMPACT_AT: '20480', SPOTLIGHT_MODEL_TIER: '12b' });
 	await settledPrompt(chat, 'Write nothing yet.');
 	writeFileSync(join(space.casesRoot, 'case-a', 'brief-directions.txt'), 'Who owns the fixture company?\n');
 

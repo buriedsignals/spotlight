@@ -9,9 +9,12 @@ write.
 
 1. The harness (or the MCP tool below) starts the server for one case and opens
    the member's browser. The page address is never returned to the model.
-2. The page shows, in order: blocking integrity failures, flags that need a
-   disposition, the selection (the Report page shows the draft that publishing
-   renders), then the member's name, the digest and the decision buttons.
+2. The page opens on what the member decides. A closed strip names any
+   blocking integrity failures, then come the findings with their fact-check
+   table (on the Research page, the clues and their marks), the flags that need
+   a disposition and the selection (the Report page shows the draft that
+   publishing renders), then the member's name, the digest and the decision
+   buttons. Run details, sources, leads and passages sit in closed blocks.
 3. Every mark, disposition, selection change, note and the member's name is
    saved at once to `data/<gate>-review.json` by
    `scripts/spotlight-orchestration.py review-edit`, under the case lock. The

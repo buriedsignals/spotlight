@@ -26,14 +26,16 @@ export function engineEnv(env: Env): string[] {
 export async function withCasePassages(
 	role: string,
 	task: string,
-	options: { caseDir: string; casesRoot: string; python: string; env: Env; log: (message: string) => void; signal?: AbortSignal },
+	options: { caseDir: string; casesRoot: string; python: string; env: Env; log: (message: string) => void; signal?: AbortSignal; findings?: string[] },
 ): Promise<string> {
 	if (role !== 'fact-checker') return task;
+	// A fact-check batch (#274) searches for its own findings' claims only.
+	const which = options.findings?.length ? options.findings.flatMap((id) => ['--finding', id]) : ['--findings'];
 	let result;
 	try {
 		result = await runFixed(
 			options.python,
-			['-m', 'integrations.case_search', '--case', options.caseDir, '--findings', '--for', 'fact-checker', '--format', 'prompt'],
+			['-m', 'integrations.case_search', '--case', options.caseDir, ...which, '--for', 'fact-checker', '--format', 'prompt'],
 			{
 				env: programEnv(options.env, engineEnv(options.env), { SPOTLIGHT_CASES_ROOT: options.casesRoot, SPOTLIGHT_CASE_DIR: options.caseDir }),
 				cwd: CHECKOUT_ROOT,

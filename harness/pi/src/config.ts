@@ -14,6 +14,7 @@ import { MIN_REDACTED_LENGTH } from './log.ts';
 import { SEAM_ENV } from './tools/fetch.ts';
 import { BASE_ENV, DESKTOP_ENV } from './tools/run.ts';
 import { engineEnv } from './case-search.ts';
+import { spotlightPython } from '../../review/case-bridge.mjs';
 
 export type Edition = 'solo' | 'newsroom';
 export type ModelTier = '12b' | '26b' | '31b' | 'frontier';
@@ -315,7 +316,7 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 		contextWindow,
 		modelTier,
 		fold: readFold(env, modelTier, contextWindow),
-		python: env.SPOTLIGHT_PYTHON?.trim() || 'python3',
+		python: env.SPOTLIGHT_PYTHON?.trim() || spotlightPython({ env, root: CHECKOUT_ROOT }) || 'python3',
 		spotlightConfig: spotlightConfigPath(env),
 		sensitive,
 		research,
@@ -448,9 +449,22 @@ export function maxOutputTokens(contextWindow: number): number {
 // The tier's fold point, with SPOTLIGHT_COMPACT_AT / SPOTLIGHT_COMPACT_KEEP
 // overriding it. A fold point at or past the context window would never fire
 // before the model overflows, so it is refused rather than silently moved.
+// A local tier's fold point follows the window: past it there must still be
+// room for one turn, the output cap plus a full read turn (30,000 characters at
+// LFM3's ~2.3 a token; Gemma runs ~3.1) and a margin, because Pi folds only
+// after a turn ends. The tier's fixed point is the floor, so a 40,960 window
+// keeps 20,480 on the 12b. LFM3 on Tom's decision (2026-10-29): the same
+// teacher passed a 4-finding case at 98,304/57,344 in 20 fact-checker calls
+// and 2 folds, and failed at 40,960 in 126 calls and 66 folds.
+const READ_TURN_TOKENS = Math.ceil(30_000 / 2.3);
+const FOLD_MARGIN = 4096;
+export function foldPoint(tier: Exclude<ModelTier, 'frontier'>, contextWindow: number): number {
+	return Math.max(LOCAL_TIER_FOLD[tier].at, contextWindow - maxOutputTokens(contextWindow) - READ_TURN_TOKENS - FOLD_MARGIN);
+}
+
 function readFold(env: Env, tier: ModelTier, contextWindow: number): Fold | undefined {
 	if (tier === 'frontier') return undefined;
-	const at = positiveInteger(env, 'SPOTLIGHT_COMPACT_AT', LOCAL_TIER_FOLD[tier].at);
+	const at = positiveInteger(env, 'SPOTLIGHT_COMPACT_AT', foldPoint(tier, contextWindow));
 	const keep = positiveInteger(env, 'SPOTLIGHT_COMPACT_KEEP', LOCAL_TIER_FOLD[tier].keep);
 	if (at >= contextWindow) {
 		throw new ConfigError(`the ${tier} fold point (${at} tokens) must be below SPOTLIGHT_MODEL_CONTEXT_WINDOW (${contextWindow}); set SPOTLIGHT_COMPACT_AT or SPOTLIGHT_MODEL_TIER.`);
@@ -465,11 +479,16 @@ function readFold(env: Env, tier: ModelTier, contextWindow: number): Fold | unde
 // Pi's defaults, except that its reserve grows with the output cap, so a
 // request near the compaction point still fits the context window.
 export function piSettings(config: HarnessConfig): Record<string, unknown> {
+	// A server may buffer a structured tool call until its JSON is complete.
+	// Valid local decoding can exceed Pi's five-minute idle default; keep a
+	// finite allowance without changing token, case-time or spending limits.
+	const transport = { httpIdleTimeoutMs: 900_000 };
 	if (!config.fold) {
 		const cap = maxOutputTokens(config.contextWindow);
-		return cap > PI_DEFAULT_RESERVE ? { compaction: { reserveTokens: cap } } : {};
+		return cap > PI_DEFAULT_RESERVE ? { ...transport, compaction: { reserveTokens: cap } } : transport;
 	}
 	return {
+		...transport,
 		compaction: {
 			enabled: true,
 			reserveTokens: config.contextWindow - config.fold.at,
@@ -537,6 +556,8 @@ const BACKING_SETTINGS = [
 	'CRAWL4_AI_BASE_DIRECTORY',
 	'SPOTLIGHT_RLM_MODE',
 	'SPOTLIGHT_RLM_OPENAI_MODEL',
+	'SPOTLIGHT_RLM_CONTEXT',
+	'SPOTLIGHT_RLM_TIMEOUT_MS',
 	'SPOTLIGHT_RLM_MODEL',
 ];
 
@@ -581,6 +602,8 @@ export function childEnv(
 		SPOTLIGHT_ROUTE_INFERENCE: route.inference,
 		SPOTLIGHT_MODEL_CONTEXT_WINDOW: String(config.contextWindow),
 		SPOTLIGHT_MODEL_TIER: config.modelTier,
+		// The fold point, so read_file can page a capture that would cross it (H-K3a).
+		...(config.fold ? { SPOTLIGHT_FOLD_AT: String(config.fold.at) } : {}),
 		SPOTLIGHT_PYTHON: config.python,
 		SPOTLIGHT_CONFIG: config.spotlightConfig,
 		SPOTLIGHT_SENSITIVE: config.sensitive ? 'true' : 'false',
@@ -590,6 +613,9 @@ export function childEnv(
 		// token is not here: only the launcher calls the Editorial MCP.
 		SPOTLIGHT_EDITION: config.edition,
 	});
+	// The orchestrator's code router (router.ts) is on for the local tiers; this forces it.
+	// The investigator's commit step (commit.ts) follows the same switch.
+	if ((role === 'orchestrator' || role === 'investigator') && env.SPOTLIGHT_CODE_ROUTER) out.SPOTLIGHT_CODE_ROUTER = env.SPOTLIGHT_CODE_ROUTER;
 	if (config.searchURL) out.SPOTLIGHT_SEARCH_URL = config.searchURL;
 	if (config.rlmURL) {
 		out.SPOTLIGHT_RLM_OPENAI_BASE_URL = config.rlmURL;

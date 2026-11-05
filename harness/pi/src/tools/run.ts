@@ -39,12 +39,16 @@ export const REPEAT_REASON = 'This is the same call as the last two. Act on what
 // What a 12b worker's run ends with on its third refusal in a row, and what the
 // orchestrator then gets as that worker's answer.
 export const LOOP_STOP = 'repeated one call and was stopped; its last results stand.';
-// What a 12b worker's run ends with when its last REFUSAL_STREAK tool calls were
-// all refused or failed, whatever they were.
+// What a worker's run ends with when the harness refused its last
+// REFUSAL_STREAK tool calls (a web tool's upstream failure is not counted).
 export const REFUSAL_STREAK = 6;
-export const REFUSAL_STOP = 'had six tool calls in a row refused and was stopped; its last results stand.';
+export const REFUSAL_STOP = 'had six tool calls in a row refused by the harness and was stopped; its last results stand.';
+// What a worker's run ends with when the progress watchdog stops it
+// (extension.ts registerProgressWatchdog); a JSON receipt line follows it.
+export const PROGRESS_STOP = 'made no new accepted record within the progress watchdog limit and was stopped; its last results stand.';
 // What a fact-checker's run ends with when it made FACT_CHECK_STOP calls
 // without writing data/fact-check.json (extension.ts registerFactCheckDue).
+export const CALL_BUDGET_STOP = 'stopped because its tool-call budget was exhausted; the deliverable may be incomplete.';
 export const FACT_CHECK_DUE_STOP = 'made 250 calls without writing data/fact-check.json and was stopped; its last results stand.';
 
 // Pi validates arguments before it calls a tool; this repeats the check at the
@@ -53,8 +57,18 @@ export function checkedParams<T>(tool: string, schema: TSchema, params: unknown)
 	if (Value.Check(schema, params)) return params as T;
 	const reasons = [...Value.Errors(schema, params)]
 		.slice(0, 5)
-		.map((error) => `${error.instancePath || '/'} ${error.message}`);
-	throw new ToolArgumentError(`${tool}: arguments outside the schema (${reasons.join('; ')})`);
+		// An enum or constant names its allowed values (Phase B, Gemma12).
+		.map((error) => {
+			const params = (error as { params?: { allowedValues?: unknown[]; allowedValue?: unknown } }).params;
+			const allowed = params?.allowedValues ?? (params && 'allowedValue' in params ? [params.allowedValue] : undefined);
+			return `${error.instancePath || '/'} ${error.message}${allowed ? ` (allowed: ${allowed.map((value) => JSON.stringify(value)).join(', ')})` : ''}`;
+		});
+	// Replay check on 8699f11d: schema refusals were the largest family with no
+	// next step. The refusal names the parameters the tool takes.
+	const properties = (schema as { properties?: Record<string, unknown>; required?: string[] }).properties;
+	const required = new Set((schema as { required?: string[] }).required ?? []);
+	const takes = properties ? ` ${tool} takes ${Object.keys(properties).map((key) => (required.has(key) ? key : `${key} (optional)`)).join(', ')}; call it again with those.` : '';
+	throw new ToolArgumentError(`${tool}: arguments outside the schema (${reasons.join('; ')}).${takes}`);
 }
 
 export function textResult(text: string) {
@@ -70,6 +84,10 @@ export const RETURNED_CHARS = 20_000;
 export function capped(text: string, note = ''): string {
 	return text.length > RETURNED_CHARS ? `${text.slice(0, RETURNED_CHARS)}\n[... truncated at ${RETURNED_CHARS} characters${note}]` : text;
 }
+
+// Where the fetch registry lives: the validators and the batch builder read a
+// fact-checker's acquisition from it (r12-ingest-audit A3, Codex review of fix11).
+export const RECEIPTS = 'SPOTLIGHT_HARNESS_DATA';
 
 export const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 
@@ -163,8 +181,20 @@ export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(
 
 // A bare save_as file name goes to the agent's own folder: research/ for a
 // case role, the lane folder for a research lane.
-export function saveTarget(context: Pick<ToolContext, 'caseDir' | 'writeRoot'>, path: string): string {
-	if (/[\\/]/.test(path)) return path;
+export function saveTarget(context: Pick<ToolContext, 'caseDir' | 'writeRoot'> & Partial<Pick<ToolContext, 'env'>>, path: string): string {
 	const folder = relative(context.caseDir, context.writeRoot).split(sep).join('/');
-	return `${folder || 'research'}/${path}`;
+	const target = /[\\/]/.test(path) ? path : `${folder || 'research'}/${path}`;
+	// fc-stall scan: 48 fact-checker saves in 19 runs were refused for landing on
+	// a research file an investigator's citation points at (kde_ev_board.md.raw
+	// nine times). The fact-checker's saves take an fc- prefix, so they never do.
+	if (context.env?.SPOTLIGHT_ROLE !== 'fact-checker') return target;
+	const slash = target.lastIndexOf('/');
+	const name = target.slice(slash + 1);
+	return name.startsWith('fc-') ? target : `${target.slice(0, slash + 1)}fc-${name}`;
 }
+
+// Proposals the harness itself builds for source_expressions (quotes.ts: a
+// quote found as written in a fetched, unchanged capture). Only these may
+// carry direct_quote; a model's arguments are never in this set (Codex review
+// of fix14).
+export const HARNESS_PROPOSALS = new WeakSet<object>();

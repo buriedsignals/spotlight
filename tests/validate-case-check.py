@@ -330,8 +330,24 @@ def activated_documents(case: Path) -> tuple[dict, dict, dict, dict]:
         "schema_version": "1.0", "project": "test-case",
         "created_at": "2026-07-16T12:00:00Z", "expressions": [expression],
     }
+    # The fact-checker's own re-fetch of the filing (r6 shape): an investigator's
+    # saved copy alone never makes a verdict verified (r12-ingest-audit A3), so
+    # the verified F1 cites this item, created by the fact-checker.
+    capture = research / "fc-filing.md.raw"
+    capture.write_text("heading\nAcme paid Doe.\n", encoding="utf-8")
+    capture_sha = hashlib.sha256(capture.read_bytes()).hexdigest()
+    bundle["items"].append({
+        **{key: value for key, value in bundle["items"][0].items() if key not in ("text_derivatives", "missing_source_gate")},
+        "id": "FC-E1", "created_by": "fact-checker", "query_or_task": "Fact-checker re-fetch of the filing",
+        "accessed": "2026-07-16T12:30:00Z", "raw_path": "research/fc-filing.md.raw", "sha256": capture_sha,
+        "access_method": "full_text",
+    })
     fact_check = valid_fact_check()
     fact_check["schema_version"] = "1.1"  # activated cases use fact-check contract 1.1
+    fact_check["claims"][0]["evidence_for"][0].update({
+        "evidence_bundle_id": "FC-E1", "local_file": "research/fc-filing.md.raw",
+        "source_ref": {"path": "research/fc-filing.md.raw", "line_start": 2, "line_end": 2}, "sha256": capture_sha,
+    })
     fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
         "expression_id": "SX1",
         "expression_fingerprint": expression["expression_fingerprint"],

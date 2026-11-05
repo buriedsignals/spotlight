@@ -33,7 +33,7 @@ patch-spotlight-low-ram.sh
 
 # Dependencies and build outputs
 .venv/
-node_modules/
+node_modules
 dist/
 coverage/
 *.log

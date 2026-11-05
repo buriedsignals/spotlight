@@ -1,13 +1,14 @@
 // Starts the real launcher as a chat client would, and speaks RPC to it.
 import { execFile, spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { registerFixtureCapture } from './receipts.ts';
 
 const LAUNCHER = resolve(fileURLToPath(import.meta.url), '../../launcher.ts');
 
@@ -28,6 +29,12 @@ export function baseEnv(space: Workspace, modelBaseURL: string, caseId = 'case-a
 		SPOTLIGHT_CASES_ROOT: space.casesRoot,
 		SPOTLIGHT_CASE_ID: caseId,
 		SPOTLIGHT_HARNESS_DATA: space.dataDir,
+		// The fact-check re-check would fetch the fixtures' source URLs (#274); tests reach no network.
+		SPOTLIGHT_RECHECK: 'off',
+		// The Navigator lookup before planning would reach Navigator (step2-design.md section 4).
+		SPOTLIGHT_NAVIGATOR_PRESTEP: 'off',
+		// The orchestrator's code router (router.ts) would make the scripted calls these tests give the model.
+		SPOTLIGHT_CODE_ROUTER: 'off',
 		...(process.env.SPOTLIGHT_PYTHON ? { SPOTLIGHT_PYTHON: process.env.SPOTLIGHT_PYTHON } : {}),
 	};
 }
@@ -55,8 +62,30 @@ export function newsroomEnv(
 	return env;
 }
 
+// The review page opens the member's browser through `open` (macOS) or
+// `xdg-open`, found on PATH. A test launcher gets recording no-ops first on PATH,
+// so a gate opened in a test is logged, never shown in a real browser.
+function browserShim(t: TestContext): { dir: string; opened: () => string[]; openerEnv: () => string } {
+	const dir = mkdtempSync(join(tmpdir(), 'spotlight-pi-open-'));
+	const log = join(dir, 'opened.log');
+	for (const name of ['open', 'xdg-open']) {
+		writeFileSync(join(dir, name), `#!/bin/sh\necho "$1" >> "${log}"\nenv > "${join(dir, 'opener-env')}"\n`);
+		chmodSync(join(dir, name), 0o755);
+	}
+	t.after(() => rm(dir, { recursive: true, force: true }));
+	return {
+		dir,
+		opened: () => (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []),
+		openerEnv: () => readFileSync(join(dir, 'opener-env'), 'utf8'),
+	};
+}
+
 export type Chat = {
 	process: ChildProcessWithoutNullStreams;
+	/** The URLs the launcher asked the (stubbed) browser opener to open. */
+	opened(): string[];
+	/** The environment the launcher gave the (stubbed) opener on its last call. */
+	openerEnv(): string;
 	lines: string[];
 	stderr(): string;
 	send(record: Record<string, unknown>): void;
@@ -65,7 +94,11 @@ export type Chat = {
 };
 
 export function launch(t: TestContext, env: Record<string, string>, args: string[] = []): Chat {
-	const child = spawn(process.execPath, [LAUNCHER, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+	const shim = browserShim(t);
+	// A fixture case's own fact-checker capture has its fetch receipt.
+	const fixtureCase = env.SPOTLIGHT_CASES_ROOT && env.SPOTLIGHT_CASE_ID ? join(env.SPOTLIGHT_CASES_ROOT, env.SPOTLIGHT_CASE_ID) : undefined;
+	if (fixtureCase && env.SPOTLIGHT_HARNESS_DATA && existsSync(fixtureCase)) registerFixtureCapture(env.SPOTLIGHT_HARNESS_DATA, fixtureCase);
+	const child = spawn(process.execPath, [LAUNCHER, ...args], { env: { ...env, PATH: `${shim.dir}${delimiter}${env.PATH ?? ''}` }, stdio: ['pipe', 'pipe', 'pipe'] });
 	const lines: string[] = [];
 	let partial = '';
 	let stderr = '';
@@ -92,6 +125,8 @@ export function launch(t: TestContext, env: Record<string, string>, args: string
 	});
 	return {
 		process: child,
+		opened: shim.opened,
+		openerEnv: shim.openerEnv,
 		lines,
 		stderr: () => stderr,
 		send(record) {
@@ -114,10 +149,10 @@ export function launch(t: TestContext, env: Record<string, string>, args: string
 	};
 }
 
-export async function settledPrompt(chat: Chat, message: string): Promise<void> {
+export async function settledPrompt(chat: Chat, message: string, timeoutMs?: number): Promise<void> {
 	const before = chat.lines.length;
 	chat.send({ id: `p-${before}`, type: 'prompt', message });
-	await chat.waitFor((record) => record.type === 'agent_settled', before);
+	await chat.waitFor((record) => record.type === 'agent_settled', before, timeoutMs);
 }
 
 export function waitUntil(check: () => boolean, timeoutMs = 10_000): Promise<void> {

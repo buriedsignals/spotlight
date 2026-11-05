@@ -26,6 +26,7 @@ import os
 import sys
 from pathlib import Path
 
+from .._firecrawl_policy import refusal
 from .._protected import ProtectedSourceError, check_outgoing
 from .scrape_types import ScrapeError, ScrapeResult
 
@@ -115,6 +116,8 @@ def _escalate(url: str, timeout_ms: int) -> ScrapeResult:
     # Crawl4AI was bot-blocked/empty on our own IP. Escalate to Firecrawl's managed
     # proxy pool (KTD6) — but only if its key is present. No key ⇒ stay sovereign and
     # surface the block rather than pretending we can reach a hard anti-bot target.
+    if reason := refusal():
+        raise ScrapeError(f"crawl4ai was bot-blocked/empty on {url}; {reason}")
     if not credential("FIRECRAWL_API_KEY"):
         raise ScrapeError(
             f"crawl4ai was bot-blocked/empty on {url} and no FIRECRAWL_API_KEY is "

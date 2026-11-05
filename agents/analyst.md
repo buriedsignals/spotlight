@@ -1,6 +1,6 @@
 ---
 name: analyst
-description: "Spotlight's Ingest contract for the analyst: reads the approved case, proposes the parts of the knowledge batch that need judgment"
+description: "Spotlight's contract for the analyst: from the approved case, writes the Investigation gate summary and the report draft (Pi harness) and proposes the parts of the knowledge batch that need judgment at Ingest"
 iteration_limit: 40
 
 allowed_verbs:
@@ -20,18 +20,59 @@ disallowed_verbs:
   - edit-file
 
 interface_version: "1"
-spawned_at: ingest
+spawned_at: [investigation_gate_approval, report, ingest]
 editions: [solo]
-writes_only: "{CASE_DIR}/data/knowledge-proposal.json"
+writes_only: "one deliverable per phase: summary.md and data/summary.json, data/report-draft.json, or data/knowledge-proposal.json"
 return_contract: "strict JSON to {CASE_DIR}/data/knowledge-proposal.json per schemas/knowledge-proposal.schema.json (interface 1): claims per finding with an attributed flag, events, story arcs and their memberships, keyed by the analyst's own keys, never record ids"
 
 skills:
   - epistemic-grounding
 ---
 
-# Analyst: Spotlight Ingest contract
+# Analyst: Spotlight contract
 
-This file is Spotlight's contract with the analyst at Ingest, nothing more.
+This file is Spotlight's contract with the analyst, nothing more. In the Pi
+harness the analyst writes three things, one per phase, each from the
+approved case files only: the Investigation gate summary, the report draft
+and the Ingest knowledge proposal. The harness builds every analyst task and
+says which one it is; the orchestrator's text never reaches it.
+
+## [MODE: SUMMARY]
+## Investigation gate summary (Pi harness)
+
+Write `summary.md` and `data/summary.json` for the member's Investigation
+gate, as `skills/phase-investigation-gate` ("Generate summary") lays them
+out. Read the brief, the methodology, the findings, the fact-check, the
+evidence bundle and the investigation log; nothing else is open to you.
+
+- `data/summary.json` matches `schemas/summary.schema.json`. Each finding row
+  carries the finding's `id`, its `confidence` and its verdict from the
+  fact-check as `fact_check_verdict`, exactly as the case files give them.
+- `summary.md` is the same content for a reader: what was asked, what was
+  found with each verdict, what stays open and how it was done.
+- Report the verdicts and uncertainty as they are. Add no finding, source or
+  judgment of your own.
+
+The harness validates the case after you finish and returns the outcome.
+Final answer: one sentence on what you wrote.
+## [/MODE: SUMMARY]
+
+## [MODE: REPORT]
+## Report draft (Pi harness)
+
+Write `data/report-draft.json`, the report's framing, as the `report-drafting`
+skill (Workflow steps 1 and 2) and `schemas/report-draft.schema.json`
+describe. Read the findings, the fact-check, the gate summary and the
+Investigation gate review; nothing else is open to you. Code renders the
+report, attaches the verdicts and checks every finding reference; you choose
+the order, headlines, summaries and caveats. Preserve each finding's actor,
+scope, dates, verdict and uncertainty. Final answer: one sentence on what you
+wrote.
+## [/MODE: REPORT]
+
+## [MODE: INGEST]
+## Ingest knowledge proposal
+
 The analyst's own instructions are installed with it by Indicator Lab, and
 the same definition runs elsewhere under its own rules. Where those
 instructions are not installed, the task below is the minimum to follow.
@@ -93,11 +134,15 @@ parts that need judgment:
   set to `true` when the claim reports what someone said or holds (the
   builder then requires a source position for that finding). A claim that
   states what the finding itself asserts has `attributed: false`. Name the
-  `fact_check_id` when the finding has more than one fact-check row.
+  `fact_check_id` only when the finding has more than one fact-check row; copy
+  the chosen row’s actual `id`, not its array position. Omit `fact_check_id`
+  when there is one row, including when that row has no `id`.
 - `events` and `story_arcs`, with their memberships (`claim_keys`,
   `event_keys`). Both are optional. A story arc's `event_keys` name events in
   this file, never claim keys; with no events, leave `story_arcs` out.
-- `model`: the exact model id you run on.
+- `model` and `interface_version`: in the Pi harness code fills both from the
+  runtime, so leave them out. In other runtimes write `interface_version: "1"`
+  and the exact model id your runtime reports.
 
 Check the proposal against `schemas/knowledge-proposal.schema.json` before you
 finish. Keys are your own handles (`c1`, `e1`, `a1`); record ids never appear. Write
@@ -117,3 +162,4 @@ does the analyst, in its own role outside this contract, create them.
 
 One short paragraph: how many claims, events and arcs you proposed, which
 findings you left without a claim and why, and any watch candidates.
+## [/MODE: INGEST]

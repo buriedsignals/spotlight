@@ -34,6 +34,17 @@ test('the frontier compaction reserve covers the output cap', () => {
 	}
 });
 
+// A silent 10,240-token response at 20 tokens/second plus prefill must not
+// expire at Pi's shorter default, while the connection still has a finite bound.
+test('Pi settings allow a slow valid model response while retaining a finite idle timeout', () => {
+	for (const tier of ['12b', 'frontier']) {
+		const config = readConfig({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' });
+		const idle = piSettings(config).httpIdleTimeoutMs;
+		assert.equal(typeof idle, 'number', `${tier} must explicitly set Pi's timeout`);
+		assert.ok(Number.isFinite(idle) && (idle as number) >= 600_000 && (idle as number) <= 900_000, `${tier} idle timeout must cover a slow completion and remain bounded`);
+	}
+});
+
 test('the Anomaly install path reaches the processes, so anomaly_methods can read its catalogue', () => {
 	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ANOMALY_HOME: '/opt/anomaly' };
 	assert.equal(childEnv(readConfig(env), COMPOSITION, 'orchestrator', env).ANOMALY_HOME, '/opt/anomaly');
@@ -150,6 +161,16 @@ test('model tier: an unknown tier or a fold point the window cannot reach stops 
 	assert.throws(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: '31b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })), /fold point/);
 	assert.throws(() => readConfig(env({ SPOTLIGHT_COMPACT_KEEP: '30000' })), /SPOTLIGHT_COMPACT_KEEP/);
 	assert.doesNotThrow(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })));
+});
+
+test('a local tier folds where one more turn still fits its window: 20,480 at 40,960 on the 12b, 56,588 at 98,304, and SPOTLIGHT_COMPACT_AT wins', () => {
+	const fold = (extra: Record<string, string>) => readConfig({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ...extra }).fold?.at;
+	assert.equal(fold({ SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' }), 20480);
+	assert.equal(fold({ SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '98304' }), 56588);
+	assert.equal(98304 - 56588 - maxOutputTokens(98304) >= Math.ceil(30000 / 2.3), true, 'a full read turn and the output cap fit past the fold');
+	assert.equal(fold({ SPOTLIGHT_MODEL_TIER: '26b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' }), 24576);
+	assert.equal(fold({ SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '98304', SPOTLIGHT_COMPACT_AT: '40000' }), 40000);
+	assert.equal(fold({ SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '98304' }), undefined);
 });
 
 test('the swarm route exists only with the switch and a key, keeps zero data retention, and in a newsroom only on an allowed endpoint', () => {

@@ -357,7 +357,12 @@ def validate_source_expressions(
                 and sha256_file(path) == expression.get("original_artifact_sha256")
                 for value in original_paths
             ):
-                errors.append(f"{prefix}: original evidence artifact path/hash is not intact")
+                # u3 p1 eu-ai-act: three items carried the empty-file hash
+                # (e3b0c442...), and "not intact" did not say which part to fix.
+                named = original_paths[0] if original_paths else "no file"
+                errors.append(f"{prefix}: original evidence artifact path/hash is not intact: evidence item "
+                              f"{expression.get('original_evidence_bundle_id')} names {named}, and its sha256 is not that file's SHA-256; "
+                              "write the file's SHA-256 into the item's sha256")
             derivatives = bundle.get("text_derivatives", [])
             if bundle.get("human_verification_required") is True:
                 blocked_support.add(expression_id)
@@ -1245,6 +1250,10 @@ def validate_investigation_log(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+# Bracketed template prompts such as [claim description], [Description of finding 1], [Verdict from fact-check].
+UNFILLED_PLACEHOLDER = re.compile(r"\[(?:claim description|description\b|verdict\b|insert\b|todo\b|tbd\b|fill\b|placeholder\b)[^\]\n]*\](?!\()", re.IGNORECASE)
+
+
 def validate_summary(data: Any, findings_data: Any, factcheck_data: Any) -> list[str]:
     """data/summary.json, the Investigation gate's machine contract (schemas/summary.schema.json)."""
     if not isinstance(data, dict):
@@ -1366,6 +1375,7 @@ def main() -> int:
     parser.add_argument("case_dir", help="Path to {CASE_DIR}/")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as errors")
     parser.add_argument("--include-rlm", action="store_true", help="Also validate optional data/rlm-analysis.json if present")
+    parser.add_argument("--json", action="store_true", help="Return owner-tagged validation errors as JSON")
     parser.add_argument(
         "--fact-check-only",
         action="store_true",
@@ -1525,6 +1535,13 @@ def main() -> int:
             if investigation_log_data is not None:
                 all_errors.extend(validate_investigation_log(investigation_log_data))
 
+        # A template placeholder left in the gate summary reaches the member as text.
+        for name in ("summary.md", "data/summary.json"):
+            written = case_dir / name
+            if written.is_file():
+                left = sorted({m.group(0) for m in UNFILLED_PLACEHOLDER.finditer(written.read_text(encoding="utf-8", errors="replace"))})
+                if left:
+                    all_errors.append(f"{name}: unfilled template placeholders {', '.join(left[:5])}; write the real text")
         summary_path = case_dir / "data" / "summary.json"
         if summary_path.exists():
             summary_data, errs = load_json(summary_path)
@@ -1541,6 +1558,9 @@ def main() -> int:
                 all_errors.extend(validate_rlm_analysis(rlm_data))
 
     if all_errors:
+        if args.json:
+            print(json.dumps({"ok": False, "errors": [{"message": err, "owner": "fact-checker" if owner_tag(err) else "investigator"} for err in all_errors]}))
+            return 1
         print(f"\n{len(all_errors)} validation error(s) in {case_dir.name}:\n", file=sys.stderr)
         for err in all_errors:
             print(f"  • {owner_tag(err)}{err}", file=sys.stderr)
@@ -1556,6 +1576,9 @@ def main() -> int:
         print(file=sys.stderr)
         return 1
 
+    if args.json:
+        print(json.dumps({"ok": True, "errors": []}))
+        return 0
     suffix = " (fact-check only)" if args.fact_check_only else (" + RLM" if args.include_rlm else "")
     print(f"✓ {case_dir.name} validates against case schemas{suffix}")
     return 0

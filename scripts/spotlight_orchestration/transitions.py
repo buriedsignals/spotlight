@@ -20,6 +20,7 @@ from .contract import (
     RESEARCH_OUTPUTS,
     RESEARCH_REVIEW,
     RESEARCH_ROUND,
+    RESEARCH_SUGGESTIONS,
     SCRIPT_DIR,
 )
 from .dependencies import (
@@ -234,6 +235,12 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     if status["next_phase"] not in allowed:
         where = "research" if research else "investigation"
         raise OrchestrationError(f"{kind} attempts can only be recorded during {where}")
+    repairs = [item for item in status.get("checks", []) if item.startswith("validate-fact-check:")]
+    if kind in (CYCLE, ROUND_CYCLE) and repairs:
+        raise OrchestrationError(
+            "Finish or correct the fact-check before recording an investigation cycle. "
+            "Spawn the fact-checker for these unfinished checks: " + "; ".join(repairs)
+        )
     attempts = state["attempts"]
     stall = state.get("stall")
     if kind == CYCLE and isinstance(stall, dict) and stall.get("approved"):
@@ -321,7 +328,7 @@ def start_research_round(case: Path, data_descriptor: int) -> None:
     _publish(case, data_descriptor, state, extra={"data/methodology.json": updated})
 
 
-def record_amendment(case: Path, data_descriptor: int) -> None:
+def record_amendment(case: Path, data_descriptor: int, build: bool = False) -> None:
     """Check AMENDMENT mode's proposal against the member's marks (D8).
 
     On a pass the proposal becomes data/methodology.json and its hash is
@@ -329,6 +336,12 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     accepts it without a new Methodology approval and keeps the attempts.
     On a refusal the problems go back to AMENDMENT once; a second refusal
     stops the case at Research.
+
+    When no mark asks for a change the amendment is the approved methodology,
+    so its bytes are taken as it stands and every check below still runs: a
+    model that retypes the file only adds risk (qwen-u9-mac.md). The ledger
+    entry records that code built it. With ``build`` (the local tiers) code
+    builds a marked amendment the same way (research.build_marked_amendment).
     """
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
@@ -336,24 +349,41 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     if status.get("research", {}).get("resume_at") != "amendment":
         raise OrchestrationError("the case is not waiting for a methodology amendment")
     approved = research_rules.read_case_json(case, "data/methodology.json")
-    amendment_path = case_path(case, METHODOLOGY_AMENDMENT)
-    if not amendment_path.is_file():
-        raise OrchestrationError(f"{METHODOLOGY_AMENDMENT} is missing")
-    amendment_bytes = amendment_path.read_bytes()
-    try:
-        amended = json.loads(amendment_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise OrchestrationError(f"cannot read {METHODOLOGY_AMENDMENT}: {exc}") from exc
+    review_doc = research_rules.read_case_json(case, RESEARCH_REVIEW)
+    if build and review_doc is None:
+        review_doc = {}  # no marks were saved, so none asks for a change
+    built_by_code = research_rules.checks().leaves_plan_unchanged(review_doc)
+    unplaced: list[str] = []
+    if build and not built_by_code and isinstance(approved, dict) and isinstance(review_doc, dict):
+        amended, unplaced = research_rules.build_marked_amendment(
+            approved, review_doc,
+            research_rules.read_case_json(case, "data/clues.json"),
+            research_rules.read_case_json(case, RESEARCH_SUGGESTIONS),
+        )
+        amendment_bytes = (json.dumps(amended, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        built_by_code = True
+    else:
+        source = "data/methodology.json" if built_by_code else METHODOLOGY_AMENDMENT
+        amendment_path = case_path(case, source)
+        if not amendment_path.is_file():
+            raise OrchestrationError(f"{source} is missing")
+        amendment_bytes = amendment_path.read_bytes()
+        try:
+            amended = json.loads(amendment_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise OrchestrationError(f"cannot read {source}: {exc}") from exc
     if not isinstance(amended, dict) or not isinstance(approved, dict):
         raise OrchestrationError("the methodology and its amendment must be JSON objects")
-    review_doc = research_rules.read_case_json(case, RESEARCH_REVIEW)
     problems = research_rules.checks().d8_amendment(
         approved, amended, review_doc if isinstance(review_doc, dict) else None
     )
-    problems += _schema_problems(amended)
+    problems += _schema_problems(amended) + unplaced
     if problems:
         attempts = state["attempts"]
         attempts[AMENDMENT_CORRECTION] = attempts.get(AMENDMENT_CORRECTION, 0) + 1
+        if built_by_code:
+            # Code would build the same amendment again, so a second try is pointless.
+            attempts[AMENDMENT_CORRECTION] = ATTEMPT_LIMITS[AMENDMENT_CORRECTION]
         state["open_amendment"] = {"problems": problems[:50]}
         if attempts[AMENDMENT_CORRECTION] >= ATTEMPT_LIMITS[AMENDMENT_CORRECTION]:
             state["blocked"] = {
@@ -374,6 +404,8 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     if entry is None:
         raise OrchestrationError("the Research approval has no ledger entry")
     entry["amended_methodology_sha256"] = amended_hashes
+    if built_by_code:
+        entry["amendment_built_by"] = "code"
     receipt["amended_methodology_sha256"] = amended_hashes
     state.pop("open_amendment", None)
     state["attempts"].pop(AMENDMENT_CORRECTION, None)
@@ -447,20 +479,28 @@ def request_follow_up(
     decided_by: str | None = None,
     decided_at: str | None = None,
     requested_by_role: str | None = None,
+    shown_gate: str | None = None,
+    shown_digest: str | None = None,
 ) -> None:
     if not instructions.strip():
         raise OrchestrationError("instructions must describe the requested follow-up")
     requester = _follow_up_requester(nonce, decided_by, decided_at, requested_by_role)
     state = load_state(case, data_descriptor)
     phase = status_for(case, state, data_descriptor)["next_phase"]
+    # Bind the Report the member actually saw in this same locked transaction.
+    if shown_gate is not None or shown_digest is not None:
+        if shown_gate != "report" or nonce is None or not isinstance(shown_digest, str):
+            raise OrchestrationError("a shown Report digest requires its page nonce and gate")
+        if review.review_digest(case, "report", data_descriptor) != shown_digest:
+            raise review.ReviewDigestChanged("review digest changed since the page loaded; reload and decide again")
+        if phase != "report":
+            raise OrchestrationError("the Report is no longer waiting for the member")
     if phase not in {
         "investigation_gate_approval",
         "investigation_gate_finalization",
         "report",
     }:
         raise OrchestrationError("follow-up can only be requested from the Investigation gate")
-    if nonce is not None and phase != "investigation_gate_approval":
-        raise OrchestrationError("the Investigation gate is not waiting for the member")
     # The page asks for a follow-up while the gate waits for the member; open
     # flags and blocking failures are what a follow-up answers, so they do not
     # block it. Without a nonce the request is recorded on the agent channel.
@@ -518,6 +558,22 @@ def _run_helper(script: str, case: Path) -> None:
     if result.returncode != 0:
         detail = result.stdout.strip() or result.stderr.strip() or f"{script} failed"
         raise OrchestrationError(detail)
+
+
+def write_report_skeleton(case: Path, data_descriptor: int) -> bool:
+    """At Report, before any draft exists, write the draft's structure for the
+    model to fill in (review.report_skeleton). Returns whether it wrote one."""
+    state = load_state(case, data_descriptor)
+    if status_for(case, state, data_descriptor)["next_phase"] != "report":
+        return False
+    if case_path(case, review.REPORT_DRAFT).exists():
+        return False
+    skeleton = review.report_skeleton(case)
+    if skeleton is None:
+        return False
+    content = (json.dumps(skeleton, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    atomic_write_files(case, {review.REPORT_DRAFT: content}, data_descriptor=data_descriptor)
+    return True
 
 
 def decide_report(

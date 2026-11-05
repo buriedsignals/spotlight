@@ -37,7 +37,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
 import { LOCAL_NAME_SUFFIXES, NOT_PUBLIC_V4, assertPublicDestination, isPublicAddress, publicDestination, refuseDirectWhenAnonymized } from './egress.ts';
 import type { AddressPolicy } from './egress.ts';
-import { webURL } from './fetch.ts';
+import { recordFetched, webURL } from './fetch.ts';
 import { startEgressProxy } from './proxy.ts';
 import { checkedParams, jsonResult, programEnv, programOutput, runFixed, savePath, saveTarget } from './run.ts';
 import type { Env, ToolContext } from './run.ts';
@@ -252,6 +252,7 @@ export function browseTool(context: ToolContext): ToolDefinition {
 				bytes = Buffer.from(result.content ?? '', 'utf8');
 			}
 			const saved = bytes && input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), bytes) : undefined;
+			if (saved && bytes) recordFetched(context, [saved], { url: result.final_url, accessed: new Date().toISOString(), provider: 'browse', sha256: createHash('sha256').update(bytes).digest('hex') });
 			const content = result.content ?? '';
 			return jsonResult({
 				requested_url: input.url,

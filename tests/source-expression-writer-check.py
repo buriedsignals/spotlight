@@ -90,9 +90,49 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def check_distilled_anchor_diagnostic(root: Path) -> None:
+    # Local12B used save_as ending .raw; the summary still is not evidence.
+    # The CLI must not invite registration that the evidence guard refuses.
+    case = make_case(root / "distilled-anchor")
+    lead = case / "research" / "page.md.raw"
+    raw = case / "research" / "page.md.raw.raw"
+    text = "The public register records the appointment on 8 June."
+    lead.write_text(f"# RLM-distilled leads from https://example.org/register\n{text}\n", encoding="utf-8")
+    raw.write_text(text + "\n", encoding="utf-8")
+    target, bundle_path = case / "data/source-expressions.json", case / "data/evidence-bundle.json"
+    before = (target.read_bytes(), bundle_path.read_bytes())
+    body = proposal(5)
+    body["expressions"][0].update({"text": text, "anchor_ref": {"path": "research/page.md.raw"}, "original_evidence_bundle_id": None})
+    refused = run_writer(case, body, actor="fact-checker")
+    require(refused.returncode == 2 and "RLM-distilled lead file, not source evidence" in refused.stderr
+            and "page.md.raw.raw" in refused.stderr and "Add the evidence item" not in refused.stderr,
+            f"distilled lead was given misleading evidence-registration advice: {refused.stderr}")
+    require((target.read_bytes(), bundle_path.read_bytes()) == before,
+            "refusing a distilled anchor mutated expressions or evidence bundle")
+    body["expressions"][0]["anchor_ref"] = {"path": "research/page.md.raw.raw"}
+    unlisted = run_writer(case, body, actor="fact-checker")
+    require(unlisted.returncode == 2 and "Add the evidence item for research/page.md.raw.raw" in unlisted.stderr
+            and (target.read_bytes(), bundle_path.read_bytes()) == before,
+            f"genuine unlisted raw evidence lost registration guidance or refusal atomicity: {unlisted.stderr}")
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    item = json.loads(json.dumps(bundle["items"][0]))
+    item.update({"id": "FC-RAW", "raw_path": "research/page.md.raw.raw", "sha256": hashlib.sha256(raw.read_bytes()).hexdigest()})
+    item.pop("text_derivatives", None)
+    bundle["items"].append(item)
+    bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+    registered = bundle_path.read_bytes()
+    accepted = run_writer(case, body, actor="fact-checker")
+    require(accepted.returncode == 0, f"registered genuine raw evidence did not write: {accepted.stderr}")
+    stored = next(row for row in expressions(case)["expressions"] if row["id"] == "SXW5")
+    require(stored["anchor_ref"]["path"] == "research/page.md.raw.raw"
+            and stored["original_evidence_bundle_id"] == "FC-RAW" and bundle_path.read_bytes() == registered,
+            "successful raw passage did not retain its actual anchor/item or mutated the bundle")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        check_distilled_anchor_diagnostic(root)
         case = make_case(root)
         target = case / "data" / "source-expressions.json"
 
@@ -202,6 +242,82 @@ def main() -> int:
                 and "is not in research/unlisted.txt" not in refused.stderr and target.read_bytes() == before,
                 f"a quote in a file no evidence item lists was not told to add the item: {refused.stderr}")
         unlisted_file.unlink()
+        # incr-test2 sp98: the anchored file is unlisted but the same text is
+        # in listed files; the anchor decides the place, and the listed files
+        # are offered, not "appears in N places".
+        twin = case / "research" / "twin.txt"
+        twin.write_text(PASSAGES[6] + "\n", encoding="utf-8")
+        anchored = proposal(6)
+        anchored["expressions"][0].update({"anchor_ref": {"path": "research/twin.txt"}, "original_evidence_bundle_id": "FC-E9"})
+        refused = run_writer(case, anchored)
+        require(refused.returncode == 2
+                and "the text is in research/twin.txt, but no item in data/evidence-bundle.json lists that file" in refused.stderr
+                and "(FC-E9 is not in it yet)" in refused.stderr
+                and "Or anchor it to research/passages.txt" in refused.stderr and "places" not in refused.stderr
+                and target.read_bytes() == before,
+                f"a quote anchored in an unlisted file was not told to add it or use the listed file: {refused.stderr}")
+        # r12 seq 85 (r12-ingest-audit A1): the same refusal for the
+        # fact-checker, whose quote is in its own re-fetch, named the
+        # investigator's file. It names the fact-checker's own step instead.
+        refused = run_writer(case, anchored, actor="fact-checker")
+        require(refused.returncode == 2
+                and "append your own evidence item for research/twin.txt to data/evidence-bundle.json with created_by fact-checker, raw_path and sha256" in refused.stderr
+                and "Or anchor it to" not in refused.stderr and target.read_bytes() == before,
+                f"the fact-checker was offered another worker's capture: {refused.stderr}")
+        twin.unlink()
+        # arm2 ds-spectator on ce4f010e: a quote found at two places of the one
+        # file it was anchored to is anchored at the first, not refused.
+        twice = case / "research" / "twice.txt"
+        twice.write_text("Header line.\nThe owner is Acme Holdings, says the register.\nFooter.\nAgain: The owner is Acme Holdings, per the filing.\n", encoding="utf-8")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        saved_bundle = bundle_path.read_bytes()
+        bundle = json.loads(saved_bundle)
+        extra = json.loads(json.dumps(next(i for i in bundle["items"] if i["id"] == "E2")))
+        extra.update({"id": "E7", "raw_path": "research/twice.txt", "sha256": hashlib.sha256(twice.read_bytes()).hexdigest()})
+        bundle["items"].append(extra)
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        both = proposal(5)
+        both["expressions"][0].update({"id": "SXW77", "text": "The owner is Acme Holdings", "anchor_ref": {"path": "research/twice.txt"}, "original_evidence_bundle_id": "E7"})
+        result = run_writer(case, both)
+        anchored = next((e for e in expressions(case)["expressions"] if e["id"] == "SXW77"), {})
+        require(result.returncode == 0 and anchored.get("anchor_ref", {}).get("line_start") == 2 and "at 2 places; anchored the first" in result.stdout,
+                f"a quote at two places of its anchored file was not anchored at the first: {result.stdout} {result.stderr}")
+        bundle_path.write_bytes(saved_bundle)
+        target.write_bytes(before)
+        twice.unlink()
+        # fc-stall item 12: a passage linked to a finding not written yet is
+        # told to write the finding first.
+        early = proposal(2, finding="D9-F1")
+        early["expressions"][0]["id"] = "SXW90"
+        refused = run_writer(case, early)
+        require(refused.returncode == 2 and "finding 'D9-F1' does not exist in data/findings.json yet. Write the finding first" in refused.stderr
+                and target.read_bytes() == before, f"a passage before its finding was not told to write the finding first: {refused.stderr}")
+        # fc-stall item 6: a new passage given an id already taken is told a
+        # free id in the same numbering.
+        taken = proposal(4)
+        taken["expressions"][0]["id"] = "SXW0"
+        refused = run_writer(case, taken)
+        require(refused.returncode == 2 and "already exists with a different passage. For a new passage, give it a free id such as 'SXW" in refused.stderr
+                and "give it a free id such as 'SXW0'" not in refused.stderr and target.read_bytes() == before,
+                f"an id collision did not name a free id: {refused.stderr}")
+        # u3 p1 eu-ai-act: a file that several evidence items list is cited by
+        # the first of them, with a note, instead of a refusal.
+        bundle_path = case / "data" / "evidence-bundle.json"
+        saved_bundle = bundle_path.read_bytes()
+        bundle = json.loads(saved_bundle)
+        extra = json.loads(json.dumps(next(i for i in bundle["items"] if i["id"] == "E2")))
+        extra["id"] = "E3"
+        bundle["items"].append(extra)
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        shared = proposal(7)
+        shared["expressions"][0]["original_evidence_bundle_id"] = None
+        result = run_writer(case, shared)
+        stored_shared = next((e for e in expressions(case)["expressions"] if e["id"] == "SXW7"), {})
+        require(result.returncode == 0 and stored_shared.get("original_evidence_bundle_id") == "E2"
+                and "cites evidence item E2 (also listed by E3)" in result.stdout,
+                f"a file two items list was not cited by the first: {result.stdout} {result.stderr}")
+        bundle_path.write_bytes(saved_bundle)
+        target.write_bytes(before)
 
         # r1/r2 source_expressions refusals the writer now resolves itself: each
         # case below was refused on 97f066b6.
@@ -257,7 +373,9 @@ def main() -> int:
         # 12B r1 quotes that were the source's words but not exact, or cited the
         # wrong file or item, or were the model's own text (each refused on #206).
         other = case / "research" / "other.txt"
-        other.write_text("**Revenue** was `42` million in 2024.\nMinutes: the board met on 9 June.\n", encoding="utf-8")
+        # The third line is the Eurostat capture's, whose sentence holds a markdown link (reports/qwen-base.md H-1).
+        eurostat = 'Compared with the rates published in the [News Release](https://ec.europa.eu/eurostat/en/web/products-euro-indicators/w/3-01102026-ap "https://ec.europa.eu/eurostat/en/web/products-euro-indicators/w/3-01102026-ap") of 1 October 2026, the August 2026 unemployment rate for the EU was revised from 6.1% to 6.2% and the unemployment rate for the euro area was revised from 6.4% to 6.5%.'
+        other.write_text(f"**Revenue** was `42` million in 2024.\nMinutes: the board met on 9 June.\n{eurostat}\n", encoding="utf-8")
         bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
         item = json.loads(json.dumps(next(i for i in bundle["items"] if i["id"] == "E2")))
         item.update({"id": "E3", "raw_path": "research/other.txt", "sha256": hashlib.sha256(other.read_bytes()).hexdigest()})
@@ -268,6 +386,12 @@ def main() -> int:
         done = relaxed("SXR-MD", 4, text='"Revenue was 42 million in 2024."', anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
         require(done.returncode == 0 and stored("SXR-MD")["text"] == "**Revenue** was `42` million in 2024.",
                 f"a quote differing only in markdown and wrapping quotes was not stored as the file's line: {done.stderr}")
+        # A quote of the words a reader sees: the link's target is not the source's words, and the file's own line is stored.
+        done = relaxed("SXR-LINK", 4, text="Compared with the rates published in the News Release of 1 October 2026, the August 2026 unemployment rate for the EU was revised from 6.1% to 6.2%", anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
+        require(done.returncode == 0 and stored("SXR-LINK")["text"] == eurostat, f"a quote differing only in a link's markup was not stored as the file's line: {done.stderr}")
+        # Nothing else relaxes: the link's text must still be the words quoted.
+        done = relaxed("SXR-LINK2", 4, text="Compared with the rates published in the Press Note of 1 October 2026", anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
+        require(done.returncode != 0, "a quote changing a link's visible text was accepted")
         # The named file lacks the quote and one other evidence file has it: that file and its item are cited.
         done = relaxed("SXR-DERIVE", 4, text="Minutes: the board met on 9 June.")
         require(done.returncode == 0 and stored("SXR-DERIVE")["anchor_ref"]["path"] == "research/other.txt"

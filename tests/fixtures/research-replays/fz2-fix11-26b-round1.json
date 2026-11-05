@@ -1,0 +1,102 @@
+{
+ "_source": "e2e/fz2-gemma26b-tor-fix11/records/e2e-tor-s0/calls.jsonl, the investigator's first data/methodology.json write (PLANNING), investigation_plan and research_plan only",
+ "investigation_plan": [
+  {
+   "direction": "D1: Official Source Identification",
+   "questions": [
+    "Who does the Tor Project officially list as its Executive Director?",
+    "Who does the Tor Project officially list as its Board of Directors members?"
+   ],
+   "steps": [
+    {
+     "order": 1,
+     "action": "fetch",
+     "tool": "fetch",
+     "target": "https://www.torproject.org/about/people/",
+     "expected_evidence": "A list of names and roles from the official website.",
+     "fallback": "Search for the 'About' or 'People' page via Google if the direct URL is broken.",
+     "tool_source": "curated-catalog",
+     "navigator_response_path": null
+    }
+   ],
+   "osint_techniques": [
+    "website scraping"
+   ],
+   "key_sources": [
+    "torproject.org"
+   ],
+   "risks": [
+    "Website may use dynamic loading or be behind a firewall (unlikely for Tor)."
+   ],
+   "estimated_difficulty": "quick scan"
+  },
+  {
+   "direction": "D2: Independent Verification",
+   "questions": [
+    "Do news sources or non-profit filings confirm the current leadership?",
+    "Are there any recent leadership changes reported in the media?"
+   ],
+   "steps": [
+    {
+     "order": 1,
+     "action": "search",
+     "tool": "search",
+     "target": "Tor Project leadership news",
+     "expected_evidence": "News articles mentioning the names found in D1.",
+     "fallback": "Check Wikipedia or LinkedIn for corroborating names.",
+     "tool_source": "curated-catalog",
+     "navigator_response_path": null
+    },
+    {
+     "order": 2,
+     "action": "search",
+     "tool": "search",
+     "target": "Tor Project Form 990",
+     "expected_evidence": "Official tax filings listing board members.",
+     "fallback": "Search ProPublica's non-profit explorer.",
+     "tool_source": "curated-catalog",
+     "navigator_response_path": null
+    }
+   ],
+   "osint_techniques": [
+    "news search",
+    "non-profit filing search"
+   ],
+   "key_sources": [
+    "news archives",
+    "ProPublica",
+    "IRS filings"
+   ],
+   "risks": [
+    "Tax filings may be outdated."
+   ],
+   "estimated_difficulty": "moderate"
+  }
+ ],
+ "research_plan": {
+  "mode": "openrouter_swarm",
+  "consent": {
+   "swarm": true
+  },
+  "topics": [
+   {
+    "id": "D1-web",
+    "direction": "D1: Official Source Identification",
+    "lane_type": "web",
+    "description": "Scrape the official Tor Project website for leadership information."
+   },
+   {
+    "id": "D2-news",
+    "direction": "D2: Independent Verification",
+    "lane_type": "news",
+    "description": "Search for news articles regarding Tor Project leadership."
+   },
+   {
+    "id": "D2-filings",
+    "direction": "D2: Independent Verification",
+    "lane_type": "filings",
+    "description": "Search for non-profit filings or official documents listing the Tor Project board."
+   }
+  ]
+ }
+}

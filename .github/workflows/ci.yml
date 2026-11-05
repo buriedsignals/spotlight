@@ -104,3 +104,21 @@ jobs:
                   print(f"{page} parses with balanced tags")
           raise SystemExit(1 if failed else 0)
           PY
+
+  review-handoff:
+    name: Review page handoff (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install focused harness dependencies
+        run: npm ci --prefix harness/pi
+      - name: Install Python fixture dependencies
+        run: pip install --quiet jsonschema==4.25.1 requests==2.32.5 jinja2==3.1.6
+      - name: Real review child opens once and ends the agent turn
+        run: node --test --test-name-pattern='once the review page opens' harness/pi/src/launcher.test.ts

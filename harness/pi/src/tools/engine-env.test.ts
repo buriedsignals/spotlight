@@ -45,7 +45,6 @@ process.stdout.write(process.argv.includes('integrations.scraping') ? ${JSON.str
 		['query_vault', { query: 'Acme' }, 'query_vault.py', false],
 		['search', { query: 'Acme' }, 'integrations.search', true],
 		['fetch', { url: PAGE_URL }, 'integrations.scraping', true],
-		['decision_signals', { phase: 'investigation_gate', check: true }, 'decision-signals.py', false],
 	];
 	for (const [name, params] of calls) await tools.get(name)!.execute('call', params, undefined, undefined, undefined as never);
 

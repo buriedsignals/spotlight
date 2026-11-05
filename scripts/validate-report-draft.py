@@ -36,6 +36,14 @@ STRUCTURAL_DIAGRAM_TYPES = {"flow", "hierarchy", "network", "loop"}
 BAR_METRICS = {"verdict_tally", "confidence_distribution", "source_types"}
 BAR_SCOPES = {"all", "finding_ids"}
 DIAGRAM_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+# One wording of "kept", shared with skills/report-drafting and the Pi
+# analyst's report deliverable (harness/pi/src/roles.ts): r6 on fix5 read a
+# disposition-only "keep" of a false finding as "unselected" and omitted it.
+KEPT_RULE = (
+    "were kept at the Investigation gate: only a verified finding whose selection is false, "
+    "or another finding whose disposition is set_aside, is left out; a finding with "
+    "disposition keep (no selection item, any verdict, false included) is kept and appears"
+)
 
 
 def load_object(path: Path) -> dict[str, Any]:
@@ -93,6 +101,7 @@ def validate_refs(
         failures.append(
             f"STRUCTURE: {label} must contain every finding exactly once; "
             f"missing={absent}, extra={extra}"
+            + (f"; {absent} {KEPT_RULE}" if absent else "")
         )
     return refs
 
@@ -187,7 +196,9 @@ def validate_quote_selections(
             )
         if expression.get("direct_quote") is not True:
             failures.append(
-                f"STRUCTURE: {item_label} requires a direct_quote source expression"
+                f"STRUCTURE: {item_label} cites {expression_id}, which is not a direct quote "
+                "(direct_quote is not true in data/source-expressions.json); "
+                "quote_selections is optional: remove this selection"
             )
         if expression.get("derivative_type") == "translation":
             failures.append(

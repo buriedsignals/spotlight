@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
-"""Validate the Navigator CLI-first methodology contract.
+"""Validate performed Navigator discovery or an explicit truthful skip.
 
-The gate is intentionally narrow: when Preflight marks Navigator green
-and required for Methodology, methodology.json must prove Navigator was used before
-the plan is shown for user approval.
+Installation entitlement enables discovery; it does not make every investigation
+need a new tool lookup. Evidence and provenance remain strict when it is used.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 
-REQUIRED_PLANNING_SKILLS = {"integrations", "osint", "investigation-methodology", "epistemic-grounding"}
-# Skill ids renamed for cross-runtime namespace safety. Cases planned before the
-# rename still list the old ids in skills_invoked and remain valid.
-LEGACY_SKILL_IDS = {"investigate": "investigation-methodology", "review": "editorial-review"}
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -28,6 +25,9 @@ from integrations.anomaly import adapter as anomaly  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import research_checks  # noqa: E402
+import schema_check  # noqa: E402
+
+METHODOLOGY_SCHEMA = ROOT / "schemas" / "methodology.schema.json"
 DEFAULT_CTI_LOCK = ROOT / "upstreams" / "cti-expert" / "source.lock.json"
 DEFAULT_CTI_REVISIONS = ROOT / "upstreams" / "cti-expert" / "reviewed-revisions.json"
 CTI_REFERENCES = {
@@ -61,28 +61,16 @@ def nonempty_string(value: Any) -> bool:
     return isinstance(value, str) and value.strip() != ""
 
 
-def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
+def validate_required(methodology: dict[str, Any], status: str, case_dir: Path) -> list[str]:
     errors: list[str] = []
-
-    skills = methodology.get("skills_invoked", [])
-    if not isinstance(skills, list):
-        errors.append("methodology.json: skills_invoked must be a list")
-        skills = []
-    missing_skills = REQUIRED_PLANNING_SKILLS - {
-        LEGACY_SKILL_IDS.get(skill, skill) for skill in skills if isinstance(skill, str)
-    }
-    if missing_skills:
-        errors.append(f"methodology.json: missing required planning skills {sorted(missing_skills)}")
 
     nav = methodology.get("navigator")
     if not isinstance(nav, dict):
         return errors + ["methodology.json: navigator block is required when OSINT Navigator is green"]
 
-    if nav.get("required") is not True:
-        errors.append("methodology.json: navigator.required must be true")
     if nav.get("used") is not True:
         errors.append("methodology.json: navigator.used must be true")
-    if nav.get("status") != status:
+    if nav.get("outcome") is None and nav.get("status") != status:
         errors.append(f"methodology.json: navigator.status must be {status!r}")
 
     queries = nav.get("queries", [])
@@ -90,23 +78,22 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
         errors.append("methodology.json: navigator.queries must be a non-empty list")
         queries = []
 
-    query_directions: set[str] = set()
     selected_tools: set[str] = set()
     for index, query in enumerate(queries):
         prefix = f"methodology.json: navigator.queries[{index}]"
         if not isinstance(query, dict):
             errors.append(f"{prefix} must be an object")
             continue
-        direction = query.get("direction")
-        if nonempty_string(direction):
-            query_directions.add(direction)
-        else:
+        receipt = query.get("receipt_path")
+        if receipt is not None:
+            errors.extend(validate_receipt(query, case_dir, prefix))
+        if not nonempty_string(query.get("direction")) and receipt is None:
             errors.append(f"{prefix}.direction is required")
         interface = query.get("interface", "api_fallback" if query.get("endpoint") else "cli")
         if interface == "cli":
             if not nonempty_string(query.get("command")):
                 errors.append(f"{prefix}.command is required for CLI use")
-            for key in ("catalog_id", "retrieved_at", "response_path"):
+            for key in ("retrieved_at", "response_path"):
                 if not nonempty_string(query.get(key)):
                     errors.append(f"{prefix}.{key} is required for CLI use")
         elif interface == "api_fallback":
@@ -133,21 +120,16 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
         if not isinstance(direction, dict):
             errors.append(f"{prefix} must be an object")
             continue
-        direction_name = direction.get("direction", "")
-        not_applicable = nonempty_string(direction.get("navigator_not_applicable_reason"))
         steps = direction.get("steps", [])
-        step_has_nav = False
         if isinstance(steps, list):
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     continue
                 if step.get("tool_source") == "navigator":
-                    if nonempty_string(step.get("navigator_response_path")):
-                        step_has_nav = True
-                    else:
+                    if not nonempty_string(step.get("navigator_response_path")):
                         errors.append(f"{prefix}.steps[{step_index}].navigator_response_path is required when tool_source is navigator")
-        if not not_applicable and direction_name not in query_directions and not step_has_nav:
-            errors.append(f"{prefix}: cite a Navigator response or set navigator_not_applicable_reason")
+                    elif step["navigator_response_path"] not in {query.get("response_path") for query in queries if isinstance(query, dict)}:
+                        errors.append(f"{prefix}.steps[{step_index}]: Navigator response must reference a recorded query")
 
     tools_required = methodology.get("tools_required", [])
     if not isinstance(tools_required, list):
@@ -170,11 +152,59 @@ def validate_not_required(methodology: dict[str, Any]) -> list[str]:
         return []
     if not isinstance(nav, dict):
         return ["methodology.json: navigator must be an object when present"]
-    if nav.get("required") is True and nav.get("used") is not True:
-        return ["methodology.json: navigator.required=true requires navigator.used=true"]
-    if nav.get("required") is False and nav.get("used") is False and not nonempty_string(nav.get("fallback_reason")):
-        return ["methodology.json: navigator fallback_reason is required when Navigator is skipped"]
+    errors: list[str] = []
+    if nav.get("used") is not False or nav.get("required") is not False:
+        errors.append("methodology.json: skipped Navigator requires required=false and used=false")
+    if not nonempty_string(nav.get("fallback_reason")):
+        errors.append("methodology.json: navigator fallback_reason is required when Navigator is skipped")
+    if nav.get("queries", []) != []:
+        errors.append("methodology.json: skipped Navigator must not claim performed queries")
+    plan = methodology.get("investigation_plan", [])
+    if not isinstance(plan, list):
+        return errors + ["methodology.json: investigation_plan must be a list"]
+    for direction in plan:
+        steps = direction.get("steps", []) if isinstance(direction, dict) else []
+        if isinstance(steps, list) and any(isinstance(step, dict) and step.get("tool_source") == "navigator" for step in steps):
+            errors.append("methodology.json: skipped Navigator must not claim Navigator-sourced steps")
+    return errors
+
+
+def validate_receipt(query: dict[str, Any], case_dir: Path, prefix: str) -> list[str]:
+    path = query.get("receipt_path")
+    if not isinstance(path, str) or not re.fullmatch(r"research/navigator/[0-9a-f-]{36}-receipt\.json", path):
+        return [f"{prefix}.receipt_path must name a code-owned Navigator receipt"]
+    target = case_dir / path
+    try:
+        if target.is_symlink() or not target.resolve().is_relative_to(case_dir.resolve()):
+            return [f"{prefix}.receipt_path must stay inside the case without symlinks"]
+        receipt = load_json(target)
+        encoded = receipt["response_json"]
+        json.loads(encoded)
+        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        if receipt.get("outcome") != "used" or receipt.get("response_sha256") != digest:
+            return [f"{prefix}: Navigator receipt has no successful response or its digest differs"]
+        expected = {"command": json.dumps(receipt["argv"], ensure_ascii=False, separators=(",", ":")),
+                    "retrieved_at": receipt["retrieved_at"], "response_path": path,
+                    "response_sha256": digest}
+        if any(query.get(key) != value for key, value in expected.items()):
+            return [f"{prefix}: Navigator provenance differs from its code-owned receipt"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return [f"{prefix}: unreadable or malformed Navigator receipt"]
     return []
+
+
+def validate_navigator(methodology: dict[str, Any], required: bool, status: str, case_dir: Path) -> list[str]:
+    nav = methodology.get("navigator")
+    if not isinstance(nav, dict):
+        return validate_required(methodology, status, case_dir) if required else validate_not_required(methodology)
+    outcome = nav.get("outcome")
+    if outcome is not None and outcome not in {"used", "not-needed", "unavailable", "policy-skipped"}:
+        return ["methodology.json: navigator.outcome must be used, not-needed, unavailable or policy-skipped"]
+    if outcome in {"not-needed", "unavailable", "policy-skipped"}:
+        return validate_not_required(methodology)
+    if nav.get("used") is True or outcome == "used" or required:
+        return validate_required(methodology, status, case_dir)
+    return validate_not_required(methodology)
 
 
 # The one reference a method takes on a tier, as the error names it. r5 norway
@@ -296,7 +326,11 @@ def main() -> int:
         return 1
 
     required, status = navigator_status(config)
-    errors = validate_required(methodology, status) if required else validate_not_required(methodology)
+    errors = validate_navigator(methodology, required, status, case_dir)
+    # e2e r1 (31B): this gate passed navigator.status "not-needed", which the
+    # methodology schema refused, and research-triage.py stopped after the
+    # member approved. The gate applies the same schema, so the two cannot drift.
+    errors.extend(f"methodology.json: {error}" for error in schema_check.load(METHODOLOGY_SCHEMA).errors(methodology))
     active_sha = str(cti_lock.get("active_sha", ""))
     reviewed_shas = {
         item.get("sha")

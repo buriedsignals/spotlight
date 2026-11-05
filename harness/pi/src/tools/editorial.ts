@@ -1,8 +1,8 @@
 // Newsroom edition tools. Each asks the launcher, the only process holding the
 // newsroom token, to call the newsroom's Editorial MCP (src/editorial.ts).
-// They replace query_vault (prior knowledge) and decision_signals (decision
-// checks) in the newsroom edition, and add the Submit step at Ingest
-// (roles.ts, NEWSROOM_TOOL_SWAPS).
+// They replace query_vault (prior knowledge) in the newsroom edition and add
+// the newsroom's own decision checks and the Submit step (the orchestrator's
+// newsroomTools in harness/composition.json).
 import { randomUUID } from 'node:crypto';
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';

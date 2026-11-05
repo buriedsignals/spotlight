@@ -99,7 +99,7 @@
             "integer",
             "string"
           ],
-          "description": "The fact-check row this claim's assessment comes from; required when the finding has more than one."
+          "description": "Omit when the finding has one fact-check row, including a row without an id. When there are multiple rows, copy the chosen row's actual id as fact_check_id, not its array position."
         },
         "origin_expression_id": {
           "$ref": "#/definitions/text",

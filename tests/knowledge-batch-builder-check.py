@@ -10,6 +10,7 @@ gives a changed admitted record its next version.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -154,6 +155,100 @@ def main() -> int:
                 "a passage anchored to a derivative does not name it")
         require(batch["claims"][0]["provenance"] == {"method": "agent_candidate", "model": "analyst-model-1"}, "claim provenance")
         first_ids = {r["id"] for array in RULES.ARRAYS for r in batch.get(array, [])}
+
+        # r12 (r12-ingest-audit B1): a verified row with no fetched source on
+        # record (F1's shape: the investigator's item by id, one source). The proposal cannot fix it, so --check-proposal says the
+        # case refuses (3), and the harness stops honestly instead of looping.
+        original_check = read(case, "fact-check.json")
+        unfetched = json.loads(json.dumps(original_check))
+        # A written access_method on the investigator's file is not a re-fetch
+        # (Codex review of fix11): only the fact-checker's own acquisition is.
+        filing = case / "research" / "filing.txt"
+        for entry in unfetched["claims"][0]["evidence_for"]:
+            entry.update({"access_method": "full_text", "evidence_bundle_id": read(case, "evidence-bundle.json")["items"][0]["id"],
+                          "local_file": "research/filing.txt",
+                          "source_ref": {"path": "research/filing.txt", "line_start": 2, "line_end": 2},
+                          "sha256": hashlib.sha256(filing.read_bytes()).hexdigest()})
+        write(case, "fact-check.json", unfetched)
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
+                                 input=json.dumps(PROPOSAL), capture_output=True, text=True)
+        require(checked.returncode == 3 and "the case cannot be built" in checked.stderr
+                and "needs a fetched source and linked passages" in checked.stderr,
+                f"a verified row with no fetched source was blamed on the proposal: {checked.returncode} {checked.stderr}")
+        write(case, "fact-check.json", original_check)
+
+        # review-simp.md #1: a row with no confidence (judge_finding before
+        # simp-review) cannot be fixed by the proposal either: exit 3, not 2.
+        no_confidence = json.loads(json.dumps(original_check))
+        no_confidence["claims"][0].pop("confidence", None)
+        write(case, "fact-check.json", no_confidence)
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
+                                 input=json.dumps(PROPOSAL), capture_output=True, text=True)
+        require(checked.returncode == 3 and "needs a 1.1 verdict and a confidence" in checked.stderr,
+                f"a fact-check row with no confidence was blamed on the proposal: {checked.returncode} {checked.stderr}")
+        write(case, "fact-check.json", original_check)
+
+        # Codex review of simp-review: when another row for the finding is
+        # complete, selecting the incomplete one is the proposal's to fix (exit 2).
+        two_rows = json.loads(json.dumps(original_check))
+        two_rows["claims"][0]["id"] = "FC-complete"
+        incomplete = {**json.loads(json.dumps(two_rows["claims"][0])), "id": "FC-incomplete"}
+        incomplete.pop("confidence", None)
+        two_rows["claims"].append(incomplete)
+        write(case, "fact-check.json", two_rows)
+        selecting = json.loads(json.dumps(PROPOSAL))
+        selecting["claims"][0]["fact_check_id"] = "FC-incomplete"
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
+                                 input=json.dumps(selecting), capture_output=True, text=True)
+        require(checked.returncode == 2 and "select a complete row with fact_check_id" in checked.stderr
+                and "FC-complete" in checked.stderr,
+                f"selecting the incomplete of two rows was not a proposal refusal: {checked.returncode} {checked.stderr}")
+        # A complete row with no id cannot be selected, so the case cannot be built (exit 3).
+        two_rows["claims"][0].pop("id")
+        write(case, "fact-check.json", two_rows)
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
+                                 input=json.dumps(selecting), capture_output=True, text=True)
+        require(checked.returncode == 3, f"an unselectable complete row was offered to the proposal: {checked.returncode} {checked.stderr}")
+        write(case, "fact-check.json", original_check)
+
+        # A single idless fact-check row needs no invented selector. A wrong
+        # selector is still refused with an actionable correction.
+        original_check = read(case, "fact-check.json")
+        idless = json.loads(json.dumps(original_check))
+        idless["claims"][0].pop("id", None)
+        write(case, "fact-check.json", idless)
+        require(build(case).returncode == 0, "the unique idless row should not need a selector")
+        selected = json.loads(json.dumps(PROPOSAL))
+        selected["claims"][0]["fact_check_id"] = "None"
+        write(case, "knowledge-proposal.json", selected)
+        invalid = build(case)
+        require(invalid.returncode == 2 and "omit fact_check_id" in invalid.stderr,
+                f"a missing id must not match the literal string None: {invalid.stderr}")
+        selected["claims"][0]["fact_check_id"] = 2
+        write(case, "knowledge-proposal.json", selected)
+        invalid = build(case)
+        require(invalid.returncode == 2 and "omit fact_check_id" in invalid.stderr,
+                f"an invalid selector must explain how to select the unique row: {invalid.stderr}")
+        multiple = json.loads(json.dumps(idless))
+        multiple["claims"][0]["id"] = 17
+        other = json.loads(json.dumps(multiple["claims"][0]))
+        other["id"] = 29
+        multiple["claims"].append(other)
+        write(case, "fact-check.json", multiple)
+        selected["claims"][0]["fact_check_id"] = 29
+        write(case, "knowledge-proposal.json", selected)
+        require(build(case).returncode == 0, "an existing row id must select among multiple rows")
+        multiple["claims"][0]["id"] = 0
+        write(case, "fact-check.json", multiple)
+        selected["claims"][0]["fact_check_id"] = "0"
+        write(case, "knowledge-proposal.json", selected)
+        require(build(case).returncode == 0, "a real zero id must remain selectable")
+        selected["claims"][0]["fact_check_id"] = 2
+        write(case, "knowledge-proposal.json", selected)
+        invalid = build(case)
+        require(invalid.returncode == 2 and "row.id" in invalid.stderr, f"an invalid selector must name the real id field: {invalid.stderr}")
+        write(case, "fact-check.json", original_check)
+        write(case, "knowledge-proposal.json", PROPOSAL)
 
         # Identifiers the analyst found stay on this computer: in the
         # mentions file for the register lookup, never in the batch.

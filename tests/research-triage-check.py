@@ -508,6 +508,36 @@ def test_cli_case() -> None:
         require("local" not in providers and any("KEV_TEST_KEY" in note for note in notes), f"missing credential ignored: {notes}")
 
 
+
+def test_cli_case_jev_with_decisions_enabled() -> None:
+    """Engine's cloud install (decisions.enabled true, research_triage.backend "jev"):
+    triage still runs after decision checks left the Pi harness (dispatch audit,
+    2026-11-02). The Jev provider is faked on the decision endpoint."""
+    with tempfile.TemporaryDirectory() as tmp:
+        case = Path(tmp) / "case"
+        (case / "data").mkdir(parents=True)
+        leads_doc = json.loads((FIXTURES / "research-leads.sample.json").read_text(encoding="utf-8"))
+        envelope = leads_doc["leads"][0]
+        leads_doc["leads"] = [dict(envelope, lead=item) for item in (lead(), lead("s", stored="snippet"))]
+        methodology = json.loads((FIXTURES / "methodology-research.sample.json").read_text(encoding="utf-8"))
+        (case / "data" / "leads.json").write_text(json.dumps(leads_doc))
+        (case / "data" / "methodology.json").write_text(json.dumps(methodology))
+        config = Path(tmp) / "config.json"
+        seen: list = []
+        server = kev_server(seen)
+        try:
+            config.write_text(json.dumps({"integrations": {"decisions": {"enabled": True, "research_triage": {"backend": "jev"}, "endpoint": {
+                "url": f"http://127.0.0.1:{server.server_port}/v1/systemone", "api": "openrouter-decisions"}}}}))
+            env = {**os.environ, "SPOTLIGHT_CONFIG": str(config), "OPENROUTER_API_KEY": "fake-jev-key"}
+            done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case)], env=env,
+                                  capture_output=True, text=True, check=False)
+        finally:
+            server.shutdown()
+        require(done.returncode == 0, done.stderr)
+        out = json.loads((case / "data" / "research-triage.json").read_text())
+        require(seen and all(r["backend"] == "jev" for r in out["leads"]), f"Jev did not triage: {out['leads']} {seen}")
+        require(rr.triage_violations(out) == [], "written triage breaks D7")
+
 def main() -> int:
     tests = [value for name, value in globals().items() if name.startswith("test_")]
     for test in tests:

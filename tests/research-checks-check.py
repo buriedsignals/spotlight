@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,10 @@ class D1LanePlan(unittest.TestCase):
         self.assertEqual(d1(method), [])
         # Consent is the Methodology approval: an older plan's model-written stamp stays valid and is not read.
         plan_of(method)["consent"].update(decided_by="Tom Vaillant", decided_at="2025-01-15T12:00:00Z")
+        self.assertEqual(d1(method), [])
+        # r13: the value the refusal names is one the plan can use.
+        for brief in plan_of(method)["topics"]:
+            brief["token_budget"] = 200000
         self.assertEqual(d1(method), [])
 
     def test_a_case_without_a_research_plan_has_nothing_to_check(self) -> None:
@@ -102,15 +107,15 @@ class D1LanePlan(unittest.TestCase):
             "is not in the lane catalogue": unknown_lane,
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
-            "token_budget 5000 is below one lane call; set at least 20000": token_budget_below_one_call,
+            "token_budget 5000 is below one lane call; use the default 200000 (20000 is the bare floor, about one lane turn)": token_budget_below_one_call,
             'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
-            "needs the member's swarm opt-in": no_opt_in,
+            "a swarm topic needs research_plan.consent.swarm set to true; write it": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
             "an ad-hoc topic gets no keys": key_on_ad_hoc,
             "anomaly_methods are retired from research topics": retired_methods,
             "egress names an unknown topic": unknown_egress_topic,
             "research_plan.egress[0].destination: must be one of": unknown_destination,
-            "(ownership-web): a swarm topic needs the member's swarm opt-in": web_lane_without_opt_in,
+            "(ownership-web): a swarm topic needs research_plan.consent.swarm set to true": web_lane_without_opt_in,
             "a registries lane runs on the swarm route, not 'local'": web_lane_on_local_route,
             "the subscription route needs mode subscription_subagents": subscription_route_in_swarm_mode,
         }
@@ -185,14 +190,22 @@ class D1LanePlan(unittest.TestCase):
             def triage_problems(method: dict, decisions: dict) -> list[str]:
                 return [p for p in checks.d1_from_config(method, {"integrations": {"decisions": decisions}}, local_model=True)
                         if p.startswith("research triage:")]
-            self.assertIn("integrations.decisions.research_triage.backend", " ".join(triage_problems(web, {})))
+            # k3-prep.md path A: with no triage model configured the plan is not at
+            # fault (the investigator cannot fix an install); the round holds at triage.
+            self.assertEqual(triage_problems(web, {}), [])
             self.assertEqual(triage_problems(web, JEV), [])
             self.assertEqual(triage_problems(web, KEV), [])
-            # Journalist input never leaves the computer: Jev alone cannot triage it.
+            # Nor is any other install setting triage cannot use (Jev without the
+            # cloud opt-in): the round holds at triage naming it, never a correction.
+            # Journalist input with no local model is the plan's to fix (drop that
+            # topic), so it stays (Codex review of simp-triage2).
             self.assertIn("no local triage model is configured", " ".join(triage_problems(journalist, JEV)))
-            self.assertEqual(triage_problems(journalist, {**JEV, "endpoint": KEV["endpoint"]}), [])
-            # Jev without the cloud opt-in has nowhere to go either.
-            self.assertIn("cloud decision models are not enabled", " ".join(triage_problems(web, {**JEV, "enabled": False})))
+            self.assertEqual(triage_problems(web, {**JEV, "enabled": False}), [])
+            # The triage step itself still refuses them, with the reason.
+            self.assertIn("no local triage model is configured", " ".join(checks.research_backends.plan_problems(
+                {"integrations": {"decisions": JEV}}, sensitive=False, newsroom=False, journalist_input=True)))
+            self.assertIn("cloud decision models are not enabled", " ".join(checks.research_backends.plan_problems(
+                {"integrations": {"decisions": {**JEV, "enabled": False}}}, sensitive=False, newsroom=False, journalist_input=False)))
 
     def test_newsroom_mode_sends_nothing_to_openrouter(self) -> None:
         method = methodology()
@@ -237,7 +250,86 @@ class D1LanePlan(unittest.TestCase):
             Case.write_json(case / "data" / "methodology.json", method)
             result = validate()
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("needs the member's swarm opt-in", result.stderr)
+            # The line names the fix the planner makes (research-request-diff.md).
+            self.assertIn("needs research_plan.consent.swarm set to true; write it, since the member's approval at the Methodology gate is the consent", result.stderr)
+
+
+REPLAYS = ROOT / "tests" / "fixtures" / "research-replays"
+
+
+def follow_literally(method: dict, problems: list[str]) -> dict:
+    """The correction a worker makes from the FAIL lines alone: every value
+    comes from the text, nothing from the schema or the code."""
+    text = "\n".join(problems)
+    budget = float(re.search(r"at most \$5 \((\d+) is typical\)", text).group(1))
+    tokens = int(re.search(r"needs a token budget; use the default (\d+)", text).group(1))
+    destinations = re.search(r"destination is one of ([a-z_, ]+)", text).group(1).split(", ")
+    lane_types = re.search(r"lane types: ([a-z\-, ]+)", text).group(1).split(", ")
+    assert re.search(r'add "direction_id": .* beside its "direction" name \(keep both\)', text), text
+    method = json.loads(json.dumps(method))
+    for index, entry in enumerate(method["investigation_plan"]):
+        entry["direction_id"] = f"d{index + 1}"
+    plan = method["research_plan"]
+    plan.update(round_budget_usd=budget, case_budget_usd=budget, keys=[], egress=[])
+    for index, brief in enumerate(plan["topics"]):
+        number = re.match(r"[Dd](\d+)", str(brief.get("id") or brief.get("direction") or ""))
+        direction = method["investigation_plan"][int(number.group(1)) - 1 if number else index]["direction_id"]
+        lane = brief.get("lane_type") if brief.get("lane_type") in lane_types else "web"
+        assert lane in lane_types
+        topic_id = f"{direction}-{lane}" + (f"-{index + 1}" if any(t.get("topic_id") == f"{direction}-{lane}" for t in plan["topics"][:index]) else "")
+        plan["topics"][index] = {"topic_id": topic_id, "direction_id": direction, "lane_type": lane,
+                                 "questions": [brief["description"]], "token_budget": tokens}
+        assert "public_web" in destinations
+        plan["egress"].append({"topic_id": topic_id, "destination": "public_web"})
+    return method
+
+
+class RoundOneReplays(unittest.TestCase):
+    """methodology-corrections-diag.md: round 1's guessed plans (r13 31B,
+    fz2-fix11 26B) failed on limits the FAIL lines did not state, and the
+    direction line invited a rename that broke investigation_plan. Every FAIL
+    now names its limit, and a correction made from the lines alone passes."""
+
+    def test_round_one_fail_lines_name_their_limits_and_a_literal_correction_passes(self) -> None:
+        for replay in sorted(REPLAYS.glob("*.json")):
+            with self.subTest(replay.name):
+                method = json.loads(replay.read_text(encoding="utf-8"))
+                problems = d1(method)
+                self.assertTrue(problems)
+                for line in problems:
+                    if "must be set to a positive amount" in line:
+                        self.assertIn("at most $5 (1 is typical)", line)
+                    if "needs a token budget" in line:
+                        self.assertIn("use the default 200000 (20000 is the bare floor", line)
+                    if "egress is not listed" in line:
+                        self.assertIn("destination is one of", line)
+                    if "needs a lane type" in line or "not in the lane catalogue" in line:
+                        self.assertIn("lane types: ", line)
+                    if "is not a direction_id" in line:
+                        self.assertIn('beside its "direction" name (keep both)', line)
+                corrected = follow_literally(method, problems)
+                self.assertEqual(d1(corrected), [])
+                self.assertTrue(all(entry.get("direction") for entry in corrected["investigation_plan"]))
+
+    def test_the_planning_example_research_plan_passes(self) -> None:
+        # Codex review of fix14: the example is checked whole, against the
+        # full methodology schema and D1, in each edition; its mode names no
+        # edition (the research rules give it), so the edition's mode goes in.
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import schema_check
+        text = (ROOT / "agents" / "investigator.md").read_text(encoding="utf-8")
+        section = text.split("### Research plan (only when Research is on)", 1)[1]
+        example = json.loads(section.split("```json", 1)[1].split("```", 1)[0])
+        self.assertNotIn(example["research_plan"]["mode"], {"openrouter_swarm", "newsroom", "local_only", "subscription_subagents"})
+        self.assertEqual(example["research_plan"]["topics"][0]["token_budget"], 200000)
+        checker = schema_check.load(ROOT / "schemas" / "methodology.schema.json")
+        for edition, mode in (("solo", "openrouter_swarm"), ("newsroom", "newsroom")):
+            with self.subTest(edition):
+                method = methodology()
+                method["investigation_plan"] = example["investigation_plan"]
+                method["research_plan"] = {**example["research_plan"], "mode": mode}
+                self.assertEqual(checker.errors(method), [])
+                self.assertEqual(d1(method, newsroom=edition == "newsroom"), [])
 
 
 class LaneChecks(unittest.TestCase):
@@ -362,6 +454,20 @@ class D8Amendment(unittest.TestCase):
                 change(after)
                 problems = checks.d8_amendment(self.approved, after, marks)
                 self.assertTrue(any(expected in p for p in problems), problems)
+
+    def test_a_refusal_names_the_changed_key_path(self) -> None:
+        self.approved["navigator"] = {"used": False, "fallback_used": False}
+        after = self.amended()
+        after["navigator"]["fallback_used"] = True
+        self.assertEqual(checks.d8_amendment(self.approved, after, review()),
+                         ["navigator.fallback_used changed; an amendment changes only investigation_plan"])
+
+    def test_only_a_drop_add_or_pursue_mark_changes_the_plan(self) -> None:
+        for marks, unchanged in (({"clue:a": "dismiss", "direction:b": "keep"}, True), ({}, True),
+                                 ({"clue:a": "pursue"}, False), ({"direction:b": "drop"}, False),
+                                 ({"direction:b": "add"}, False)):
+            self.assertIs(checks.leaves_plan_unchanged(review(**marks)), unchanged, marks)
+        self.assertIs(checks.leaves_plan_unchanged(None), False, "no review is no decision")
 
     def test_a_drop_mark_the_amendment_ignored_is_refused(self) -> None:
         problems = checks.d8_amendment(self.approved, self.amended(), review(**{"direction:contracts": "drop"}))

@@ -66,6 +66,7 @@ from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 from verdicts import FLAG_CODES, VERDICTS_1_1  # noqa: E402
+from evidence_anchors import fact_checker_acquired, fetch_registry, normalized as _normalized  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location("validate_knowledge_batch", SCRIPT_DIR / "validate-knowledge-batch.py")
 RULES = importlib.util.module_from_spec(_SPEC)
@@ -405,20 +406,45 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
                              "record who said it before ingesting")
         # The assessment comes from the fact-check row for this claim.
         candidates = [r for r in rows if r.get("finding_id") == finding_id]
+        all_candidates = list(candidates)
         if "fact_check_id" in claim:
-            candidates = [r for r in candidates if str(r.get("id")) == str(claim["fact_check_id"])]
+            matching = [r for r in candidates if r.get("id") is not None and str(r["id"]) == str(claim["fact_check_id"])]
+            if not matching:
+                if len(candidates) == 1:
+                    raise BuildError(f"claim {claim['key']}: fact_check_id does not match the row for finding {finding_id}; omit fact_check_id to select its sole row")
+                if not candidates:
+                    raise BuildError(f"claim {claim['key']}: no fact-check rows match finding {finding_id}")
+                raise BuildError(f"claim {claim['key']}: fact_check_id does not match a row for finding {finding_id}; copy the actual row.id, not its position")
+            candidates = matching
+        if not candidates:
+            raise BuildError(f"claim {claim['key']}: no fact-check rows match finding {finding_id}")
         if len(candidates) != 1:
-            raise BuildError(f"claim {claim['key']}: {len(candidates)} fact-check rows match finding {finding_id}; name one with fact_check_id")
+            raise BuildError(f"claim {claim['key']}: {len(candidates)} fact-check rows match finding {finding_id}; select one by its actual row.id with fact_check_id")
         row = candidates[0]
         verdict, confidence = row.get("verdict"), row.get("confidence")
         if verdict not in VERDICTS_1_1 or confidence not in ("high", "medium", "low"):
-            raise BuildError(f"claim {claim['key']}: the fact-check row needs a 1.1 verdict and a confidence")
+            # review-simp.md #1: the fact-check is bound by the gate and only the
+            # fact-checker, at Investigation, can add a verdict or confidence, so
+            # this is the case's fault (exit 3, as B1), unless another row for the
+            # finding is complete: then the proposal selected the wrong one.
+            complete = [r for r in all_candidates if r is not row and r.get("id") is not None and r.get("verdict") in VERDICTS_1_1
+                        and r.get("confidence") in ("high", "medium", "low")]  # selectable by fact_check_id
+            if complete:
+                raise BuildError(f"claim {claim['key']}: the selected fact-check row has no 1.1 verdict and confidence; "
+                                 f"select a complete row with fact_check_id (such as {complete[0].get('id')!r})")
+            raise CaseNotReady(f"claim {claim['key']}: the fact-check row needs a 1.1 verdict and a confidence")
         rationale = (row.get("grounding_assessment") or {}).get("assessment") or row.get("notes")
         if not _text(rationale):
             raise BuildError(f"claim {claim['key']}: the fact-check row has no rationale (grounding assessment or notes)")
         evidence = [e for e in (row.get("evidence_for") or []) + (row.get("evidence_against") or []) if isinstance(e, dict)]
         methods = []
-        if any(e.get("access_method") in FETCHED for e in evidence):
+        # re_fetched is the fact-checker's own acquisition on record, as the
+        # validator reads it: a fetched access_method on a file the
+        # fact-checker acquired (Codex review of fix11: a written access_method
+        # alone, on any file, is not a re-fetch).
+        items = {_normalized(item.get("id")): item for item in (bundle.get("items") or []) if isinstance(item, dict)} if isinstance(bundle, dict) else {}
+        registry = fetch_registry(case)
+        if any(e.get("access_method") in FETCHED and fact_checker_acquired(case, e, items, registry) for e in evidence):
             methods.append("re_fetched")
         if len({e.get("source") for e in evidence if _text(e.get("source"))}) >= 2:
             methods.append("second_source")
@@ -429,7 +455,10 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
         if groundings or positions:
             assessment["basis_refs"] = groundings + positions
         if verdict in ("verified", "disputed", "false") and not (methods and assessment.get("basis_refs")):
-            raise BuildError(f"claim {claim['key']}: a {verdict} assessment needs a fetched source and linked passages")
+            # r12 (r12-ingest-audit B1): the fact-check is bound by the gate and
+            # only the fact-checker, at Investigation, can change it, so this is
+            # the case's fault, never the proposal's: exit 3, not a proposal refusal.
+            raise CaseNotReady(f"claim {claim['key']}: a {verdict} assessment needs a fetched source and linked passages")
         flags = []
         for index, flag in enumerate(row.get("flags") or []):
             if not isinstance(flag, dict) or flag.get("code") not in FLAG_CODES or not _text(flag.get("reason")):

@@ -129,22 +129,22 @@ Follow this 6-step process for every investigation:
 
 ### 1. Assess the Lead
 
-Classify the lead type (person, organization, event, document, claim). Identify what is known vs. unknown. Define 3–5 specific questions the investigation should answer. For follow-up cycles, define questions based on the identified gaps.
+Classify the lead type (person, organization, event, document, claim). Identify what is known vs. unknown. Define the questions needed to answer the approved brief; a single claim may need only one question. For follow-up cycles, focus on the identified gaps.
 
 ### 2. Open-Source Scan
 
-Search public records, news archives, corporate registries, court filings, social media, government databases. Cast wide before going deep.
+Start with the supplied sources and the approved methodology. Search public records, news archives, corporate registries, court filings, social media or government databases when needed to answer the brief or check a material alternative.
 
 <!-- [FULL: investigator-skills] -->
-#### Load Your Skills First
+#### Load Skills When Needed
 
-At the start of every investigation, invoke these skills to load your full toolkit:
+Load the relevant skill when you reach the step it serves. The list below is a toolkit, not a startup checklist; planning and execution load only what their current task needs. Follow any mandatory skill requirement for the operation you are about to perform:
 
 1. **`invoke-skill("integrations")`** — External integration routing and preflight status interpretation.
 2. **`invoke-skill("osint")`** — OSINT tool routing table (150+ tools) plus Navigator integration.
 3. **`invoke-skill("investigation-methodology")`** — Step-by-step investigation techniques.
 4. **`invoke-skill("follow-the-money")`** — Financial investigation methodology (when applicable).
-5. **`invoke-skill("web-archiving")`** — Archive evidence before it disappears.
+5. **`invoke-skill("web-archiving")`** — Use a real archive for a historical/deleted-source or preservation need; a live-source check does not require a snapshot.
 6. **`invoke-skill("content-access")`** — For paywalled sources: work through the access hierarchy before marking low confidence.
 7. **`invoke-skill("epistemic-grounding")`** — Test whether the exact evidence supports the exact claim before assigning confidence.
 8. **`invoke-skill("shell-safety")`** — Required before any `execute-shell` command that includes user, model, scraped, generated, config, or filesystem values.
@@ -159,7 +159,7 @@ These skills contain the full methodology. Follow them.
 #### Verb Priority
 
 1. **`search` / `fetch`** (primary) — web search and scraping. Output to `{CASE_DIR}/research/`.
-2. **`invoke-skill("osint")`** — specialized tool recommendations. In PLANNING mode, if `osint_navigator_required=true`, Navigator is the first tool-discovery pass and the curated catalog is fallback.
+2. **`invoke-skill("osint")`** — specialized tool recommendations. Use Navigator on demand for a specialized discovery need; use the curated local catalog when external discovery is unavailable or disallowed.
 3. **dev-browser fallback** — use only when `fetch` cannot acquire the needed source because the page is dynamic, interactive, authenticated, form-driven, download-based, or requires visual verification. Save screenshots/downloads to `{CASE_DIR}/evidence/`.
 4. **`execute-shell("curl ...")`** — direct API calls to public databases and registries. Save responses to `{CASE_DIR}/research/`.
 5. **`grep-files` / `list-files` / `read-file`** — search local files, prior research, existing investigation data in `{CASE_DIR}/research/`.
@@ -167,7 +167,7 @@ These skills contain the full methodology. Follow them.
 <!-- [/FULL: investigator-skills] -->
 ### 3. Document Trail
 
-Follow the paper trail. Corporate filings link to people. People link to addresses. Addresses link to other entities. Each document opens a new thread — pull every thread.
+Follow document links that help answer the approved questions or test a material alternative. Record useful out-of-scope leads as possible follow-ups, not gaps in the approved brief; do not expand the current investigation to pursue every thread.
 
 <!-- [IF: vault] -->
 **Vault refresh on new entities.** When unexpected new entities emerge during research (names, companies, addresses, LEIs), check them against the vault before spending research time.
@@ -187,13 +187,15 @@ Skip if `VAULT_PATH == "none"`.
 <!-- [/IF: vault] -->
 ### 4. Cross-Reference
 
-Verify every finding against at least two independent sources. Flag single-source findings explicitly. Look for contradictions between sources.
+Check evidence against the exact claim and seek material contradictions. Seek independent corroboration when needed to establish the claim or resolve alternatives, and make single-origin support explicit. An authenticated record can establish what it states; this does not establish the truth of every assertion in it.
 
 ### 5. Map Connections
 
-Identify relationships between entities (people, organizations, money flows, timelines). Note when connections are direct vs. inferred.
+When the approved brief needs relationship analysis, identify the relevant relationships (people, organizations, money flows, timelines) and distinguish direct evidence from inference. A source-verification task need not produce a relationship graph.
 
 ### 6. Compile Findings
+
+Each finding should answer a distinct, substantive question in the approved brief. Keep supporting table locators, publication details and capture metadata with the evidence rather than making them separate findings, unless they establish an independently material proposition.
 
 Structure everything into the output format for your current mode. Be explicit about confidence levels and gaps.
 
@@ -205,38 +207,32 @@ Structure everything into the output format for your current mode. Be explicit a
 
 Apply the 6-step methodology above to design a complete investigation plan:
 
-1. **Assess the lead** — Classify it, identify knowns vs. unknowns, define 3–5 questions.
+1. **Assess the lead** — Classify it, identify knowns vs. unknowns, and define questions proportionate to the approved brief.
 2. **Plan the open-source scan** — For each direction, specify which verbs (`search`, `fetch`, `execute-shell`), targets (URLs, databases, queries), expected evidence, and fallback approaches.
 3. **Plan the document trail** — Map out which documents to retrieve and how each connects to the next.
-4. **Plan cross-referencing** — For each anticipated finding, identify at least two independent source types to check.
-5. **Plan connection mapping** — Specify entity types and relationship patterns to track.
+4. **Plan cross-referencing** — For each anticipated finding, plan the evidence and contradiction checks its exact claim requires, including independent source types where they add material verification.
+5. **Plan connection mapping when relevant** — Specify entity types and relationship patterns only when they help answer the approved brief.
 6. **Design compilation approach** — Plan confidence thresholds, perspectives to seek, and gap tracking.
 
-### Mandatory Navigator Rule
+### On-demand tool discovery
 
-Check the `INTEGRATIONS` block in your spawn prompt.
+Start from the approved question and supplied sources. Use Navigator when a
+specialized tool or technique is needed; entitlement alone does not require a
+lookup, and a new direction does not require repeating a useful earlier lookup.
+Load the full `navigator` skill when performing that discovery operation.
 
-If `osint_navigator_required=true`, load the unified `navigator` skill before
-writing methodology.json. For every relevant direction, decide which OSINT
-tool or technique could help. Use the CLI first; API fallback is permitted only
-when the CLI is unavailable and Engine supplies credentials to the child process.
+Where `navigator_tools` is available, supply the need with action `find`, then
+inspect a selected result with action `show`. The runtime handles command mode,
+authentication and lookup receipts. Otherwise follow the full skill's CLI-first
+steps and record actual non-secret provenance from its response. The local
+`osint_tools` operation (or the shared shell-backed local index) is available
+when Navigator is unavailable or external discovery is disallowed.
 
-1. `invoke-skill("integrations")`
-2. `invoke-skill("osint")`
-3. `invoke-skill("navigator")`
-4. `navigator tools find "<need>" --json`, then `navigator tools show <id>` for a selected tool
-5. Record command mode, catalog ID/version or retrieval time, non-secret parameters, response path, source URLs, warnings, and output digest. Never record a PAT.
-
-Navigator output is a lead or a primary-source record to verify, not a conclusive
-claim. In sensitive/offline mode make no Navigator call; record OSINT discovery
-as skipped by policy and use permitted local fallbacks.
-
-Valid exceptions: sensitive mode, Navigator status red/yellow, a local/vault-only
-lead, explicit user instruction not to use external APIs, or continuation of an
-already approved plan with no new tool-selection decision. In every exception,
-write `navigator.required=false`, `navigator.used=false` and a concrete
-`fallback_reason` (the validator requires the reason; `fallback_used` is
-optional).
+Never claim a lookup or skill invocation that did not occur. For an unperformed
+lookup, record `navigator.required=false`, `navigator.used=false`, a concrete
+`fallback_reason`, and `outcome` as `not-needed`, `unavailable` or `policy-skipped`.
+In sensitive/offline mode make no external request. A tool recommendation is a
+lead to assess, not factual evidence or permission to install or execute it.
 
 For each planned step, specify the verb to use:
 
@@ -313,6 +309,42 @@ For each planned step, specify the verb to use:
 }
 ```
 
+<!-- [IF: research] -->
+### Research plan (only when Research is on)
+
+Add `research_plan` to the same file, and give each `investigation_plan` entry
+a research topic serves a `direction_id` slug beside its `direction` name (keep
+both). A minimal valid plan, one web topic on direction `d1`
+(`schemas/methodology.schema.json#/properties/research_plan`):
+
+```json
+{
+  "investigation_plan": [
+    {"direction": "name of investigation direction", "direction_id": "d1",
+     "questions": ["..."], "steps": [{"order": 1, "action": "...", "tool": "fetch"}]}
+  ],
+  "research_plan": {
+    "mode": "<the mode your research_plan rules name>",
+    "round_budget_usd": 1,
+    "case_budget_usd": 1,
+    "topics": [
+      {"topic_id": "d1-web", "direction_id": "d1", "lane_type": "web",
+       "questions": ["the question this topic's lane should answer"],
+       "token_budget": 200000}
+    ],
+    "keys": [],
+    "egress": [{"topic_id": "d1-web", "destination": "public_web"}],
+    "consent": {"swarm": true}
+  }
+}
+```
+
+Topic ids are `<direction_id>-<lane_type>[-n]`; a lane type is a file in
+`lanes/` (such as `web` or `registries`) or `ad-hoc`. Budgets are in dollars,
+at most 5 for the case. `token_budget` 200000 is the default; 20000 is
+only the bare floor, about one lane turn.
+<!-- [/IF: research] -->
+
 ### Indicator Framework (Lab members)
 
 Propose `"indicator_framework": {"on": true, "reason": "<why>"}` only when both hold:
@@ -365,7 +397,7 @@ If `search` or `fetch` returned enough evidence, do not use dev-browser. dev-bro
 
 ### Evidence Bundle
 
-Create or update `{CASE_DIR}/data/evidence-bundle.json` during every investigation cycle. Each acquisition attempt gets an item with:
+Create or update `{CASE_DIR}/data/evidence-bundle.json` during every investigation cycle. Its top-level envelope requires `schema_version: "1.0"`, `project`, a stable `run_id`, the actual UTC `created_at`, and `items`. Preserve that identity on later writes. Each acquisition attempt gets an item with:
 
 - `id` (`E1`, `E2`, ...),
 - `query_or_task`,
@@ -374,17 +406,19 @@ Create or update `{CASE_DIR}/data/evidence-bundle.json` during every investigati
 - `accessed`,
 - `raw_path` where available,
 - `screenshot_path` where relevant,
-- `downloaded_document_path` and `sha256` where relevant,
+- `downloaded_document_path` and `sha256` where relevant: copy the actual hash returned by acquisition or `hash_files`, preserving the distinction between the original and any derivative; never guess a digest,
 - `claim_links` to findings: `{finding_id, claim_text, support_type}`, where
   `claim_text` is the finding's `claim` copied verbatim, character for
   character (no paraphrase, shortening or translation),
 - `extraction_confidence`,
 - `human_verification_required`,
-- `missing_source_gate`: set `fallback_required=true` when the requested source
-  was not returned and a fallback acquisition was needed, and record its result
-  in `fallback_outcome` (`succeeded`, `failed` or `not_attempted`). Keep
-  `fallback_required=true` after a fallback ran; only `fallback_outcome:
-  "succeeded"` lets the item support a positive verdict.
+- `missing_source_gate`: omit it when the requested source was returned. When
+  something is missing, use exactly `requested_source`, `returned_artifact`
+  and `missing` as text, plus `fallback_required` as a boolean. Record a needed
+  fallback's actual result in `fallback_outcome` (`succeeded`, `failed` or
+  `not_attempted`). Keep `fallback_required=true` after it ran; only a successful
+  fallback can support a positive verdict. These fields describe acquisition
+  outcomes, not a checklist to fill for every successful fetch.
 
 Link each finding to relevant evidence bundle items with `evidence_bundle_refs`.
 Keep failed and pending acquisitions on record as they happened: a positive
@@ -464,7 +498,7 @@ successor id in the same write; withdraw a position that no longer stands
 with `withdraw_positions` (`id`, `reason`). Never write `{CASE_DIR}/data/source-positions.json` with
 file tools.
 
-After writing or merging `findings.json` in `activated` mode, set the finding
+An accepted `record_finding` refreshes finding fingerprints automatically. After a generic file write or merge of `findings.json` in `activated` mode, set the finding
 fingerprints with
 `scripts/spotlight-python scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings`
 (never compute them yourself). In `pilot` mode the passages are an
@@ -492,6 +526,7 @@ If a planned approach hits a dead end:
 
 ### Write Findings
 
+<!-- [FILE-WRITER: record_finding] -->
 `write-file("{CASE_DIR}/data/findings.json", ...)` (for cycle 1) or `edit-file` to merge with prior findings (for cycle N > 1). Use `"schema_version": "1.1"` when `SOURCE_EXPRESSION_MODE` is `activated` (then run `--fingerprint-findings`, below), and `"1.0"` otherwise:
 
 ```json
@@ -512,7 +547,6 @@ If a planned approach hits a dead end:
           "url": "primary source URL",
           "type": "court_filing|news|registry|social_media|government|ngo_report|satellite|other",
           "accessed": "ISO 8601",
-          "archive_url": "Wayback Machine or Archive.today URL",
           "access_method": "full_text|open_access|archive_copy|abstract_only|inaccessible",
           "local_file": "{CASE_DIR}/research/filename.md"
         }
@@ -545,6 +579,7 @@ If a planned approach hits a dead end:
 }
 ```
 
+<!-- [/FILE-WRITER: record_finding] -->
 For follow-up cycles: merge new findings with previous ones. Increment the `cycle` field. Update confidence levels if new evidence strengthens or weakens prior findings. Remove items from `gaps` that have been resolved.
 
 <!-- [IF: framework] -->
@@ -645,8 +680,7 @@ Every finding MUST be grounded in collected evidence files. No exceptions.
   "url": "https://example.org/article/...",
   "type": "news",
   "accessed": "2026-03-02T14:30:00Z",
-  "archive_url": "https://web.archive.org/...",
-  "access_method": "full_text",
+    "access_method": "full_text",
   "local_file": "{CASE_DIR}/research/example-article.md"
 }
 ```
@@ -793,6 +827,8 @@ D1; the member approves the round with its leads on the Research page.
 - **Quote passages exactly as the source writes them.** Never record a passage a source you acquired does not contain.
 - **Write only your own files.** Never write `data/fact-check.json`.
 - **Never re-save over cited evidence.** A research or evidence file a citation points at stays as it is; save a new copy under a new name.
+- **Do not fetch a blocked page again.** When a site blocked a fetch, use an actual retrieved archive if available, open it in the browser when appropriate, or use another source. Never invent a snapshot URL or timestamp; omit archive_url unless an actual acquisition established it.
+- **Write the finding before its passages.** A passage links to a finding already in `data/findings.json`; record passages after the finding is written.
 - **Edit exactly.** `edit_file`'s `old_text` must match the file exactly, indentation included; for a `data/*.json` file, rewriting the whole file with `write_file` also works.
 - **Use what is already in the conversation.** Do not load a skill again or re-read a file that has not changed.
 

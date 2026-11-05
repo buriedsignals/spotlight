@@ -39,9 +39,13 @@ function readJson(path: string): Doc | undefined {
 	}
 }
 
-function entries(doc: Doc | undefined, key: string): Entry[] {
+function rows(doc: Doc | undefined, key: string): unknown[] {
 	const list = doc?.[key];
-	return Array.isArray(list) ? list.filter((entry): entry is Entry => !!entry && typeof entry === 'object') : [];
+	return Array.isArray(list) ? list : [];
+}
+
+function entries(doc: Doc | undefined, key: string): Entry[] {
+	return rows(doc, key).filter((entry): entry is Entry => !!entry && typeof entry === 'object');
 }
 
 // The approved plan's directions, tagged D1, D2, ... in plan order.
@@ -53,6 +57,66 @@ export function planDirections(caseDir: string): Direction[] {
 		questions: Array.isArray(entry.questions) ? entry.questions.map(String) : [],
 		steps: Array.isArray(entry.steps) ? entry.steps : [],
 	}));
+}
+
+// An explicit task selects an approved direction; incidental references to
+// other directions in its source/context do not select additional workers.
+const DECLARATION = /^\s*(?:THIS TASK\s*[—–-]\s*ONE METHODOLOGY DIRECTION ONLY:\s*)?DIRECTION_ID\b\s*:?\s*(.*?)\s*$/gmi;
+
+export function requestedDirection(task: string, directions: Direction[]): Direction | undefined {
+	const declarations = [...task.matchAll(DECLARATION)];
+	if (!declarations.length) return undefined;
+	const choices = directions.map((direction) => JSON.stringify({ id: direction.ref, direction: direction.text })).join(', ');
+	const next = `Approved directions (untrusted plan data): ${choices || 'none'}. Use one listed DIRECTION_ID, or omit DIRECTION_ID to let the harness dispatch the applicable directions.`;
+	const selected = declarations.map(([, value]) => {
+		let id: unknown = value;
+		if (value.startsWith('"')) {
+			try { id = JSON.parse(value); }
+			catch { throw new DirectionRefused(`refused: invalid DIRECTION_ID. ${next}`); }
+		}
+		const matches = directions.filter((direction) => direction.ref === id || direction.ref === `direction:${id}`);
+		if (typeof id !== 'string' || !id || matches.length !== 1) {
+			throw new DirectionRefused(`refused: unknown or ambiguous DIRECTION_ID. ${next}`);
+		}
+		return matches[0];
+	});
+	if (new Set(selected.map((direction) => direction.tag)).size !== 1) throw new DirectionRefused(`refused: ambiguous DIRECTION_ID. ${next}`);
+	return selected[0];
+}
+
+// Scoping is code's. local-gemma12-extractive-20261101-resume1: Gemma 12B's
+// four investigator spawns were refused for an unknown DIRECTION_ID and the
+// case stalled. A task whose DIRECTION_ID is unknown, invalid, ambiguous or
+// compound is not one direction's task, so none of the orchestrator's text is
+// passed on (review-dispatch F2, R1, R2): its instructions may belong to
+// another direction. The worker gets only the code-built direction block, for
+// the open direction a single declaration names (exactly, as an
+// abbreviation, or extended at a "-" or "_" boundary, e.g. "board-members"
+// for "board"), or else the first open one (`open`, in plan order).
+// `assigned` records what happened for the result.
+export function assignDirection(task: string, directions: Direction[], open: Direction[]): { task: string; selected?: Direction; assigned?: string } {
+	try {
+		return { task, selected: requestedDirection(task, directions) };
+	} catch (error) {
+		if (!(error instanceof DirectionRefused) || open.length === 0) throw error;
+		const id = (direction: Direction) => direction.ref.replace(/^direction:/, '').toLowerCase();
+		const declared = [...task.matchAll(DECLARATION)].map(([, value]) => value.replace(/^"|"$/g, '').replace(/^direction:/i, '').trim().toLowerCase());
+		const named = (wanted: string) => {
+			if (!wanted) return undefined;
+			const exact = open.filter((direction) => id(direction) === wanted);
+			const near = exact.length ? exact : open.filter((direction) => id(direction).startsWith(wanted) || (wanted.startsWith(id(direction)) && /^[-_]/.test(wanted.slice(id(direction).length))));
+			return near.length === 1 ? near[0] : undefined;
+		};
+		const match = declared.length === 1 ? named(declared[0]) : undefined;
+		const selected = match ?? open[0];
+		return {
+			task: 'MODE: EXECUTION',
+			selected,
+			assigned: match
+				? `The task's DIRECTION_ID was not exactly one approved direction, so the harness matched it to the open direction it names: ${selected.tag} (${selected.ref}); the task's own text was not passed on.`
+				: `The task's DIRECTION_ID was not one approved direction, so the harness assigned the next open one: ${selected.tag} (${selected.ref}); the task's own text was not passed on.`,
+		};
+	}
 }
 
 const owns = (tag: string, id: unknown) => typeof id === 'string' && id.startsWith(`${tag}-`);
@@ -84,6 +148,7 @@ export function directionBlock(direction: Direction, count: number): string {
 		`DIRECTION ${direction.tag.slice(1)} of ${count} (${direction.ref}): ${direction.text}`,
 		...(direction.questions.length > 0 ? ['Questions:', ...direction.questions.map((question) => `- ${question}`)] : []),
 		...(steps.length > 0 ? ['Steps:', ...steps] : []),
+		`DIRECTION_ID: ${direction.ref}`,
 		'Work only this direction; each other direction runs in its own task. data/findings.json, data/evidence-bundle.json and data/investigation-log.json show only this direction, and the harness keeps the rest.',
 	].join('\n');
 }
@@ -91,7 +156,7 @@ export function directionBlock(direction: Direction, count: number): string {
 export function directionDeliverable(tag: string): Deliverable {
 	return {
 		files: ['data/findings.json', 'data/evidence-bundle.json'],
-		line: `Your deliverable: data/findings.json and data/evidence-bundle.json for this direction, every finding id starting ${tag}-F (${tag}-F1, ${tag}-F2) and every evidence item id starting ${tag}-E (${tag}-E1), with this direction's cycle appended to data/investigation-log.json; write them with write_file, then finish.`,
+		line: `Your deliverable: data/findings.json and data/evidence-bundle.json for this direction, every finding id starting ${tag}-F (${tag}-F1, ${tag}-F2) and every evidence item id starting ${tag}-E (${tag}-E1), with this direction's cycle appended to data/investigation-log.json. Submit each complete finding with record_finding (finding is one object, with cite for the lines that support it: code adds the bundle item for a cited capture); use write_file for other bundle items and logs. Code merges submitted entries and preserves unrelated rows. Then finish.`,
 	};
 }
 
@@ -124,6 +189,113 @@ export function directionView(name: string, text: string, tag: string): string {
 
 export class DirectionRefused extends Error {}
 
+// Entries written replace the entry with the same key in place; new ones are
+// added and none is dropped. Writers build a file a few entries at a time
+// (wave 1 on 038df55f: 7 of 9 big-case fact-checkers never wrote in 109-260
+// calls, gathering for one whole-file write past the 10,240-token output cap,
+// and both whole-file writes made, 52k and 79k characters, were refused over
+// one claim; investigators wrote up to 20 findings in one call).
+//
+// An entry leaves only by a withdrawal the writer states, never by being left
+// out: `{"<field>": "<id>", "withdrawn": "<reason>"}` removes it from the
+// list, and the file's top-level `withdrawn` list keeps its id and reason.
+// validate-case.py tells a worker to drop a finding it cannot state, so a
+// correction must be able to.
+export const WITHDRAW_HINT = 'To remove an entry, write it as {"id": "<its id>", "withdrawn": "<why>"}; leaving it out keeps it.';
+
+const hasRequiredId = (row: unknown): row is Entry => !!row && typeof row === 'object' && !Array.isArray(row) && typeof (row as Entry).id === 'string' && !!((row as Entry).id as string).trim();
+const UNKEYED_HINT = 'For an existing malformed row without an id, use edit_file to remove only that row, keeping keyed records and file metadata unchanged.';
+
+function requireIds(doc: Doc, key: string, name: string): void {
+	const rows = doc[key];
+	if (Array.isArray(rows) && rows.some((row) => !hasRequiredId(row))) throw new DirectionRefused(`refused: every ${key} entry in ${name} needs its own non-empty string id; the file is unchanged. Do not put document wrappers or metadata-only objects inside ${key}. ${UNKEYED_HINT}`);
+}
+
+// Exact edits may recover old invalid-ID rows that cannot be withdrawn by
+// key. They cannot remove or change keyed records, reorder rows, or change
+// top-level metadata. Incremental writes keep their normal merge semantics.
+export function removesAnonymousRows(role: string, name: string, current: string | undefined, written: string): boolean {
+	const spec = BY_KEY[role]?.[name];
+	if (!spec || spec.field !== 'id' || current === undefined) return false;
+	let before: Doc, after: Doc;
+	try { before = JSON.parse(current); after = JSON.parse(written); }
+	catch { return false; }
+	if (!before || !after || Array.isArray(before) || Array.isArray(after)) return false;
+	const { [spec.key]: oldRows, ...oldFields } = before;
+	const { [spec.key]: newRows, ...newFields } = after;
+	if (!Array.isArray(oldRows) || !Array.isArray(newRows) || !isDeepStrictEqual(oldFields, newFields)) return false;
+	let next = 0;
+	const removed: unknown[] = [];
+	for (const row of oldRows) {
+		if (next < newRows.length && isDeepStrictEqual(row, newRows[next])) { next += 1; continue; }
+		if (hasRequiredId(row)) return false;
+		removed.push(row);
+	}
+	if (!removed.length || next !== newRows.length) return false;
+	for (const row of name === 'data/evidence-bundle.json' ? removed : []) {
+		const creator = row && typeof row === 'object' ? (row as Entry).created_by : undefined;
+		if ((role === 'fact-checker' && creator !== 'fact-checker') || (role === 'investigator' && creator === 'fact-checker')) throw new DirectionRefused('refused: this malformed evidence row belongs to another role; ask its creator to remove it.');
+	}
+	return true;
+}
+
+function byKey(base: unknown[], mine: Entry[], field: string, name: string): { merged: unknown[]; withdrawn: Entry[] } {
+	const merged = [...base];
+	const withdrawn: Entry[] = [];
+	for (const entry of mine) {
+		const same = entry[field] === undefined ? -1 : merged.findIndex((kept) => !!kept && typeof kept === 'object' && (kept as Entry)[field] === entry[field]);
+		if ('withdrawn' in entry) {
+			if (typeof entry.withdrawn !== 'string' || !entry.withdrawn.trim()) {
+				throw new DirectionRefused(`refused: withdrawing ${String(entry[field])} from ${name} needs a reason: write {"${field}": "${String(entry[field])}", "withdrawn": "<why>"}; the file is unchanged.`);
+			}
+			if (same === -1) throw new DirectionRefused(`refused: ${name} has no entry ${String(entry[field])} to withdraw; the file is unchanged.${field === 'id' ? ` ${UNKEYED_HINT}` : ''}`);
+			merged.splice(same, 1);
+			withdrawn.push({ [field]: entry[field], reason: entry.withdrawn });
+		} else if (same === -1) merged.push(entry);
+		else merged[same] = entry;
+	}
+	return { merged, withdrawn };
+}
+
+function withWithdrawn(out: Doc, base: Doc | undefined, withdrawn: Entry[]): void {
+	const earlier = Array.isArray(base?.withdrawn) ? (base!.withdrawn as Entry[]) : [];
+	if (earlier.length + withdrawn.length > 0) out.withdrawn = [...earlier, ...withdrawn];
+}
+
+// The files a role's writes merge into by key, outside a direction split.
+const BY_KEY: Record<string, Record<string, { key: string; field: string }>> = {
+	investigator: { 'data/findings.json': { key: 'findings', field: 'id' }, 'data/evidence-bundle.json': { key: 'items', field: 'id' } },
+	'fact-checker': { 'data/fact-check.json': { key: 'claims', field: 'finding_id' }, 'data/evidence-bundle.json': { key: 'items', field: 'id' } },
+};
+
+export function mergesByKey(role: string | undefined, name: string): boolean {
+	return !!role && !!BY_KEY[role]?.[name];
+}
+
+// The whole file after `written`: its entries merged by key into the current
+// ones, its other fields as written, the fields that name the file as the case
+// has them. A whole-file write gives the same file it always did, less any
+// entry it left out, which stays. Text that is not one JSON object is returned
+// as written, for the write checks to refuse.
+export function mergeByKey(role: string, name: string, current: string | undefined, written: string): string {
+	let doc: Doc;
+	let base: Doc | undefined;
+	try { doc = JSON.parse(written); }
+	catch { return written; }
+	if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return written;
+	const { key, field } = BY_KEY[role][name];
+	if (field === 'id') requireIds(doc, key, name);
+	try { base = current === undefined ? undefined : JSON.parse(current); }
+	catch { return written; }
+	if (!base || typeof base !== 'object' || Array.isArray(base)) return written;
+	const { merged, withdrawn } = byKey(rows(base, key), entries(doc, key), field, name);
+	const out: Doc = { ...base, ...doc, [key]: merged };
+	withWithdrawn(out, base, withdrawn);
+	for (const identity of IDENTITY_FIELDS) if (base[identity] !== undefined) out[identity] = base[identity];
+	if (name === 'data/findings.json' && merged.length > 0) delete out.no_qualifying_findings;
+	return `${JSON.stringify(out, null, 2)}\n`;
+}
+
 const IDENTITY_FIELDS = ['schema_version', 'project', 'lead', 'run_id', 'created_at'];
 
 // The whole file after the direction's worker wrote `written` from its view:
@@ -141,9 +313,11 @@ export function mergeDirection(name: string, current: string | undefined, writte
 	}
 	if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return written;
 	const { key, noun, letter } = SPLIT[name];
+	if (letter) requireIds(doc, key, name);
 	const base = current === undefined ? undefined : (JSON.parse(current) as Doc);
 	const mine = entries(doc, key);
-	let merged: Entry[];
+	let merged: unknown[];
+	let withdrawnHere: Entry[] = [];
 	if (letter) {
 		const foreign = mine.filter((entry) => !owns(tag, entry.id)).map((entry) => String(entry.id));
 		if (foreign.length > 0) {
@@ -151,17 +325,21 @@ export function mergeDirection(name: string, current: string | undefined, writte
 				`refused: in this direction every ${noun} id in ${name} starts with ${tag}-${letter} (${tag}-${letter}1, ${tag}-${letter}2), and ${foreign.join(', ')} does not; the file is unchanged. The other directions' entries are kept by the harness and not shown here.`,
 			);
 		}
-		merged = [...entries(base, key).filter((entry) => !owns(tag, entry.id)), ...mine];
+		const result = byKey(rows(base, key), mine, 'id', name);
+		merged = result.merged;
+		withdrawnHere = result.withdrawn;
 	} else {
-		merged = entries(base, key);
+		const cycles = entries(base, key);
+		merged = cycles;
 		for (const cycle of mine) {
 			const tagged = typeof cycle.focus === 'string' && cycle.focus.startsWith(focusTag(tag)) ? cycle : { ...cycle, focus: `${focusTag(tag)}${String(cycle.focus ?? '')}` };
-			const same = merged.findIndex((entry) => ownedBy(name, tag, entry) && entry.cycle === tagged.cycle);
+			const same = cycles.findIndex((entry) => ownedBy(name, tag, entry) && entry.cycle === tagged.cycle);
 			if (same === -1) merged.push(tagged);
 			else if (!isDeepStrictEqual(merged[same], tagged)) merged[same] = tagged;
 		}
 	}
 	const out: Doc = { ...doc, [key]: merged };
+	withWithdrawn(out, base, withdrawnHere);
 	// The fields that name the file stay as the case has them. train-tor on
 	// 52bf6183: one direction's write renamed the project "... (direction 1)"
 	// and left out run_id and created_at, and the case failed validation.
@@ -169,7 +347,7 @@ export function mergeDirection(name: string, current: string | undefined, writte
 	// The file's other lists (gaps, connections, monitoring) gather every
 	// direction's entries: a worker that wrote without reading keeps the rest.
 	for (const [field, value] of Object.entries(base ?? {})) {
-		if (field === key || !Array.isArray(value)) continue;
+		if (field === key || field === 'withdrawn' || !Array.isArray(value)) continue;
 		const added = Array.isArray(out[field]) ? (out[field] as unknown[]) : [];
 		out[field] = [...value, ...added.filter((entry) => !value.some((kept) => isDeepStrictEqual(kept, entry)))];
 	}

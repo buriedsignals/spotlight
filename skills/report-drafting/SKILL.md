@@ -29,7 +29,9 @@ The renderer places this at the top of the page. Do not soften:
 ## Workflow
 
 1. Read `{CASE_DIR}/data/findings.json` and `{CASE_DIR}/data/fact-check.json`.
-2. Author `{CASE_DIR}/data/report-draft.json` in the report's natural language. Choose the title, deck, finding order, headlines, concise summaries, why each finding matters, caveats, and next steps. Cover every finding exactly once, except the findings the member left out at the Investigation gate (unselected, or set aside, in `data/investigation-gate-review.json`): they stay in the case and never appear in the report, and the validator refuses a draft that names them. Every prose block must reference the fact-checked finding IDs it interprets; do not author verdicts or confidence.
+2. Write the prose of `{CASE_DIR}/data/report-draft.json` in the report's natural language. The file holds the report's structure: one `finding_treatments` entry per finding the member kept at the Investigation gate, the same IDs in `finding_order` and `framing_finding_ids`, and empty prose. If it does not exist, create it with `scripts/spotlight-python scripts/spotlight-orchestration.py report-skeleton {CASE_DIR}`, which also lists the passages you may quote. Write the title, the deck, and each finding's headline, concise summary and why it matters; none may stay empty. You may reorder `finding_order` (and `finding_treatments` with it), narrow `framing_finding_ids`, and add caveats and next steps. Keep every `finding_id`; add or remove none. Every prose block must reference the fact-checked finding IDs it interprets; do not author verdicts or confidence.
+
+   Significance may explain how a finding answers the approved question; no new implication is required. Preserve the accepted actor, quantifiers, scope, exact date or vintage, and uncertainty. Name the dates when releases share a month. Do not turn one documented source into a claim about where everyone obtained their information.
 
    When an existing structure would clarify the report, add an optional
    `diagrams` item. For relationship structures, select one of `flow`,
@@ -44,6 +46,9 @@ The renderer places this at the top of the page. Do not soften:
    `source_types`, counted deterministically over your `finding_ids` or all
    findings. Never author Mermaid, SVG, HTML, JavaScript, CSS, URLs, coordinates,
    counts, or layout settings: the renderer owns those.
+
+   `quote_selections` in the example below is optional. It may cite only an
+   expression marked `direct_quote: true`; when none qualifies, omit it.
 
    ```json
    {
@@ -91,12 +96,15 @@ The renderer places this at the top of the page. Do not soften:
    ```
 
    In an activated `1.1` case, an optional `quote_selections` item contains
-   `expression_id` only. Never copy quote text or attribution into the draft. The
-   deterministic renderer resolves the active canonical expression, escapes its exact
-   text and attribution, and records its locator, hashes, relation, and lifecycle in
-   `evidence-map.json`. Legacy `1.0` reports do not accept expression selections.
+   `expression_id` only. A selection must cite an expression marked
+   `direct_quote: true` in `data/source-expressions.json`; when none qualifies,
+   the draft omits `quote_selections`. Never copy quote text or attribution into
+   the draft. The deterministic renderer resolves the active canonical expression,
+   escapes its exact text and attribution, and records its locator, hashes,
+   relation, and lifecycle in `evidence-map.json`. Legacy `1.0` reports do not
+   accept expression selections.
 
-3. **Decision check (optional).** Newsroom edition: call `run_checks` with kind
+3. **Decision check (optional).** Pi harness: not in this runtime (the newsroom edition's `run_checks` below is the newsroom's own service). Newsroom edition: call `run_checks` with kind
    `report` instead; its flags appear on the Report page. Otherwise, if this case ran decision checks at the Investigation gate
    (`data/decision-signals.json` exists), check the prose before finalizing:
 

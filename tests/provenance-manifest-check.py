@@ -116,7 +116,24 @@ def activate_case(case_dir: Path) -> None:
     }
     write_json(data / "source-expressions.json", expressions)
 
+    # The fact-checker's own re-fetch of the filing (r6 shape): an investigator's
+    # saved copy alone never makes a verdict verified (r12-ingest-audit A3), so
+    # the verified F1 cites this item, created by the fact-checker. Its Python
+    # users run without the harness's fetch registry, where the validator reads
+    # a fact-checker-created item that lists the quoted file.
     fact_check = json.loads((data / "fact-check.json").read_text(encoding="utf-8"))
+    source = case_dir / fact_check["claims"][0]["evidence_for"][0]["local_file"]
+    capture = case_dir / "research" / "fc-bvifsc-filing.md.raw"
+    capture.write_bytes(source.read_bytes())
+    capture_sha = hashlib.sha256(capture.read_bytes()).hexdigest()
+    evidence_bundle["items"].append({
+        **{key: value for key, value in evidence_bundle["items"][0].items() if key not in ("text_derivatives", "missing_source_gate", "path", "downloaded_document_path", "screenshot_path")},
+        "id": "FC-E1", "created_by": "fact-checker", "query_or_task": "Fact-checker re-fetch of the filing",
+        "accessed": "2026-07-16T12:30:00Z", "raw_path": "research/fc-bvifsc-filing.md.raw", "sha256": capture_sha,
+        "access_method": "full_text",
+    })
+    write_json(data / "evidence-bundle.json", evidence_bundle)
+    fact_check["claims"][0]["evidence_for"][0].update({"evidence_bundle_id": "FC-E1", "local_file": "research/fc-bvifsc-filing.md.raw"})
     fact_check["schema_version"] = "1.1"  # activated cases use fact-check contract 1.1
     fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
         "expression_id": "SX1",

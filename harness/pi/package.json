@@ -13,7 +13,7 @@
   },
   "scripts": {
     "start": "node src/launcher.ts",
-    "test": "node --test --test-concurrency=1 \"src/**/*.test.ts\""
+    "test": "node --test --test-concurrency=4 \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.4.0",

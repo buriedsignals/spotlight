@@ -54,6 +54,9 @@ CASE_BUDGET_CEILING_USD = 5
 # about 5,000 tokens) sent twice and three 4,096-token answers
 # (harness/pi/src/lanes.ts); below this it ends before its first call.
 MIN_TOKEN_BUDGET = 20_000
+# The lane runner's default (harness/pi/src/lanes.ts DEFAULT_TOKEN_BUDGET): the
+# floor allows about one turn, so a refusal names the default as the value to use.
+DEFAULT_TOKEN_BUDGET = 200_000
 CLUE_MARKS = {"pursue", "dismiss"}
 DIRECTION_MARKS = {"keep", "drop", "add"}
 
@@ -126,7 +129,8 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
     round_budget, case_budget = plan.get("round_budget_usd"), plan.get("case_budget_usd")
     for name, value in (("round_budget_usd", round_budget), ("case_budget_usd", case_budget)):
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
-            problems.append(f"{p}.{name} must be set to a positive amount")
+            problems.append(f"{p}.{name} must be set to a positive amount, "
+                            f"at most ${CASE_BUDGET_CEILING_USD} (1 is typical)")
     if isinstance(case_budget, (int, float)) and case_budget > CASE_BUDGET_CEILING_USD:
         problems.append(f"{p}.case_budget_usd is above the ${CASE_BUDGET_CEILING_USD} per-case ceiling")
     if (isinstance(round_budget, (int, float)) and isinstance(case_budget, (int, float))
@@ -147,6 +151,9 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         problems.append(f"{p}.topics must list at least one topic brief")
     seen: set[str] = set()
     routes = lane_routes()
+    lane_list = ", ".join(sorted(catalogue - {AD_HOC}) + [AD_HOC])
+    destinations = ", ".join(
+        checker.root["properties"][p]["properties"]["egress"]["items"]["properties"]["destination"]["enum"])
     for index, topic in enumerate(entries):
         topic_id = str(topic.get("topic_id") or "")
         where = f"{p}.topics[{index}] ({topic_id or 'no id'})"
@@ -155,22 +162,29 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         seen.add(topic_id)
         direction, lane_type = topic.get("direction_id"), topic.get("lane_type")
         if not isinstance(lane_type, str) or not lane_type:
-            problems.append(f"{where}: needs a lane type")
+            problems.append(f"{where}: needs a lane type; lane types: {lane_list}")
             lane_type = ""
         elif lane_type not in catalogue:
-            problems.append(f"{where}: lane type {lane_type!r} is not in the lane catalogue (or ad-hoc)")
+            problems.append(f"{where}: lane type {lane_type!r} is not in the lane catalogue; lane types: {lane_list}")
         if direction not in directions:
-            problems.append(f"{where}: direction {direction!r} is not a direction_id of investigation_plan")
+            # methodology-corrections-diag.md cause 3: the line once read as
+            # "rename direction", which broke investigation_plan's required name.
+            problems.append(f"{where}: direction {direction!r} is not a direction_id of investigation_plan; "
+                            "add \"direction_id\": \"<slug>\" (such as \"d1\") to the investigation_plan entry "
+                            "this topic serves, beside its \"direction\" name (keep both), and use that slug here; "
+                            f"current direction_ids: {', '.join(sorted(directions)) or 'none'}")
         if not re.fullmatch(rf"{re.escape(str(direction))}-{re.escape(lane_type)}(-[0-9]+)?", topic_id):
             problems.append(f"{where}: topic id must be <direction_id>-<lane_type>[-n]")
         questions = topic.get("questions")
         if not isinstance(questions, list) or not any(isinstance(q, str) and q.strip() for q in questions):
             problems.append(f"{where}: needs at least one question")
         if not isinstance(topic.get("token_budget"), int) or topic["token_budget"] < 1:
-            problems.append(f"{where}: needs a token budget")
+            problems.append(f"{where}: needs a token budget; use the default {DEFAULT_TOKEN_BUDGET} "
+                            f"({MIN_TOKEN_BUDGET} is the bare floor, about one lane turn)")
         elif topic["token_budget"] < MIN_TOKEN_BUDGET:
             problems.append(f"{where}: token_budget {topic['token_budget']} is below one lane call; "
-                            f"set at least {MIN_TOKEN_BUDGET}")
+                            f"use the default {DEFAULT_TOKEN_BUDGET} ({MIN_TOKEN_BUDGET} is the bare floor, "
+                            "about one lane turn)")
         # Anomaly runs in Investigation now (integrations/anomaly/integration.md);
         # an empty list from a plan written before the move is fine.
         if topic.get("anomaly_methods"):
@@ -179,7 +193,8 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         own_egress = [e for e in egress if e.get("topic_id") == topic_id]
         if not own_egress:
             problems.append(f"{where}: egress is not listed; add a {p}.egress entry "
-                            f"{{\"topic_id\": \"{topic_id}\", \"destination\": ...}}")
+                            f"{{\"topic_id\": \"{topic_id}\", \"destination\": ...}}; "
+                            f"destination is one of {destinations}")
         own_keys = [k.get("name") for k in keys if topic_id in (k.get("topics") or [])]
         if lane_type == AD_HOC and own_keys:
             problems.append(f"{where}: an ad-hoc topic gets no keys")
@@ -190,7 +205,7 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
             problems.append(f"{where}: the subscription route needs mode subscription_subagents")
         cloud = _is_cloud(topic, own_egress, lane_route)
         if cloud and consent.get("swarm") is not True:
-            problems.append(f"{where}: a swarm topic needs the member's swarm opt-in")
+            problems.append(f"{where}: a swarm topic needs research_plan.consent.swarm set to true; write it, since the member's approval at the Methodology gate is the consent")
         if cloud and mode == "local_only":
             problems.append(f"{where}: local_only mode runs no cloud topic")
         if newsroom and (topic.get("route") == "swarm" or any(e.get("destination") == "openrouter" for e in own_egress)):
@@ -279,8 +294,17 @@ def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
     if isinstance(plan, Mapping):
         # Research always triages its leads with a decision model (Kev or Jev).
         journalist_input = any(topic.get("journalist_input") is True for topic in topics(plan))
-        problems += research_backends.plan_problems(config, sensitive=sensitive, newsroom=newsroom,
-                                                    journalist_input=journalist_input)
+        # k3-prep.md: a triage model the install cannot reach is not the plan's
+        # error (the investigator cannot fix an install), so no 'research triage:'
+        # problem is listed here; the round then holds at triage with the reason,
+        # as when the model is down, and the member is told what to set.
+        # A problem the plan causes (journalist-input topics that need a local
+        # triage model) stays the plan's to fix (Codex review of simp-triage2):
+        # only the problems the install has without them are dropped.
+        install = set(research_backends.plan_problems(config, sensitive=sensitive, newsroom=newsroom, journalist_input=False))
+        problems += [problem for problem in research_backends.plan_problems(config, sensitive=sensitive, newsroom=newsroom,
+                                                                             journalist_input=journalist_input)
+                     if problem not in install]
     return problems
 
 
@@ -468,6 +492,12 @@ def pursued(marked: Mapping[str, str]) -> set[str]:
     return {t for t, m in marked.items() if m == "pursue" or (t.startswith("direction:") and m in ("keep", "add"))}
 
 
+def leaves_plan_unchanged(review: Mapping[str, Any] | None) -> bool:
+    """No mark asks the plan to change, so the amendment is the approved
+    methodology as it stands: a kept direction and a dismissed clue add nothing."""
+    return isinstance(review, Mapping) and not set(marks(review).values()) & {"drop", "add", "pursue"}
+
+
 def _directions(methodology: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     return {str(d.get("direction_id") or d.get("direction")): d
             for d in methodology.get("investigation_plan") or [] if isinstance(d, Mapping)}
@@ -476,6 +506,19 @@ def _directions(methodology: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
 def _cites(step: Mapping[str, Any]) -> list[str]:
     cites = step.get("cites")
     return [cites] if isinstance(cites, str) else [c for c in cites or [] if isinstance(c, str)]
+
+
+_ABSENT = object()
+
+
+def _changed_paths(before: Any, after: Any, path: str) -> list[str]:
+    """The dotted paths where two values differ, so a correction names the key."""
+    if before == after:
+        return []
+    if isinstance(before, Mapping) and isinstance(after, Mapping):
+        return [changed for key in sorted(set(before) | set(after), key=str)
+                for changed in _changed_paths(before.get(key, _ABSENT), after.get(key, _ABSENT), f"{path}.{key}")]
+    return [path]
 
 
 def d8_amendment(approved: Mapping[str, Any], amended: Mapping[str, Any], review: Mapping[str, Any] | None) -> list[str]:
@@ -487,7 +530,8 @@ def d8_amendment(approved: Mapping[str, Any], amended: Mapping[str, Any], review
     problems: list[str] = []
     for key in sorted(set(approved) | set(amended)):
         if key != "investigation_plan" and approved.get(key) != amended.get(key):
-            problems.append(f"{key} changed; an amendment changes only investigation_plan")
+            problems.extend(f"{path} changed; an amendment changes only investigation_plan"
+                            for path in _changed_paths(approved.get(key), amended.get(key), key))
     before, after = _directions(approved), _directions(amended)
     for direction in sorted(set(before) - set(after)):
         if marked.get(f"direction:{direction}") != "drop":

@@ -2,25 +2,34 @@
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
+import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
+import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
+import { ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
+import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
-import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
+import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinking, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
-import { READ_TRUNCATED, writeConfined } from './tools/case-files.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
+import { READ_TRUNCATED, canonicalWriteCall, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
+import { dispatchRunner } from './tools/review.ts';
+import { fixedStepRunner } from './tools/programs.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
-import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
-import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
+import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, recordsDigest, refusedSpawnMove, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
+import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
+import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
-import { FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
-import { evidenceValidates } from './validators.ts';
+import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
+import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
+import { deliverablePasses, evidenceValidates, hasDeliverableCheck, validateFactCheckBatch } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
 
@@ -30,7 +39,26 @@ function required(name: string): string {
 	return value;
 }
 
-function toolsFor(role: string): ToolDefinition[] {
+// The case as the orchestrator is told it everywhere: resolved, with a plan
+// that fails its own check still at Methodology (spotlight.ts withPlanCheck).
+function caseForModel(active: ActiveCase, runAdapter: AdapterRunner): Promise<Record<string, unknown>> {
+	const context = { caseDir: active.caseDir, writeRoot: active.caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`, env: process.env };
+	return resolveCase(active, runAdapter).then((state) => withPlanCheck(state, gateCheck(active, runAdapter, context)));
+}
+
+// The orchestrator's case phase, read now (set in toolsFor). The router's
+// methodology relay checks it: the last resolve in the transcript can predate
+// an approval the review page recorded (Codex review of simp-relay, P2).
+let casePhase: (() => Promise<string>) | undefined;
+
+// Consecutive watchdog-stopped dispatches of one worker task
+// (STALLED_DISPATCHES). Process memory, read by the dispatches (toolsFor) and
+// the text-turn nudge (spotlightExtension): declared inside toolsFor it was out
+// of the nudge's scope, so every nudge threw a ReferenceError from a811d655 on.
+const stall: DispatchStall = { key: '', count: 0, digest: '' };
+// Refused orchestrator spawns this member turn (router.ts routeRefusedSpawn).
+const refusedSpawns = spawnRefusals();
+function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	const composition = loadComposition();
 	const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 	const python = process.env.SPOTLIGHT_PYTHON || 'python3';
@@ -47,7 +75,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		python,
 		configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
 		env: process.env,
-		scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads, denyWrites: spec.denyWrites },
+		scope: { ...scopeAt(spec, process.env.SPOTLIGHT_PHASE), denyReads: spec.denyReads, denyWrites: spec.denyWrites },
 	};
 	const tools: ToolDefinition[] = [
 		invokeSkillTool(skillsFor(composition, role), hosted, (skill) => skillAdapterNote(skill, spec.tools, role === ORCHESTRATOR)),
@@ -59,11 +87,38 @@ function toolsFor(role: string): ToolDefinition[] {
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
-		const cycle = { spawns: 0 };
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
-		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
-		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
-		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
+		const cycle = { spawns: 0, corrections: 0 };
+		pi.on('before_agent_start', (event) => {
+			if (event.messageType !== 'user') return;
+			resetFactCheckerCycle(cycle);
+			// Only the member's own turn lets code start a stalled worker again;
+			// a harness nudge does not (Codex review of simp-redispatch, P1).
+			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) {
+				Object.assign(stall, { key: '', count: 0, digest: '', repaired: new Set<string>() });
+				clearSpawnRefusals(refusedSpawns);
+			}
+			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
+			// on a member's message.
+			process.send?.({ kind: 'spotlight-member-turn' });
+		});
+		const spawning = new Map<string, string>();
+		pi.on('tool_execution_start', (event) => {
+			if (event.toolName === 'spawn_agent') spawning.set(event.toolCallId, String((event.args as { agent?: unknown } | undefined)?.agent ?? 'worker'));
+		});
+		pi.on('tool_execution_end', (event) => {
+			const agent = spawning.get(event.toolCallId);
+			spawning.delete(event.toolCallId);
+			if (agent === undefined || !event.isError) return;
+			const said = (event.result?.content ?? []).map((part: { text?: string }) => part.text ?? '').join('\n');
+			// A worker that started and failed is not a refusal.
+			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
+		});
+		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
+		tools.push(spawnTool);
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));
+		casePhase = async () => String((await resolveCase(active, runAdapter)).phase ?? '');
+		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, casePhase!)));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	const allowed = tools.filter((tool) => allowlist.has(tool.name));
@@ -100,6 +155,213 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 	};
 }
 
+// Plan step 4 (reports/step4-routing-design.md): the orchestrator's provider,
+// wrapped by the code router (router.ts). A code move is answered here as the
+// assistant's tool call, marked code-made (responseModel ROUTER_MODEL, its
+// reason in responseId) so records, detectors, scoring and training extraction
+// never count it as a model decision; every other request goes to the model
+// unchanged. Each decision is logged with its reason.
+const INTENT_TIMEOUT_MS = 8000;
+function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number }> {
+	const started = Date.now();
+	return new Promise((answered) => {
+		const done = (intent?: Intent, probability?: number) => answered({ intent, probability, ms: Date.now() - started });
+		const child = execFile(process.env.SPOTLIGHT_PYTHON || 'python3', [resolve(CHECKOUT_ROOT, 'scripts', 'member-intent.py'), ...(process.env.SPOTLIGHT_CONFIG ? ['--config', process.env.SPOTLIGHT_CONFIG] : [])], { timeout: INTENT_TIMEOUT_MS, encoding: 'utf8', signal }, (error, stdout) => {
+			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined); return; }
+			try {
+				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; probability?: number; unavailable?: string };
+				if (answer.unavailable) log(`[router] decision model unavailable: ${answer.unavailable.slice(0, 200)}`);
+				done(answer.intent, answer.probability);
+			} catch {
+				done(undefined);
+			}
+		});
+		child.stdin?.end(message);
+	});
+}
+
+// A message code wrote in the model's place, marked so a record shows it.
+function routerMessage<Part>(model: { api: string; provider: string; id: string }, content: Part[], reason: string, stopReason: 'stop' | 'toolUse') {
+	return {
+		role: 'assistant' as const, content, api: model.api, provider: model.provider, model: model.id,
+		responseModel: ROUTER_MODEL, responseId: `router: ${reason}`,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason, timestamp: Date.now(),
+	};
+}
+
+const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1]['streamSimple']> = (model, context, options) => {
+	const out = createAssistantMessageEventStream();
+	void (async () => {
+		let move: RouterMove;
+		let d1 = '';
+		// Only the orchestrator's own turns are routed: a request without its
+		// tools (the session-model checkpoint, checkpoint.ts) goes to the model
+		// untouched (Codex review of simp-route, P2).
+		const routed = getCurrentTools(context.messages).some((tool) => tool.name === 'spotlight_resolve');
+		try {
+			const state = routerState(context.messages);
+			if (!routed) move = { kind: 'model', reason: 'not an orchestrator turn' };
+			else if (state.member) {
+				const asked = await memberIntent(state.member, options?.signal);
+				// r1-router-smoke.md: each decision logs D1's probability and latency.
+				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
+				move = routeMember(state, asked.intent);
+				if (move.kind === 'call' && move.tool === 'spawn_agent' && (await casePhase?.()) !== 'methodology_approval') move = { kind: 'model', reason: 'member change_request, but the case is no longer at the methodology review' };
+			} else move = routeRefusedSpawn(state, routeWithoutMember(state, state.resolved?.phase === 'complete' ? closingMessage(required('SPOTLIGHT_CASE_DIR')) : undefined), refusedSpawns, refusedSpawns.seen.size ? recordsDigest(required('SPOTLIGHT_CASE_DIR')) : '', refusedSpawnMove);
+		} catch (error) {
+			move = { kind: 'model', reason: `router error: ${(error as Error).message.slice(0, 200)}` };
+		}
+		if (routed) log(`[router] ${move.kind === 'call' ? move.tool : move.kind} (${move.reason})${d1}`);
+		if (move.kind === 'model') {
+			for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
+			out.end();
+			return;
+		}
+		if (move.kind === 'stop') {
+			const words = { type: 'text' as const, text: move.text };
+			const stop = routerMessage(model, [words], move.reason, 'stop');
+			out.push({ type: 'start', partial: { ...stop, content: [] } });
+			out.push({ type: 'text_start', contentIndex: 0, partial: { ...stop, content: [{ type: 'text', text: '' }] } });
+			out.push({ type: 'text_end', contentIndex: 0, content: words.text, partial: stop });
+			out.push({ type: 'done', reason: 'stop', message: stop });
+			out.end(stop);
+			return;
+		}
+		// The call id carries the marker on the wire too (ROUTER_CALL_PREFIX): the
+		// request history a capture records keeps tool-call ids, not responseModel.
+		const call = { type: 'toolCall' as const, id: `${ROUTER_CALL_PREFIX}${Date.now().toString(36)}`, name: move.tool, arguments: move.tool === 'spawn_agent' ? move.arguments : {} };
+		const message = routerMessage(model, [call], move.reason, 'toolUse');
+		out.push({ type: 'start', partial: { ...message, content: [] } });
+		out.push({ type: 'toolcall_start', contentIndex: 0, partial: message });
+		out.push({ type: 'toolcall_end', contentIndex: 0, toolCall: call, partial: message });
+		out.push({ type: 'done', reason: 'toolUse', message });
+		out.end(message);
+	})();
+	return out;
+};
+
+// step3c (reports/step3c-commit-design.md): the investigator's commit step on
+// the local tiers (commit.ts). One extra request with only the narrowed
+// record_finding and nothing_found, tool_choice required, through the same
+// provider path (the extension's onPayload hooks run first; then the wire tools
+// are replaced). An accepted answer becomes this turn's record_finding call,
+// marked by its id; anything else sends the model's own request unchanged.
+// Process memory across folds: the requests since the last attempt, and the
+// lines seen recorded.
+let requestsSinceCommit = Infinity;
+const recordedLines = new Set<string>();
+// B18: this process saw its write-file deliverable accepted (kept across folds).
+let deliverableWritten = false;
+type StreamFn = NonNullable<Parameters<ExtensionAPI['registerProvider']>[1]['streamSimple']>;
+type Answer = Awaited<ReturnType<ReturnType<typeof streamOpenAICompletions>['result']>>;
+// One narrowed request: the commit text appended, only `tools` on the wire.
+// B19: a provider that refuses tool_choice "required" (any error) gets the
+// same request once with "auto".
+async function narrowedRequest(model: Parameters<StreamFn>[0], context: Parameters<StreamFn>[1], options: Parameters<StreamFn>[2], text: string, tools: unknown[]): Promise<Answer> {
+	const ask = (choice: 'required' | 'auto') => streamOpenAICompletions(model as never, { ...context, messages: [...context.messages, { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() }] } as typeof context, {
+		...options,
+		toolChoice: choice,
+		onPayload: async (payload, payloadModel) => {
+			const prepared = ((await options?.onPayload?.(payload, payloadModel)) ?? payload) as Record<string, unknown>;
+			return { ...prepared, tools, tool_choice: choice };
+		},
+	}).result();
+	const first = await ask('required').catch((error: Error) => error);
+	if (first instanceof Error || first.stopReason === 'error') {
+		log(`[commit] tool_choice required failed (${(first instanceof Error ? first.message : first.errorMessage ?? 'error').slice(0, 200)}); asking with auto`);
+		return ask('auto');
+	}
+	return first;
+}
+// The accepted call as this turn's answer, marked by its id; the calls not
+// kept are named in the turn itself, so the model sees them.
+function emitCommit(out: ReturnType<typeof createAssistantMessageEventStream>, answer: Answer, name: string, args: Record<string, unknown>, dropped: string[], noteHead: string, responseId: string): void {
+	const toolCall = { type: 'toolCall' as const, id: `${COMMIT_CALL_PREFIX}${Date.now().toString(36)}`, name, arguments: args };
+	const note = dropped.length ? [{ type: 'text' as const, text: `${noteHead}; not recorded: ${dropped.join('; ')}.` }] : [];
+	const message = { ...answer, content: [...note, toolCall], responseId, stopReason: 'toolUse' as const };
+	// Each block is in the partial only from its own event on (Pi's provider contract).
+	out.push({ type: 'start', partial: { ...message, content: [] } });
+	if (note.length) {
+		out.push({ type: 'text_start', contentIndex: 0, partial: { ...message, content: [{ type: 'text', text: '' }] } });
+		out.push({ type: 'text_end', contentIndex: 0, content: note[0].text, partial: { ...message, content: [...note] } });
+	}
+	out.push({ type: 'toolcall_start', contentIndex: note.length, partial: { ...message, content: [...note, { ...toolCall, arguments: {} }] } });
+	out.push({ type: 'toolcall_end', contentIndex: note.length, toolCall, partial: message });
+	out.push({ type: 'done', reason: 'toolUse', message });
+	out.end(message);
+}
+const commitStream: StreamFn = (model, context, options) => {
+	const out = createAssistantMessageEventStream();
+	void (async () => {
+		// B18: a worker whose deliverable is one write-file gets the write commit step.
+		const file = writeCommitFile(process.env.SPOTLIGHT_DELIVERABLE_FILES);
+		if (file && getCurrentTools(context.messages).some((tool) => tool.name === 'write_file')) {
+			const caseDir = required('SPOTLIGHT_CASE_DIR');
+			requestsSinceCommit += 1;
+			deliverableWritten ||= writeCommitState(context.messages, file, caseDir).written;
+			if (writeCommitDue(context.messages, file, caseDir, requestsSinceCommit, deliverableWritten)) {
+				requestsSinceCommit = 0;
+				let reason: string;
+				try {
+					const answer = await narrowedRequest(model, context, options, writeCommitText(file), writeCommitTools(file));
+					const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
+					const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickWrite(calls, file, caseDir);
+					if ('args' in accepted) {
+						log(`[commit] write_file ${file}${accepted.dropped.length ? `; dropped ${accepted.dropped.join('; ')}` : ''}`);
+						emitCommit(out, answer, 'write_file', accepted.args, accepted.dropped, 'Commit step: kept the first write', `commit step: write ${file}`);
+						return;
+					}
+					reason = accepted.reason;
+				} catch (error) {
+					reason = `commit request failed: ${(error as Error).message.slice(0, 200)}`;
+				}
+				log(`[commit] model's own request (${file}: ${reason})`);
+			}
+			for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
+			out.end();
+			return;
+		}
+		// Lines a recorded passage already anchors count as recorded, whichever process recorded them.
+		try {
+			const passages = (JSON.parse(readFileSync(resolve(required('SPOTLIGHT_CASE_DIR'), 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Array<{ anchor_ref?: { path?: unknown; line_start?: unknown; line_end?: unknown } }> }).expressions ?? [];
+			for (const anchor of passages.map((passage) => passage?.anchor_ref)) {
+				if (typeof anchor?.path !== 'string' || !Number.isInteger(anchor.line_start)) continue;
+				for (let line = Number(anchor.line_start); line <= Number(Number.isInteger(anchor.line_end) ? anchor.line_end : anchor.line_start); line++) recordedLines.add(`${anchor.path}:${line}`);
+			}
+		} catch {
+			// No passages yet.
+		}
+		const state = commitState(context.messages, recordedLines);
+		for (const line of state.committed) recordedLines.add(line);
+		let reason = '';
+		// Only an activated case records passages, the durable record of what was
+		// committed; a legacy case keeps the model's own route (Codex review of simp-commit, P2).
+		const own = getCurrentTools(context.messages).some((tool) => tool.name === 'record_finding') && existsSync(resolve(required('SPOTLIGHT_CASE_DIR'), 'data', 'case-contract.json'));
+		if (own) requestsSinceCommit += 1;
+		if (own && commitDue(state, requestsSinceCommit)) {
+			requestsSinceCommit = 0;
+			try {
+				const answer = await narrowedRequest(model, context, options, COMMIT_TEXT, COMMIT_TOOLS);
+				const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
+				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickCommit(calls, state.shown);
+				if ('args' in accepted) {
+					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})${accepted.dropped.length ? `; dropped ${accepted.dropped.join('; ')}` : ''}`);
+					emitCommit(out, answer, 'record_finding', accepted.args, accepted.dropped, 'Commit step: kept the first finding', `commit step: ${state.uncommitted.length} unrecorded line(s) shown`);
+					return;
+				}
+				reason = accepted.reason;
+			} catch (error) {
+				reason = `commit request failed: ${(error as Error).message.slice(0, 200)}`;
+			}
+			log(`[commit] model's own request at tool turn ${state.turns} (${reason})`);
+		}
+		for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
+		out.end();
+	})();
+	return out;
+};
+
 export default function spotlightExtension(pi: ExtensionAPI): void {
 	const role = required('SPOTLIGHT_ROLE');
 	if (process.env.SPOTLIGHT_ROUTE_INFERENCE !== 'own') {
@@ -107,9 +369,11 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		log('case material on a route the operator does not run; refusing to start');
 		process.exit(78);
 	}
-	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
+	const operatorBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
+	const fixedBody = withLocalThinking(operatorBody, process.env.SPOTLIGHT_MODEL_TIER, role === 'fact-checker');
 	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
+		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : (role === 'investigator' || role === 'analyst') && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' ? { streamSimple: commitStream } : {}),
 		name: 'Spotlight',
 		baseUrl: required('SPOTLIGHT_MODEL_BASE_URL'),
 		api: 'openai-completions',
@@ -140,10 +404,22 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	const caseDir = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir;
-	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)));
-	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
-	// Ending the orchestrator would end the case, so only workers are stopped.
-	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
+	const fetched = role !== ORCHESTRATOR ? registerFetchedPages(pi) : () => undefined;
+	const assigned = (process.env.SPOTLIGHT_FC_BATCH ?? '').split(',').filter(Boolean);
+	const remaining = role === 'fact-checker' ? () => {
+		const recheckPath = process.env.SPOTLIGHT_TASK_RECHECK;
+		const recheck = recheckPath ? JSON.parse(readFileSync(readTarget(caseDir, recheckPath), 'utf8')) : {};
+		return assigned.length ? checkPacket(caseDir, readCheckDocs(caseDir), assigned, recheck, recheckPath) : nextCheckText(readCheckDocs(caseDir));
+	} : undefined;
+	registerCompaction(pi, withLocalThinking(operatorBody, process.env.SPOTLIGHT_MODEL_TIER), process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), remaining, fetched);
+	// Every tier since constellation-20261102 (review W4): no recorded DeepSeek
+	// or Gemma4 31B worker repeated one call with the same result even twice.
+	const guarded = registerLoopGuard(pi, role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
+	// Ending the orchestrator would end the case, so only workers are stopped,
+	// on every tier: in the recorded runs (watchdog.md) no productive worker had
+	// more than four refusals in a row, and no DeepSeek or Gemma4 31B worker two.
+	const streakGuarded = role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
+	if (role !== ORCHESTRATOR) registerProgressWatchdog(pi, role, caseDir);
 	if (role === ORCHESTRATOR) {
 		registerReviewRefusalCap(pi);
 		registerEndTurnOnOpen(pi);
@@ -151,26 +427,55 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerBlockedStop(pi);
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-		registerUnproductiveBound(pi, async () => nextAction(await resolveCase(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
+		registerUnproductiveBound(pi, async () => nextAction(await caseForModel(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative)), active.caseDir));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
+	const ownFiles = (process.env.SPOTLIGHT_DELIVERABLE_FILES ?? '').split(',').filter(Boolean);
+	const deliverable = writeCommitFile(process.env.SPOTLIGHT_DELIVERABLE_FILES);
+	if ((role === 'investigator' || role === 'analyst') && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' && deliverable && hasDeliverableCheck(deliverable)) registerDeliverableEnd(pi, deliverable, caseDir);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
 		registerCompletionFloor(pi);
 		registerEmptyTurnNudge(pi);
-		if (role === ORCHESTRATOR) {
-			const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
-			const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-			registerTextTurnNudge(pi, () => resolveCase(active, runAdapter));
-		}
 	}
 	registerToolOwners(pi, role);
 	if (process.env.SPOTLIGHT_CALL_BUDGET) registerCallBudget(pi, Number(process.env.SPOTLIGHT_CALL_BUDGET));
-	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi)).map(factCheckDue);
+	const tools = toolsFor(role, pi).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi)).map(factCheckDue);
+	const offered = localAssessmentGate(role, caseDir, assigned);
+	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi, tools.map((tool) => tool.name), offered);
+	// B20b: with no batch, nothing else reopens record_assessment after a fetch brings the second source.
+	else if (role === 'fact-checker' && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier') pi.on('tool_execution_end', () => pi.setActiveTools(tools.map((tool) => tool.name).filter(offered)));
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
-	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
+	registerSchemaHints(pi, tools);
+	const write = tools.find((tool) => tool.name === 'write_file');
+	if (role !== ORCHESTRATOR && write && ownFiles.length === 1 && REPLY_DELIVERABLES.includes(ownFiles[0])) registerReplyDeliverable(pi, write, ownFiles[0]);
+	if (role === ORCHESTRATOR && tier12b) {
+		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
+		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
+		registerTextTurnNudge(pi, () => caseForModel(active, runAdapter), () => stall.count >= STALLED_DISPATCHES || refusedSpawns.stopped);
+	}
+	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name).filter(offered)));
+}
+
+// B20 (case-files.ts secondSourceFetched): a local-tier fact-checker, with a
+// batch or without one (B20b, k4r-9ef5.md), is offered record_assessment only once it has fetched a second source; until
+// then judge_finding writes its claims. The frontier tier and every other
+// role keep all their tools.
+export const ASSESSMENT_HELD = 'record_assessment opens once you have fetched a second source, a page none of your findings cites. Until then answer each finding with judge_finding {finding_id, answer: supports, partly, doesnt, cant_tell or contradicts (with quote, the contradicting line of the re-fetch), reason: one line}; code writes its claim.';
+const assessmentHeld = { held: false };
+function localAssessmentGate(role: string, caseDir: string, batch: string[]): (tool: string) => boolean {
+	if (role !== 'fact-checker' || (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === 'frontier') return () => true;
+	const context = { caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`, env: process.env };
+	const started = Date.now();
+	let open = false;
+	return (tool) => {
+		if (tool !== 'record_assessment') return true;
+		open ||= secondSourceFetched(context, batch, started);
+		assessmentHeld.held = !open;
+		return open;
+	};
 }
 
 // The 12b serves 40,960 tokens per slot, and Pi cannot fold a turn's own tool
@@ -204,6 +509,30 @@ function registerHyphenNames(pi: ExtensionAPI, names: Set<string>): void {
 	});
 }
 
+// fc-stall scan (incr-test2 sp98): after a fold, fact-checker threads fetched
+// the same Companies House pages again (3x). The pages a worker saved this run,
+// by URL, for the text that comes back after a fold.
+const FETCHED_SHOWN = 12;
+export function registerFetchedPages(pi: ExtensionAPI): () => string | undefined {
+	const saved = new Map<string, string>();
+	const started = new Map<string, { url?: unknown; save_as?: unknown }>();
+	pi.on('tool_execution_start', (event) => {
+		if (event.toolName === 'fetch') started.set(event.toolCallId, (event.args ?? {}) as { url?: unknown; save_as?: unknown });
+	});
+	pi.on('tool_execution_end', (event) => {
+		const args = started.get(event.toolCallId);
+		started.delete(event.toolCallId);
+		if (!args || event.isError || typeof args.url !== 'string' || typeof args.save_as !== 'string') return;
+		saved.delete(args.url);
+		saved.set(args.url, args.save_as);
+	});
+	return () => {
+		if (saved.size === 0) return undefined;
+		const pages = [...saved].slice(-FETCHED_SHOWN).map(([url, path]) => `${url} -> ${path}`);
+		return `Already fetched in this task (read the saved file; do not fetch again): ${pages.join('; ')}.`;
+	};
+}
+
 // Skill bodies share the budget (LFM3 e1 on Osaurus, 7513e421: a planning
 // investigator loaded 11 skills in one turn, 99,184 characters; Pi cannot fold
 // inside one turn's results, so the next request was 33,177 tokens with a
@@ -225,7 +554,10 @@ function registerSkillDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDef
 	});
 	const requested = new Map<string, unknown>();
 	pi.on('tool_execution_start', (event) => {
-		if (event.toolName === 'invoke_skill') requested.set(event.toolCallId, (event.args as { skill?: unknown } | undefined)?.skill);
+		if (event.toolName === 'invoke_skill') {
+			const args = event.args as { skill?: unknown; reference?: unknown } | undefined;
+			requested.set(event.toolCallId, typeof args?.skill === 'string' ? `${args.skill}${typeof args.reference === 'string' ? '/' + args.reference : ''}` : undefined);
+		}
 	});
 	pi.on('tool_execution_end', (event) => {
 		const skill = requested.get(event.toolCallId);
@@ -240,7 +572,8 @@ function registerSkillDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDef
 			: {
 					...tool,
 					async execute(id, params, ...rest) {
-						const skill = (params as { skill?: unknown }).skill;
+						const args = params as { skill?: unknown; reference?: unknown };
+						const skill = typeof args.skill === 'string' ? `${args.skill}${typeof args.reference === 'string' ? '/' + args.reference : ''}` : undefined;
 						if (typeof skill === 'string' && loaded.has(skill)) return { content: [{ type: 'text', text: skillAlreadyLoaded(skill) }], details: undefined };
 						return tool.execute(id, params, ...rest);
 					},
@@ -537,7 +870,9 @@ export const textTurnNudge = (phase: string, owner: string) =>
 // with no tool call, in a phase only the orchestrator can move, gets one
 // nudge; a second text turn in a row ends the run as before, so a model that
 // is done is not held.
-function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>): void {
+// `held`: code has stopped re-dispatching a stalled worker and the member was
+// to be told; that text turn is right (Codex review of simp-redispatch, P2).
+function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>, held: () => boolean = () => false): void {
 	let nudged = false;
 	pi.on('message_end', async (event) => {
 		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
@@ -547,7 +882,7 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 			nudged = false;
 			return;
 		}
-		if (message.stopReason !== 'stop' || nudged || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
+		if (message.stopReason !== 'stop' || nudged || held() || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
 		let status: Record<string, unknown>;
 		try {
 			status = await resolve();
@@ -652,9 +987,14 @@ function registerLoopGuard(pi: ExtensionAPI, stop?: string): (tool: ToolDefiniti
 // refused for varied calls with no end (cc investigator-12: 15 writes refused
 // before activation; fsf fact-checker-45 and nordhaven investigator-7: about 9
 // source_expressions refusals each). Once a worker's last REFUSAL_STREAK
-// results were all errors, of any kind, its next call ends the run with
-// `stop` when the turn ends. prepareArguments runs before Pi's schema check
-// and the tool_call hook, so every next call meets it.
+// results were all harness refusals, its next call ends the run with `stop`
+// when the turn ends. prepareArguments runs before Pi's schema check and the
+// tool_call hook, so every next call meets it. A web tool's error counts only
+// when the harness refused the call (egress's "refused:"); a failed upstream
+// (a search backend or a site down) is not the worker's doing, so it neither
+// counts nor ends the streak (codex-review-comb 1).
+const WEB_TOOLS = new Set(['fetch', 'search', 'http_get', 'browse']);
+
 function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefinition) => ToolDefinition {
 	let streak = 0;
 	let stopping = false;
@@ -663,7 +1003,8 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 		stopping = false;
 	});
 	pi.on('tool_execution_end', (event) => {
-		streak = event.isError ? streak + 1 : 0;
+		if (!event.isError) streak = 0;
+		else if (!WEB_TOOLS.has(event.toolName) || /\brefused:/.test((event.result?.content ?? []).map((part: { text?: string }) => part.text ?? '').join('\n'))) streak += 1;
 	});
 	pi.on('turn_end', (_event, ctx) => {
 		if (stopping) ctx.abort();
@@ -680,18 +1021,132 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 	});
 }
 
+// Mandatory progress watchdog (plan 2026-11-01, "Constellation, structural
+// delegation and watchdog"). Every worker, on every tier, is stopped once it
+// has spent this many model turns without an accepted record:
+// - PROGRESS_FIRST_RECORD_TURNS before its first one. Measured on recorded
+//   workers (fine-tuning data/lfm3/u6/constellation-20261102/reports/watchdog.md):
+//   productive workers took at most 14 turns to their first record.
+// - PROGRESS_NEXT_RECORD_TURNS after its last one. ASSUMPTION: the productive
+//   maximum gap was 3 turns, and no recorded worker stalled after a record, so
+//   the stuck side of this bound is uncalibrated. It was 6 until
+//   codex-review-comb 2: a worker gathering sources for its next finding can
+//   honestly spend more than 6 turns, and stopping it then loses real work,
+//   while 12 still ends a stalled worker well inside its call budget.
+// An accepted record is a call that changed a case file's content: a record_*
+// or source_expressions call the tool accepted, or a write_file/edit_file of
+// one of this worker's own deliverable files (the launcher's
+// SPOTLIGHT_DELIVERABLE_FILES, from roles.ts deliverableFor). Targets are
+// compared case-relative, however the path was spelled, and rewriting the same
+// content is not a record (review W1-W3, constellation-20261102). The stop ends
+// the run before its next model request; its answer is the stop line and a
+// machine-readable receipt. It is evidence for the orchestrator, not a prompt
+// to keep going. Once another guard has told the worker to write (the batch
+// fact-checker's, the fact-check due notice, the call budget), the watchdog
+// defers to that guard for the rest of the run: that guard's own hard stop
+// bounds the worker, and the watchdog only logs a receipt naming it.
+export const PROGRESS_FIRST_RECORD_TURNS = 16;
+export const PROGRESS_NEXT_RECORD_TURNS = 12;
+export const PROGRESS_RECEIPT_TAG = '[progress-watchdog receipt]';
+// The file each code-owned record tool writes, by its arguments.
+function recordTarget(tool: string, args: Record<string, unknown>): string | undefined {
+	if (tool === 'source_expressions') return args.action === 'fingerprint_findings' ? 'data/findings.json' : 'data/source-expressions.json';
+	if (tool === 'record_indicator_framework') return 'data/indicator-framework.json';
+	if (tool === 'record_finding' || tool === 'record_assessment' || tool === 'judge_finding') return canonicalWriteCall(tool, args)?.path;
+	return undefined;
+}
+
+export type ProgressReceipt = {
+	watchdog: 'progress';
+	role: string;
+	rule: 'no-first-record' | 'no-new-record';
+	limit: number;
+	turns: number;
+	turns_since_last_record: number;
+	last_record: { turn: number; tool: string; target: string } | null;
+	deferred_to: string | null;
+};
+// Each guard that tells a worker to write, by the notice the worker is shown.
+const WRITE_NOTICES: Array<[guard: string, notice: () => string]> = [
+	['fc-batch', () => FC_BATCH_NOTICE],
+	['fact-check-due', () => FACT_CHECK_DUE_NOTICE],
+	['call-budget', () => CALL_BUDGET_SPENT],
+];
+
+export const progressStop = (receipt: ProgressReceipt) => `The ${receipt.role} ${PROGRESS_STOP}\n${PROGRESS_RECEIPT_TAG} ${JSON.stringify(receipt)}`;
+
+function registerProgressWatchdog(pi: ExtensionAPI, role: string, caseDir: string): void {
+	const deliverables = new Set((process.env.SPOTLIGHT_DELIVERABLE_FILES?.split(',') ?? deliverableFor(role, '', '')?.files ?? []).filter(Boolean));
+	const caseRelativePath = (path: string) => relative(caseDir, resolve(caseDir, path.replace(/^\{CASE_DIR\}(?:[\\/]|$)/, ''))).split(sep).join('/');
+	const contentHash = (target: string) => {
+		const file = resolve(caseDir, target);
+		return existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : '';
+	};
+	const before = new Map<string, { target: string; hash: string }>();
+	// Not reset on agent_start: a fold's continuation prompt is the same task.
+	let turns = 0;
+	let last: ProgressReceipt['last_record'] = null;
+	let stopping: ProgressReceipt | undefined;
+	let deferredTo: string | null = null;
+	let deferredLogged = false;
+	pi.on('tool_execution_start', (event) => {
+		const input = (event.args ?? {}) as Record<string, unknown>;
+		const file = event.toolName === 'write_file' || event.toolName === 'edit_file' ? canonicalWriteCall(event.toolName, input)?.path : recordTarget(event.toolName, input);
+		if (typeof file !== 'string') return;
+		const target = caseRelativePath(file);
+		if ((event.toolName === 'write_file' || event.toolName === 'edit_file') && !deliverables.has(target)) return;
+		before.set(event.toolCallId, { target, hash: contentHash(target) });
+	});
+	pi.on('tool_execution_end', (event) => {
+		const pending = before.get(event.toolCallId);
+		before.delete(event.toolCallId);
+		if (!pending || event.isError || contentHash(pending.target) === pending.hash) return;
+		last = { turn: turns + 1, tool: event.toolName, target: pending.target };
+	});
+	pi.on('turn_end', (event) => {
+		turns += 1;
+		// A turn without tool calls ends the run on the worker's own answer.
+		const content = (event.message as { content?: Array<{ type: string }> }).content;
+		if (stopping || !Array.isArray(content) || !content.some((part) => part.type === 'toolCall')) return;
+		const since = turns - (last?.turn ?? 0);
+		const limit = last ? PROGRESS_NEXT_RECORD_TURNS : PROGRESS_FIRST_RECORD_TURNS;
+		if (since < limit) return;
+		const receipt: ProgressReceipt = { watchdog: 'progress', role, rule: last ? 'no-new-record' : 'no-first-record', limit, turns, turns_since_last_record: since, last_record: last, deferred_to: deferredTo };
+		if (deferredTo) {
+			if (!deferredLogged) log(`${PROGRESS_RECEIPT_TAG} ${JSON.stringify(receipt)}`);
+			deferredLogged = true;
+			return;
+		}
+		stopping = receipt;
+		log(`${PROGRESS_RECEIPT_TAG} ${JSON.stringify(stopping)}`);
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (stopping) ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string; text?: string }> };
+		if (message.role === 'toolResult' && !deferredTo) {
+			const text = (message.content ?? []).map((part) => part.text ?? '').join('\n');
+			deferredTo = WRITE_NOTICES.find(([, notice]) => text.includes(notice()))?.[0] ?? null;
+		}
+		if (!stopping || message.role !== 'assistant') return undefined;
+		return { message: { ...event.message, content: [{ type: 'text', text: progressStop(stopping) }] } as typeof event.message };
+	});
+}
+
 // One research direction's worker (directions.ts) has its share of the
 // investigator's calls. Past it, only the calls that write its deliverable
 // run, and CALL_BUDGET_GRACE calls later its run ends.
-export const CALL_BUDGET_SPENT = "This direction's calls are spent. Write what you found to data/findings.json, data/evidence-bundle.json and data/investigation-log.json now, then finish.";
+export const CALL_BUDGET_SPENT = "This task's calls are spent. Write only your assigned deliverable with what you have, state what remains incomplete, then finish.";
 const CALL_BUDGET_GRACE = 10;
-const BUDGET_WRITES = new Set(['write_file', 'edit_file', 'source_expressions']);
+const BUDGET_WRITES = new Set(['write_file', 'edit_file', 'source_expressions', 'record_finding', 'record_assessment', 'judge_finding']);
 function registerCallBudget(pi: ExtensionAPI, budget: number): void {
 	let calls = 0;
 	pi.on('tool_call', (event) => {
 		calls += 1;
 		if (calls <= budget) return undefined;
-		if (calls > budget + CALL_BUDGET_GRACE) return { block: true, reason: CALL_BUDGET_SPENT, terminate: true };
+		if (calls > budget + CALL_BUDGET_GRACE) return { block: true, reason: `The worker ${CALL_BUDGET_STOP}`, terminate: true };
 		return BUDGET_WRITES.has(event.toolName) ? undefined : { block: true, reason: CALL_BUDGET_SPENT };
 	});
 }
@@ -754,6 +1209,162 @@ function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 // answer ends the run as usual; a message with more tool calls is replaced by
 // this answer, with no calls, so the run ends and the builder runs.
 export const PROPOSAL_DONE = 'The analyst wrote data/knowledge-proposal.json and was stopped there; its final answer and any watch candidates were not written.';
+
+// arm2 ds-spectator on ce4f010e: after the write that completed its batch
+// ("Finish now") the fact-checker rewrote the same claims and read for 32 more
+// calls, and batch threads grew to about 55k tokens on reads and fetches. A
+// batch fact-checker (SPOTLIGHT_FC_BATCH) ends once its batch has claims; past
+// FC_BATCH_DUE calls, only writing and local inspection remain; at FC_BATCH_STOP the run ends.
+export const FC_BATCH_DUE = 15;
+export const FC_BATCH_STOP = 30;
+export const FC_BATCH_DONE = 'Wrote the claims for this batch.';
+export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Use the available local file tools to inspect saved evidence and judge_finding (or record_assessment, where offered) to finish; new source acquisition is closed for this batch. Write ONLY this batch’s claims to data/fact-check.json; the harness merges by finding_id and preserves omitted claims. Do not reconstruct the file or write probe files. Then finish.';
+export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its claims; the batch is incomplete.';
+// What a call to a tool the batch has closed gets, in place of Pi's "not
+// found" (fz2 on comb: "invoke_skill ... belongs to the fact-checker", said to
+// the fact-checker). The role text still names those tools; this says they are
+// closed for this batch and what is open (review e2e 'FC tool narrowing').
+// Set while registerBatchEnd has narrowed this fact-checker's tools; only then
+// is a missing tool closed by the batch (review-fix7 B1: in sensitive mode
+// search and fetch are missing from the first call for another reason).
+const batchTools = { narrowed: false };
+export const fcBatchClosed = (tool: string) =>
+	`${tool} is closed for the rest of this batch because the batch's call budget is spent; source_expressions, invoke_skill and new sources are closed until the batch ends. Next: write this batch's claims with judge_finding (or record_assessment where offered, or write_file to data/fact-check.json). read_file, grep_files, list_files and hash_files stay open for saved evidence. Then finish.`;
+function registerBatchEnd(pi: ExtensionAPI, tools: string[], offered: (tool: string) => boolean): void {
+	const writingTools = tools.filter((name) => ['write_file', 'record_assessment', 'judge_finding', 'read_file', 'grep_files', 'list_files', 'hash_files'].includes(name));
+	let done = false;
+	let calls = 0;
+	pi.on('agent_start', () => {
+		done = false;
+		calls = 0;
+		batchTools.narrowed = false;
+		pi.setActiveTools(tools.filter(offered));
+	});
+	// Reserve each call before execution: a model can emit many in one response.
+	pi.on('tool_call', (event) => {
+		if (done) return { block: true, reason: FC_BATCH_DONE, terminate: true };
+		calls += 1;
+		if (calls > FC_BATCH_STOP) return { block: true, reason: `The fact-checker ${FC_BATCH_SPENT}`, terminate: true };
+		if (calls > FC_BATCH_DUE && !writingTools.includes(event.toolName)) return { block: true, reason: fcBatchClosed(event.toolName) };
+		return undefined;
+	});
+	// A fetch may have brought the second source that opens record_assessment.
+	pi.on('tool_execution_end', () => {
+		if (calls >= FC_BATCH_DUE) batchTools.narrowed = true;
+		pi.setActiveTools((batchTools.narrowed ? writingTools : tools).filter(offered));
+	});
+	pi.on('tool_result', async (event) => {
+		const text = event.content.map((part) => part.type === 'text' ? part.text : '').join('\n');
+		if ((event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment' || event.toolName === 'judge_finding') && !event.isError && text.includes('Every finding in your batch has a claim')) {
+			const caseDir = required('SPOTLIGHT_CASE_DIR');
+			const batch = new Set(required('SPOTLIGHT_FC_BATCH').split(','));
+			const docs = readCheckDocs(caseDir);
+			const findings = (docs.findings as { findings?: Array<{ id: string }> })?.findings ?? [];
+			const future = findings.filter((finding) => !batch.has(finding.id)).map((finding) => finding.id);
+			const checked = await validateFactCheckBatch({ caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: required('SPOTLIGHT_CONFIG'), env: process.env }, future);
+			done = checked.passed;
+			if (!done) return { content: [...event.content, { type: 'text' as const, text: `\nBatch validation failed; repair these errors within the remaining call allowance before finishing:\n${checked.report}` }] };
+		}
+		if (done || calls < FC_BATCH_DUE) return undefined;
+		return { content: [...event.content, { type: 'text' as const, text: `\n${FC_BATCH_NOTICE}` }] };
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		if (message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		if (done) {
+			log('the fact-checker went on after its batch had claims; its turn was ended');
+			return { message: { ...event.message, content: [{ type: 'text', text: FC_BATCH_DONE }] } as typeof event.message };
+		}
+		if (calls < FC_BATCH_STOP) return undefined;
+		log(`the fact-checker made ${FC_BATCH_STOP} calls on one batch; its turn was ended`);
+		return { message: { ...event.message, content: [{ type: 'text', text: `The fact-checker ${FC_BATCH_SPENT}` }] } as typeof event.message };
+	});
+}
+
+// B21 (K4 Tor P5: the analyst put its knowledge proposal in its final reply
+// as JSON, three times, and never wrote it). When a worker's final reply holds
+// one JSON object and its deliverable is one file whose write runs the full
+// validator, code writes that object, as it is, through the worker's own
+// write_file: the same refusals, and the same envelope a direct write gets.
+// Nothing is added to the model's fields. Accepted: the answer says so.
+// Refused: the refusal goes back to the worker as its next prompt, once per
+// distinct object; the worker's own write route is unchanged.
+// Other deliverables wait for a write-time check as complete as the proposal's.
+export const REPLY_DELIVERABLES = ['data/knowledge-proposal.json'];
+export const replyTaken = (file: string) => `[Harness: the JSON in this reply was written to ${file} through write_file, which accepted it.]`;
+export const replyRefused = (file: string, reason: string) => `Your reply held JSON for ${file}, not a write. The harness offered it to write_file, which refused it: ${reason} Fix what it names and write ${file} with write_file; then finish.`;
+// The one JSON object a reply holds: the whole reply, or its one fenced block.
+export function replyObject(text: string): Record<string, unknown> | undefined {
+	const blocks = [...text.matchAll(/```(?:json)?[ \t]*\n([\s\S]*?)\n```/g)].map((match) => match[1]);
+	const candidates = blocks.length ? blocks : [text.trim()];
+	if (candidates.length !== 1) return undefined;
+	try {
+		const value = JSON.parse(candidates[0]) as unknown;
+		return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+	} catch {
+		return undefined;
+	}
+}
+function registerReplyDeliverable(pi: ExtensionAPI, write: ToolDefinition, file: string): void {
+	const offered = new Set<string>();
+	// Once the deliverable is accepted a later reply never replaces it (Codex
+	// review of simp-stack, P2). Not reset on agent_start: a fold's continuation
+	// is the same task.
+	let accepted = false;
+	pi.on('tool_execution_end', (event) => {
+		if ((event.toolName !== 'write_file' && event.toolName !== 'edit_file') || event.isError) return;
+		const said: string = event.result?.content?.[0]?.text ?? '';
+		if (/^(?:wrote|edited) /.test(said) && said.replace(/\\/g, '/').split(/\s/)[1]?.endsWith(file)) accepted = true;
+	});
+	pi.on('message_end', async (event) => {
+		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
+		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
+		if (accepted || message.role !== 'assistant' || message.stopReason !== 'stop' || parts.some((part) => part.type === 'toolCall')) return undefined;
+		const object = replyObject(parts.filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n'));
+		if (!object) return undefined;
+		const content = `${JSON.stringify(object, null, 2)}\n`;
+		if (offered.has(content)) return undefined;
+		offered.add(content);
+		try {
+			await write.execute(`reply-deliverable-${offered.size}`, { path: file, content }, undefined, undefined, undefined as never);
+		} catch (error) {
+			log(`the ${file} JSON in a worker's reply was refused`);
+			pi.sendUserMessage(replyRefused(file, (error as Error).message), { deliverAs: 'followUp' });
+			return undefined;
+		}
+		accepted = true;
+		log(`the ${file} JSON in a worker's reply was written`);
+		return { message: { ...event.message, content: [...parts, { type: 'text', text: `\n${replyTaken(file)}` }] } as typeof event.message };
+	});
+}
+
+// B28 (Tom, 2026-11-04; lfm3-short-check.md: LFM3 rewrote a written plan):
+// on the local tiers with the code router on, once a worker's write-file
+// deliverable is written and passes its check (validators.ts
+// deliverablePasses), the worker's turn ends: a later message with tool calls
+// is replaced by this answer, and any call still pending is blocked. A write
+// that fails the check changes nothing; the post-worker check and its
+// correction run as before. Not reset on agent_start: a fold's continuation is
+// the same task.
+export const deliverableDone = (file: string) => `The worker wrote ${file}, which passes its check, and was stopped there.`;
+function registerDeliverableEnd(pi: ExtensionAPI, file: string, caseDir: string): void {
+	let done = false;
+	pi.on('tool_call', () => (done ? { block: true, reason: deliverableDone(file), terminate: true } : undefined));
+	pi.on('tool_result', async (event) => {
+		if (done || (event.toolName !== 'write_file' && event.toolName !== 'edit_file') || event.isError) return undefined;
+		const text = event.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
+		if (typeof event.input.path !== 'string' || caseRelative(event.input.path, caseDir) !== file || !/^(?:wrote|edited) /.test(text)) return undefined;
+		done = await deliverablePasses(file, { caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: required('SPOTLIGHT_CONFIG'), env: process.env });
+		if (done) log(`${file} is written and passes its check; the worker's turn ends`);
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		if (!done || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		log(`the worker went on after ${file} passed its check; its turn was ended`);
+		return { message: { ...event.message, content: [{ type: 'text', text: deliverableDone(file) }] } as typeof event.message };
+	});
+}
 
 function registerProposalEnd(pi: ExtensionAPI): void {
 	let written = false;
@@ -908,13 +1519,13 @@ function registerFactCheckDue(pi: ExtensionAPI): (tool: ToolDefinition) => ToolD
 		stopping = false;
 	});
 	pi.on('tool_execution_start', (event) => {
-		started.set(event.toolCallId, (event.args as { path?: unknown } | undefined)?.path);
+		started.set(event.toolCallId, canonicalWriteCall(event.toolName, event.args)?.path);
 	});
 	pi.on('tool_execution_end', (event) => {
 		const path = started.get(event.toolCallId);
 		started.delete(event.toolCallId);
 		calls += 1;
-		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') {
+		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment' || event.toolName === 'judge_finding') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') {
 			calls = 0;
 			notice = FACT_CHECK_DUE;
 		}
@@ -964,6 +1575,44 @@ function registerReviewRefusalCap(pi: ExtensionAPI): void {
 	});
 }
 
+// Phase B (Gemma12, 2026-11-02): record_finding was refused five times for
+// grounding.support_type "direct_support" with only "must be equal to one of
+// the allowed values". Pi validates arguments before a tool runs; each failing
+// path that is an enum in the tool's own schema gets its allowed values.
+export function allowedAt(schema: unknown, path: string): unknown[] | undefined {
+	let nodes: unknown[] = [schema];
+	for (const part of path === 'root' ? [] : path.split('.')) {
+		nodes = nodes.flatMap(function expand(node: unknown): unknown[] {
+			const at = node as { properties?: Record<string, unknown>; items?: unknown; anyOf?: unknown[]; allOf?: unknown[]; oneOf?: unknown[] } | undefined;
+			if (!at || typeof at !== 'object') return [];
+			const branches = [...(at.anyOf ?? []), ...(at.allOf ?? []), ...(at.oneOf ?? [])].flatMap(expand);
+			const own = /^\d+$/.test(part) ? (at.items === undefined ? [] : [at.items]) : at.properties?.[part] === undefined ? [] : [at.properties[part]];
+			return [...own, ...branches];
+		});
+	}
+	const values = nodes.flatMap(function enums(node: unknown): unknown[] {
+		const at = node as { enum?: unknown[]; const?: unknown; anyOf?: unknown[]; oneOf?: unknown[] } | undefined;
+		if (!at || typeof at !== 'object') return [];
+		return [...(at.enum ?? []), ...('const' in at ? [at.const] : []), ...[...(at.anyOf ?? []), ...(at.oneOf ?? [])].flatMap(enums)];
+	});
+	return values.length ? [...new Set(values)] : undefined;
+}
+
+function registerSchemaHints(pi: ExtensionAPI, tools: ToolDefinition[]): void {
+	const schemas = new Map(tools.map((tool) => [tool.name, tool.parameters]));
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; isError?: boolean; content?: Array<{ type: string; text?: string }> };
+		const text = message.content?.[0]?.text ?? '';
+		const name = /^Validation failed for tool "([^"]+)"/.exec(text)?.[1];
+		if (message.role !== 'toolResult' || !message.isError || !name || !schemas.has(name)) return undefined;
+		const hinted = text.replace(/^(  - ([^:\n]+): must be equal to (?:one of the allowed values|constant))$/gm, (line, _all, path: string) => {
+			const allowed = allowedAt(schemas.get(name), path);
+			return allowed ? `${line} (allowed: ${allowed.map((value) => JSON.stringify(value)).join(', ')})` : line;
+		});
+		return hinted === text ? undefined : { message: { ...event.message, content: [{ type: 'text', text: hinted }] } as typeof event.message };
+	});
+}
+
 // Pi answers a call to a tool the role does not have with "Tool X not found".
 // When another Spotlight role owns X, say which, so the model takes the next
 // step instead of retrying (gold run 1: the orchestrator called
@@ -978,6 +1627,9 @@ function registerToolOwners(pi: ExtensionAPI, role: string): void {
 			.filter(([, spec]) => spec.tools.includes(name ?? ''))
 			.map(([owner]) => owner);
 		if (!name || owners.length === 0) return undefined;
+		if (role === 'fact-checker' && name === 'record_assessment' && assessmentHeld.held) return { message: { ...event.message, content: [{ type: 'text', text: ASSESSMENT_HELD }] } as typeof event.message };
+		// The batch fact-checker's own tool is missing only because the batch closed it.
+		if (role === 'fact-checker' && batchTools.narrowed && owners.includes(role)) return { message: { ...event.message, content: [{ type: 'text', text: fcBatchClosed(name) }] } as typeof event.message };
 		const next = role === ORCHESTRATOR ? 'Delegate that step with spawn_agent.' : 'Leave that step to them and say so in your answer.';
 		return { message: { ...event.message, content: [{ type: 'text', text: `${name} is not one of your tools; it belongs to the ${owners.join(' and the ')}. ${next}` }] } as typeof event.message };
 	});

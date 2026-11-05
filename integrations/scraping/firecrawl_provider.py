@@ -16,6 +16,7 @@ if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
 from integrations._cli import run_captured, strip_ansi  # noqa: E402
 from integrations._credentials import executable, redact, subprocess_env  # noqa: E402
+from integrations._firecrawl_policy import refusal  # noqa: E402
 
 from .scrape_types import ScrapeError, ScrapeResult
 
@@ -23,6 +24,8 @@ DEFAULT_TIMEOUT_MS = 45_000
 
 
 def fetch(url: str, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> ScrapeResult:  # pragma: no cover - live path
+    if reason := refusal():
+        raise ScrapeError(reason)
     binary = executable("firecrawl")
     if binary is None:
         raise ScrapeError(

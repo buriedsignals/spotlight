@@ -161,7 +161,7 @@ def fingerprint(value: object) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def activate_case(case: Path) -> None:
+def activate_case(case: Path, direct_quote: bool = True) -> None:
     data = case / "data"
     findings_path = data / "findings.json"
     fact_check_path = data / "fact-check.json"
@@ -187,6 +187,14 @@ def activate_case(case: Path) -> None:
 
     bundle = json.loads(bundle_path.read_text())
     bundle["items"][0]["sha256"] = sha(anchor_path)
+    # The fact-checker's own re-fetch (r6 shape): a verified verdict never rests
+    # on the investigator's capture alone (r12-ingest-audit A3).
+    capture_path = case / "research" / "fc-official-record.md.raw"
+    capture_path.write_text(expression_text + "\n")
+    bundle["items"].append({**bundle["items"][0], "id": "FC-E1", "created_by": "fact-checker",
+                            "query_or_task": "Fact-checker re-fetch of the official record",
+                            "raw_path": "research/fc-official-record.md.raw", "sha256": sha(capture_path),
+                            "access_method": "full_text"})
     write_json(bundle_path, bundle)
 
     core = {
@@ -203,6 +211,9 @@ def activate_case(case: Path) -> None:
         "attribution": "Northwind registry <editor>",
         "direct_quote": True,
     }
+    if not direct_quote:
+        # The harness quote path (quotes.ts) writes passages without the field.
+        del core["direct_quote"]
     expression_fp = fingerprint(core)
     link_payload = {
         "expression_fingerprint": expression_fp,
@@ -233,6 +244,8 @@ def activate_case(case: Path) -> None:
 
     fact_check = json.loads(fact_check_path.read_text())
     fact_check["schema_version"] = "1.1"  # activated cases use fact-check contract 1.1
+    fact_check["claims"][0]["evidence_for"][0].update({"evidence_bundle_id": "FC-E1",
+                                                       "local_file": "research/fc-official-record.md.raw"})
     fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
         "expression_id": "SX1",
         "expression_fingerprint": expression_fp,
@@ -406,6 +419,46 @@ def check_set_aside_findings(root: Path) -> None:
     assert result.returncode != 0 and "NO_REPORTABLE_FINDINGS" in result.stdout, result.stdout + result.stderr
 
 
+def check_disposition_kept_finding(root: Path) -> None:
+    """r6 on fix5: a false finding the member kept at the Investigation gate
+    has a disposition "keep" and no selection item. It is kept: a draft that
+    omits it is refused, and the refusal says why, in the words the skill and
+    the analyst's task use."""
+    case = build_case(root / "kept-false")
+    check_path = case / "data" / "fact-check.json"
+    check = json.loads(check_path.read_text())
+    check["claims"][1]["verdict"] = "false"
+    write_json(check_path, check)
+    gate_review(case, {"selection:F1": True, "disposition:F2": "keep"})
+    only_finding(case, "F1")
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "missing=['F2']" in result.stdout and "disposition keep (no selection item, any verdict, false included) is kept" in result.stdout, result.stdout
+
+
+def check_non_direct_quote_selection(root: Path) -> None:
+    """r13 seed: every expression lacks direct_quote, so any quote selection
+    fails. The refusal names the field, the file and the exit (selections are
+    optional), and the draft without them reaches a rendered report."""
+    case = build_case(root / "non-direct-quote")
+    activate_case(case, direct_quote=False)
+    draft_path = case / "data" / "report-draft.json"
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert ("finding_treatments[F1].quote_selections[0] cites SX1, which is not a direct quote "
+            "(direct_quote is not true in data/source-expressions.json); quote_selections is optional: "
+            "remove this selection") in result.stdout, result.stdout
+    draft = json.loads(draft_path.read_text())
+    for treatment in draft["finding_treatments"]:
+        treatment.pop("quote_selections", None)
+    write_json(draft_path, draft)
+    result = finalize(case)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (case / "report.html").exists()
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -425,6 +478,8 @@ def main() -> int:
             assert "evidence-correction pass" not in output.read_text(), output.name
         check_public_sources(Path(tmp) / "public-sources")
         check_set_aside_findings(Path(tmp))
+        check_disposition_kept_finding(Path(tmp))
+        check_non_direct_quote_selection(Path(tmp))
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown

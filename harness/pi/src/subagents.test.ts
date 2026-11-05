@@ -7,8 +7,75 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { MAX_CONCURRENT_WORKERS, WorkerQueue, runWorker } from './subagents.ts';
+import { MAX_CONCURRENT_WORKERS, WorkerQueue, runWorker, spawnAgentTool, FACT_CHECKERS_SPENT } from './subagents.ts';
+import * as subagents from './subagents.ts';
 import type { WorkerLaunch } from './subagents.ts';
+
+test('validated progress refunds one allowance once per finding and stale or cancelled work never refunds', async (t) => {
+	const oldSend = process.send;
+	t.after(() => { process.send = oldSend; });
+	const cycle = { spawns: 0, generation: 0, credited: new Set<string>() };
+	const tool = spawnAgentTool(['fact-checker'], cycle);
+	let response: Record<string, unknown> = {};
+	let request: { id: string } | undefined;
+	process.send = ((message: { kind: string; id: string }) => {
+		if (message.kind === 'spotlight-spawn') { request = message; queueMicrotask(() => process.emit('message', { kind: 'spotlight-result', id: message.id, ok: true, text: 'Claims complete.', ...response })); }
+		return true;
+	}) as typeof process.send;
+	const spawn = (signal?: AbortSignal) => tool.execute('call', { agent: 'fact-checker', task: 'Check assigned findings.' }, signal, undefined, undefined as never);
+	for (const id of ['F1', 'F2', 'F3', 'F4']) { response = { factCheckProgress: [id] }; await spawn(); }
+	assert.equal(cycle.spawns, 0, 'four validated progress receipts do not consume the allowance');
+	response = { factCheckProgress: ['F1', 'F2'] };
+	await spawn();
+	response = {};
+	await spawn();
+	await spawn();
+	await assert.rejects(spawn(), new RegExp(FACT_CHECKERS_SPENT.slice(0, 35)));
+	assert.ok(request);
+	const reset = (subagents as typeof subagents & { resetFactCheckerCycle: (value: typeof cycle) => void }).resetFactCheckerCycle;
+	reset(cycle);
+	response = { factCheckProgress: ['F5'] };
+	const controller = new AbortController();
+	const cancelled = spawn(controller.signal);
+	controller.abort();
+	await cancelled.catch(() => {});
+	assert.equal(cycle.spawns, 1, 'a cancelled result cannot refund');
+	reset(cycle);
+	response = { factCheckProgress: ['F6'] };
+	const stale = spawn();
+	reset(cycle);
+	await stale;
+	assert.equal(cycle.spawns, 0, 'a result from a prior generation cannot alter the new allowance');
+	assert.equal(cycle.credited.has('F6'), false);
+	// U9 held-kde: a spawn the launcher refused before starting a worker is no attempt, and leaves the correction unspent.
+	reset(cycle);
+	response = { ok: false, error: 'spawn_agent: refused', notStarted: true };
+	const correction = () => tool.execute('call', { agent: 'fact-checker', task: 'MODE: EVIDENCE CORRECTION' }, undefined, undefined, undefined as never);
+	for (let tries = 0; tries < 4; tries++) await assert.rejects(correction(), /refused/);
+	assert.equal(cycle.spawns, 0);
+	assert.equal(cycle.corrections, 0);
+	response = { ok: false, error: 'ENOENT: no such file', notStarted: true };
+	await assert.rejects(spawn(), /^Error: spawn_agent could not start the fact-checker: ENOENT/);
+	assert.equal(cycle.spawns, 0, 'a launch that threw is no attempt');
+	response = { ok: false, error: 'worker failed' };
+	await assert.rejects(spawn(), /^Error: worker failed/);
+	assert.equal(cycle.spawns, 1, 'a worker that started and failed is an attempt');
+});
+
+test('on frontier a fact-checker launch that threw still spends its attempt', async (t) => {
+	const oldSend = process.send;
+	const oldTier = process.env.SPOTLIGHT_MODEL_TIER;
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	t.after(() => { process.send = oldSend; if (oldTier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = oldTier; });
+	const cycle = { spawns: 0, generation: 0 };
+	const tool = spawnAgentTool(['fact-checker'], cycle);
+	process.send = ((message: { kind: string; id: string }) => {
+		if (message.kind === 'spotlight-spawn') queueMicrotask(() => process.emit('message', { kind: 'spotlight-result', id: message.id, ok: false, error: 'ENOENT: no such file', notStarted: true }));
+		return true;
+	}) as typeof process.send;
+	await assert.rejects(tool.execute('call', { agent: 'fact-checker', task: 'Check assigned findings.' }, undefined, undefined, undefined as never), /ENOENT/);
+	assert.equal(cycle.spawns, 1);
+});
 
 async function scratch(t: TestContext): Promise<string> {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-subagents-')));

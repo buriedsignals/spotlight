@@ -22,7 +22,8 @@ If every finding was set aside at the Investigation gate, there is nothing to
 report: say so and offer only (b). A draft cannot validate (the report check
 answers `NO_REPORTABLE_FINDINGS`).
 
-If (a): invoke `report-drafting`. The orchestrator authors
+If (a): invoke `report-drafting`. The orchestrator authors (in the Pi harness,
+the analyst worker, through `spawn_agent` with agent `analyst`)
 `data/report-draft.json` to choose localized title, deck, finding order,
 editorial summaries, emphasis, caveats, and next steps. The `decideReport`
 transition then has the resolver module invoke the existing

@@ -16,6 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEAM = ROOT / "scripts" / "spotlight-orchestration.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+from spotlight_orchestration import review  # noqa: E402
 BUILDER = ROOT / "tests" / "fixtures" / "review_case.py"
 sys.path.insert(0, str(ROOT / "tests" / "fixtures"))
 from indicator_framework import document as indicator_document  # noqa: E402
@@ -206,6 +208,32 @@ class ReviewGate(CaseFixture):
 
     # A direction's investigator (harness/pi/src/directions.ts) tags its ids:
     # D2-F1, D2-E1. They pass every check from the gate to the built batch.
+    # A finding a worker withdrew (harness/pi/src/directions.ts) leaves
+    # findings[] and lives only in the file's top-level withdrawn list: no check
+    # asks for its claim, and no page, report or batch shows it.
+    def test_a_withdrawn_finding_passes_the_gate_the_report_and_the_ingest_build_and_appears_in_none(self) -> None:
+        case = self.build("withdrawn", "report", "--clean", "--activated", "--withdrawn")
+        for script in ("validate-case.py", "validate-fact-check.py"):
+            checked = subprocess.run([sys.executable, str(ROOT / "scripts" / script), str(case)],
+                                     capture_output=True, text=True, check=False)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertNotIn("F9", json.dumps(self.view(case, "investigation_gate")["content"]))
+        draft = {
+            "schema_version": "1.0", "title": "Report", "deck": "What the case found.",
+            "framing_finding_ids": ["F1"], "finding_order": ["F1"],
+            "finding_treatments": [{"finding_id": "F1", "headline": "The filing names the payer",
+                                    "summary": "One filing.", "why_it_matters": "It is primary."}],
+            "caveats": [{"text": "Only one filing.", "finding_ids": ["F1"]}],
+            "next_steps": [{"text": "Ask the payer.", "finding_ids": ["F1"]}],
+        }
+        (case / "data/report-draft.json").write_text(json.dumps(draft), encoding="utf-8")
+        report = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+        self.assertNotIn("F9", json.dumps(self.view(case, "report")["content"]))
+        ingest = self.build("withdrawn-ingest", "ingest", "--clean", "--activated", "--withdrawn", "--proposal")
+        self.assertNotIn("F9", (ingest / "data/knowledge-batch-draft.json").read_text(encoding="utf-8"))
+
     def test_direction_tagged_ids_pass_the_gate_the_report_and_the_ingest_build(self) -> None:
         case = self.build("tagged", "report", "--clean", "--activated", "--prefixed")
         for script in ("validate-case.py", "validate-fact-check.py"):
@@ -250,6 +278,50 @@ class ReviewGate(CaseFixture):
         draft["caveats"].append({"text": "Added later.", "finding_ids": ["F1"]})
         draft_path.write_text(json.dumps(draft), encoding="utf-8")
         self.assertNotEqual(self.view(case, "report")["digest"], view["digest"])
+
+    # LFM3 e2 kde stage 2 on Osaurus (03f008b0): all 23 report drafts failed on
+    # structure. At Report the draft's structure is written once, prose empty.
+    def test_report_skeleton_is_written_once_and_is_no_draft_until_its_prose_is(self) -> None:
+        case = self.build("skeleton", "report")
+        self.assertEqual(json.loads(self.seam(case, "report-skeleton").stdout)["written"], True)
+        draft_path = case / "data/report-draft.json"
+        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        self.assertEqual((draft["finding_order"], draft["framing_finding_ids"]), (["F1"], ["F1"]))
+        self.assertEqual(draft["finding_treatments"], [{"finding_id": "F1", "headline": "", "summary": "", "why_it_matters": ""}])
+        self.assertFalse(self.view(case, "report")["content"]["draft_ready"], "the skeleton is no draft yet")
+        refused = subprocess.run([sys.executable, str(ROOT / "scripts/validate-report-draft.py"), str(case)],
+                                 capture_output=True, text=True, check=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("finding_treatments[F1].headline must be a non-empty string", refused.stdout)
+
+        draft["title"] = "Fixture report"
+        draft_path.write_text(json.dumps(draft), encoding="utf-8")
+        self.assertTrue(self.view(case, "report")["content"]["draft_ready"])
+        self.assertEqual(json.loads(self.seam(case, "report-skeleton").stdout)["written"], False, "a draft is never overwritten")
+        self.assertEqual(json.loads(draft_path.read_text(encoding="utf-8"))["title"], "Fixture report")
+
+        before = self.build("before-gate", "investigation_gate")
+        self.assertEqual(json.loads(self.seam(before, "report-skeleton").stdout)["written"], False)
+        self.assertFalse((before / "data/report-draft.json").exists(), "only at Report")
+
+        # Codex review of simp-1 (P2): a finding the member left out offers
+        # no quote, since the draft may not name it.
+        left_out = self.build("left-out", "investigation_gate", "--activated", "--clean")
+        self.edit(left_out, "investigation_gate", {"kind": "mark", "key": "selection:F1", "value": False})
+        self.assertTrue(review.report_quotes(left_out.resolve()).get("F1"), "F1's passage is quotable before the gate")
+        view = self.view(left_out, "investigation_gate")
+        self.page_approve(left_out, "investigation_gate", self.nonce(left_out, "investigation_gate"), view["digest"])
+        self.assertEqual(json.loads(self.seam(left_out, "report-skeleton").stdout)["quotes"], {})
+
+        # A gate review the approval does not bind makes the kept findings
+        # unreadable: no skeleton, and no error, so the analyst still runs and
+        # the draft validator names the problem (step2-design.md section 1).
+        unbound = self.build("unbound", "report")
+        review_path = unbound / "data/investigation-gate-review.json"
+        review_path.write_text('{"items": {}}\n', encoding="utf-8")
+        with self.assertRaises(review.OrchestrationError):
+            review.set_aside_findings(unbound.resolve())
+        self.assertIsNone(review.report_skeleton(unbound.resolve()))
 
     def test_page_report_and_ingest_decisions_record_the_members_name(self) -> None:
         case = self.build("named", "report")

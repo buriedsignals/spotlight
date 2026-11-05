@@ -26,6 +26,8 @@ __all__ = [
     "review_view",
     "seal_investigation_gate",
     "start_research_round",
+    "write_report_skeleton",
+    "report_quotes",
 ]
 
 
@@ -109,12 +111,12 @@ def continue_without_research(
 
 
 def record_amendment(
-    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+    case_dir: str | Path, *, build: bool = False, authorized_cases_root: str | Path | None = None
 ) -> None:
     """Check AMENDMENT mode's data/methodology-amendment.json against the
     member's Research marks (D8); apply and bind it, or send it back."""
     _transition(
-        case_dir, transitions.record_amendment, authorized_cases_root=authorized_cases_root
+        case_dir, transitions.record_amendment, build, authorized_cases_root=authorized_cases_root
     )
 
 
@@ -127,6 +129,8 @@ def request_follow_up(
     decided_by: str | None = None,
     decided_at: str | None = None,
     requested_by_role: str | None = None,
+    shown_gate: str | None = None,
+    shown_digest: str | None = None,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
     """Send the case back to Investigation. ``nonce``/``digest`` come from the
@@ -142,6 +146,8 @@ def request_follow_up(
         decided_by,
         decided_at,
         requested_by_role,
+        shown_gate,
+        shown_digest,
         authorized_cases_root=authorized_cases_root,
     )
 
@@ -154,6 +160,25 @@ def seal_investigation_gate(
         transitions.seal_investigation_gate,
         authorized_cases_root=authorized_cases_root,
     )
+
+
+def write_report_skeleton(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> bool:
+    """At Report, write data/report-draft.json's structure with empty prose
+    when no draft exists yet; returns whether it wrote one."""
+    return _transition(
+        case_dir,
+        transitions.write_report_skeleton,
+        authorized_cases_root=authorized_cases_root,
+    )
+
+
+def report_quotes(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> dict[str, list[dict[str, str]]]:
+    """Read-only: the passages a report draft may quote, per finding."""
+    return review.report_quotes(resolve_case(case_dir, authorized_cases_root))
 
 
 def decide_report(
@@ -284,4 +309,6 @@ def review_view(
             "review_digest": None,
             "nonce_sha256": None,
         }
-    return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt}
+    return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
+            "can_request_follow_up": gate in {"investigation_gate", "report"}
+            and status["phase"] in {"investigation_gate_approval", "investigation_gate_finalization", "report"}}
