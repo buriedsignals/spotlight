@@ -6468,11 +6468,27 @@ test('a fact-check correction after a restart carries the validator FAIL lines a
 // "fact-check missing", so code dispatched a fact-checker the launcher refused,
 // and the investigator's repair waited on the model copying the errors out of
 // a cut receipt. Code now sends the investigator its own validate-case lines.
+// U9 held-kde (pod-u9, 8e1408a3): three refused spawns spent the fact-checker's
+// cap with no fact-checker run, the repair path closed, and the resolver still
+// said to spawn it. A refused spawn spends nothing, and once the same errors
+// return the resolver stops asking for the fact-checker.
 test('when the fact-checker is refused over invalid findings, resolve sends the investigator a structural correction with the errors', async (t) => {
-	const fake = await startFakeOpenAI((request) => (systemText(request).includes('You were delegated a task') ? { text: 'Done.' } : resolveThenStop(request)));
+	const spawnChecker = { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] };
+	const resolveCall = { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
+	let caseDir = '';
+	const fake = await startFakeOpenAI((request) => {
+		if (systemText(request).includes('You were delegated a task')) return { text: 'Done.' };
+		const n = toolResults(request).length;
+		if (n === 4) {
+			const repaired = JSON.parse(readFileSync(join(caseDir, 'data', 'findings.json'), 'utf8'));
+			repaired.findings[0].confidence = 'high';
+			writeFileSync(join(caseDir, 'data', 'findings.json'), JSON.stringify(repaired));
+		}
+		return [resolveCall, spawnChecker, spawnChecker, resolveCall, spawnChecker][n] ?? { text: 'Stopping here.' };
+	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
-	const caseDir = join(space.casesRoot, 'case-a');
+	caseDir = join(space.casesRoot, 'case-a');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
 	await unlink(join(caseDir, 'data', 'fact-check.json'));
 	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8'));
@@ -6485,4 +6501,9 @@ test('when the fact-checker is refused over invalid findings, resolve sends the 
 	assert.match(started[0], /^MODE: STRUCTURAL CORRECTION\n[\s\S]*• \[investigator\] findings\.json\[0\]: 'confidence' must be one of/);
 	const steps = resolveResults(chat).flatMap((state) => ((state.fixed_steps ?? []) as Array<{ step: string; ok: boolean }>).map((receipt) => `${receipt.step}:${receipt.ok}`));
 	assert.deepEqual(steps.slice(0, 3), ['spawn fact-checker:false', 'spawn investigator STRUCTURAL CORRECTION (inputs):true', 'spawn fact-checker:false']);
+	const results = toolResults(fake.requests.filter((request) => !systemText(request).includes('You were delegated a task')).at(-1)!);
+	for (const index of [1, 2]) assert.match(results[index], /no fact-checker was started[\s\S]*\[investigator\] findings\.json\[0\]/, 'a refused spawn keeps naming the investigator\'s errors');
+	assert.ok(!results.some((result) => result.includes(FACT_CHECKERS_SPENT)), 'refused spawns spend no attempt');
+	assert.doesNotMatch(String(resolveResults(chat).at(-1)!.next_action), /spawn the fact-checker/, 'the resolver does not ask for the worker that was just refused');
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 0).length, 1, 'with the findings repaired the fact-checker starts');
 });

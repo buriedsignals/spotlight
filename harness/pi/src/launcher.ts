@@ -353,6 +353,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		let owed: Deliverable | undefined;
 		let amending = false;
 		let rounding = false;
+		let started = false;
 		const factCheckProgress = new Set<string>();
 		const validatedBatch = (ids: string[]) => { for (const id of ids) factCheckProgress.add(id); };
 		queue.run(async () => {
@@ -408,6 +409,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 						...(due?.recheckPath ? { SPOTLIGHT_TASK_RECHECK: due.recheckPath } : {}),
 					...extra,
 				};
+				started = true;
 				const answer = await runWorker(
 					{
 						...processLaunch(harness, request.agent, context ? { ...context, task: canonicalTask } : workerContext(harness, request.agent, worker.header, String(current.phase)), direction, fold),
@@ -497,7 +499,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				}
 				reply({ ok: true, text, ...(progress.length ? { factCheckProgress: progress } : {}) });
 			})
-			.catch((error: Error) => reply({ ok: false, error: harness.redact(withRespawn(harness, request.agent, error.message, owed)) }))
+			.catch((error: Error) => reply({ ok: false, error: harness.redact(withRespawn(harness, request.agent, error.message, owed)), ...(started ? {} : { notStarted: true }) }))
 			.finally(() => running.delete(request.id));
 	});
 }

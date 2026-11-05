@@ -17,7 +17,7 @@ import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP } from '
 
 export type SpawnRequest = { kind: 'spotlight-spawn'; id: string; agent: string; task: string };
 export type CancelRequest = { kind: 'spotlight-cancel'; id: string };
-export type SpawnResult = { kind: 'spotlight-result'; id: string; ok: boolean; text?: string; error?: string; round?: unknown; factCheckProgress?: string[] };
+export type SpawnResult = { kind: 'spotlight-result'; id: string; ok: boolean; text?: string; error?: string; round?: unknown; notStarted?: boolean; factCheckProgress?: string[] };
 // The orchestrator's resolve asks the launcher to run the approved research
 // topics; the launcher checks the phase and the plan itself.
 export type ResearchRequest = { kind: 'spotlight-research'; id: string; retry: boolean };
@@ -140,6 +140,7 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
 			const generation = cycle.generation ?? 0;
+			const corrections = cycle.corrections;
 			if (agent === 'fact-checker') {
 				if (cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
 				if (taskMode(task) !== 'EVIDENCE CORRECTION') cycle.corrections = 0;
@@ -159,7 +160,15 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			process.send({ kind: 'spotlight-spawn', id, agent, task } satisfies SpawnRequest);
 			try {
 				const result = await promise;
-				if (!result.ok) throw new Error(result.error ?? `${agent} failed`);
+				if (!result.ok) {
+					// U9 held-kde: refused spawns spent the cap with no fact-checker run,
+					// which closed the repair path. Only a started worker is an attempt.
+					if (agent === 'fact-checker' && result.notStarted && !signal?.aborted && generation === (cycle.generation ?? 0)) {
+						cycle.spawns = Math.max(0, cycle.spawns - 1);
+						cycle.corrections = corrections;
+					}
+					throw new Error(result.error ?? `${agent} failed`);
+				}
 				// Only the launcher can attest strict-valid new batch work. Consume
 				// every ID once so withdrawing and recreating claims cannot earn retries.
 				if (agent === 'fact-checker' && !signal?.aborted && generation === (cycle.generation ?? 0)) {

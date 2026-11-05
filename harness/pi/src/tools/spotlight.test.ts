@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
-import { NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { FACT_CHECKERS_SPENT } from '../subagents.ts';
+import { INPUTS_REFUSED, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 import { batchBlockedFile, factCheckHash, missingForApproval } from './review.ts';
 
@@ -381,6 +382,12 @@ test('every state the resolver can return names a next step, and only member dec
 	// newsroom page names no analyst.
 	assert.match(nextAction({ phase: 'investigation_gate_finalization', investigation_gate: { resume_at: 'seal' }, fixed_steps: [{ step: 'seal_gate', ok: false, output: 'x' }] }, () => false)!, /failed \(fixed_steps says why\)[^]*do not call spotlight_resolve again/);
 	assert.match(nextAction({ phase: 'investigation', missing: ['investigation follow-up'], follow_up: { instructions: 'x' } }, () => false)!, /spawn the investigator/);
+	// U9 held-kde: next_action agrees with the refusal of code's own fact-checker spawn; a later successful step clears it.
+	const refused = (output: string) => ({ phase: 'investigation', missing: ['data/fact-check.json'], fixed_steps: [{ step: 'spawn fact-checker', ok: false, output }] });
+	assert.equal(nextAction(refused(FACT_CHECKERS_SPENT), () => false), NEXT_FACT_CHECKER_SPENT);
+	assert.equal(nextAction(refused(`spawn_agent: ${INPUTS_REFUSED}\nvalidate-case.py: FAILED`), () => false), NEXT_INPUTS_HELD);
+	assert.equal(nextAction({ ...refused(`spawn_agent: ${INPUTS_REFUSED}`), fixed_steps: [...refused(`spawn_agent: ${INPUTS_REFUSED}`).fixed_steps, { step: 'spawn investigator STRUCTURAL CORRECTION (inputs)', ok: false, output: 'worker failed' }] }, () => false), NEXT_INPUTS_HELD, 'a failed repair keeps the hold');
+	assert.equal(nextAction({ ...refused(FACT_CHECKERS_SPENT), fixed_steps: [...refused(FACT_CHECKERS_SPENT).fixed_steps, { step: 'spawn investigator', ok: true, output: 'Done.' }] }, () => false), NEXT_FACT_CHECKER);
 	const blocked = join(dir, 'blocked');
 	const harnessData = join(dir, 'harness');
 	await mkdir(join(blocked, 'data'), { recursive: true });

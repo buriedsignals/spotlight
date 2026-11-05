@@ -47,6 +47,16 @@ test('validated progress refunds one allowance once per finding and stale or can
 	await stale;
 	assert.equal(cycle.spawns, 0, 'a result from a prior generation cannot alter the new allowance');
 	assert.equal(cycle.credited.has('F6'), false);
+	// U9 held-kde: a spawn the launcher refused before starting a worker is no attempt, and leaves the correction unspent.
+	reset(cycle);
+	response = { ok: false, error: 'spawn_agent: refused', notStarted: true };
+	const correction = () => tool.execute('call', { agent: 'fact-checker', task: 'MODE: EVIDENCE CORRECTION' }, undefined, undefined, undefined as never);
+	for (let tries = 0; tries < 4; tries++) await assert.rejects(correction(), /refused/);
+	assert.equal(cycle.spawns, 0);
+	assert.equal(cycle.corrections, 0);
+	response = { ok: false, error: 'worker failed' };
+	await assert.rejects(spawn(), /worker failed/);
+	assert.equal(cycle.spawns, 1, 'a worker that started and failed is an attempt');
 });
 
 async function scratch(t: TestContext): Promise<string> {

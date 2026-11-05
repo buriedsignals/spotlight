@@ -91,7 +91,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			resetFactCheckerCycle(cycle);
 			// Only the member's own turn lets code start a stalled worker again;
 			// a harness nudge does not (Codex review of simp-redispatch, P1).
-			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) Object.assign(stall, { key: '', count: 0, digest: '' });
+			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) Object.assign(stall, { key: '', count: 0, digest: '', repaired: new Set<string>() });
 			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
 			// on a member's message.
 			process.send?.({ kind: 'spotlight-member-turn' });

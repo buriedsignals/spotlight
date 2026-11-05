@@ -10,6 +10,7 @@ import { CHECKOUT_ROOT } from '../roles.ts';
 import { localTier } from './case-files.ts';
 import { PROGRESS_STOP } from './run.ts';
 import { batchBlocked } from './review.ts';
+import { FACT_CHECKERS_SPENT } from '../subagents.ts';
 
 const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 
@@ -156,6 +157,11 @@ export async function resolveCase(active: ActiveCase, runAdapter: AdapterRunner,
 // Sonnet spawned the fact-checker. The result now carries the next step for
 // the phases a worker spawn or the brief moves forward. Text only: the
 // harness starts nothing.
+// U9 held-kde: the refusal said not to spawn the fact-checker while next_action
+// said to spawn it. When code's own spawn was just refused, next_action agrees.
+export const NEXT_FACT_CHECKER_SPENT = "The fact-checker's automatic attempts are spent, so do not spawn it now. Stop this turn and report the open repairs to the member; their next turn allows one more attempt.";
+export const NEXT_INPUTS_HELD = "The investigator's repair left the same input errors, so the fact-checker cannot start. Do not spawn it now. Stop this turn and report the errors in fixed_steps to the member; their next turn allows another repair.";
+
 export const NEXT_FACT_CHECKER =
 	"Next: spawn the fact-checker (phase-investigation step 3). The investigator's findings, evidence bundle and log are on disk; do not re-run the investigator, and do not re-read the case files first.";
 export const NEXT_INVESTIGATOR = 'Next: spawn the investigator in EXECUTION mode (phase-investigation step 1).';
@@ -317,6 +323,10 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		default:
 			return NEXT_UNKNOWN;
 	}
+	const receipts = Array.isArray(resolved.fixed_steps) ? (resolved.fixed_steps as Array<{ ok?: unknown; output?: unknown }>) : [];
+	const unresolved = receipts.slice(receipts.findLastIndex((step) => step.ok === true) + 1).map((step) => String(step.output));
+	if (unresolved.some((output) => output.includes(INPUTS_REFUSED))) return NEXT_INPUTS_HELD;
+	if (unresolved.includes(FACT_CHECKERS_SPENT)) return NEXT_FACT_CHECKER_SPENT;
 	if (missing.length === 1 && missing[0] === 'data/fact-check.json') return NEXT_FACT_CHECKER;
 	if (missing.includes('data/findings.json')) return NEXT_INVESTIGATOR;
 	if (missing.length === 0) return NEXT_UNKNOWN;
@@ -424,7 +434,7 @@ export type DispatchRunner = {
 	// the orchestrator's extension owns it and clears it on a member turn.
 	stall?: DispatchStall;
 };
-export type DispatchStall = { key: string; count: number; digest: string };
+export type DispatchStall = { key: string; count: number; digest: string; repaired?: Set<string> };
 
 // The case's records: the brief and data/, without what code writes around a
 // spawn (its checks, and the Anomaly decision made before each PLANNING task).
@@ -548,7 +558,8 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 	let previous = '';
 	let repair: Dispatch | undefined;
 	// An inputs repair that comes back with the same errors made no progress.
-	const repaired = new Set<string>();
+	// Held for the member turn: the spawn cap no longer bounds these repairs.
+	const repaired = runner.stall ? (runner.stall.repaired ??= new Set<string>()) : new Set<string>();
 	let stalled: { step: string; attempts: number } | undefined;
 	const stall = runner.stall;
 	for (let spawned = 0; spawned < AUTO_SPAWNS_PER_RESOLVE; spawned++) {
