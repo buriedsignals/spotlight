@@ -253,6 +253,8 @@ def research_steps(
             "missing": ["data/methodology-amendment.json"],
             "research": {"state": "approved", "resume_at": "amendment"},
         }
+        if checks().leaves_plan_unchanged(read_case_json(case, RESEARCH_REVIEW)):
+            value["research"]["no_change"] = True
         problems = state.get("open_amendment")
         if isinstance(problems, dict):
             value["research"]["refused"] = problems.get("problems", [])

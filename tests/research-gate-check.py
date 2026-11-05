@@ -162,14 +162,38 @@ class ResearchGate(SeamCase):
 
     # -- the amendment -----------------------------------------------------
 
-    def test_d8_refuses_an_unmarked_change_then_stops_at_research(self) -> None:
+    def test_a_review_no_mark_changes_needs_no_amendment_file(self) -> None:
         self.to_research_gate({"clue:clue-1": "dismiss"})
+        self.seam("approve", "research", *APPROVER)
+        approved = (self.case / "data/methodology.json").read_bytes()
+        self.assertIs(self.status()["research"]["no_change"], True)
+
+        # A stale file is not what the member approved, so it is not read.
+        PHASE.amend(self.case, lambda methodology: methodology["navigator"].update(fallback_used=True))
+        self.seam("record-amendment")
+
+        self.assertEqual(self.status()["phase"], "investigation")
+        self.assertEqual((self.case / "data/methodology.json").read_bytes(), approved)
+        receipt = self.state()["approvals"]["research"]
+        self.assertEqual(receipt["amended_methodology_sha256"]["data/methodology.json"],
+                         PHASE.sha(self.case / "data/methodology.json"))
+        ledger = read_json(self.case / "data/review-nonces.json")
+        self.assertEqual([entry["amendment_built_by"] for entry in ledger["nonces"].values() if "amendment_built_by" in entry], ["code"])
+
+    def test_a_marked_review_still_waits_for_the_amendment_file(self) -> None:
+        self.to_research_gate({"clue:clue-1": "pursue"})
+        self.seam("approve", "research", *APPROVER)
+        self.assertNotIn("no_change", self.status()["research"])
+        self.assertIn("methodology-amendment.json is missing", self.seam("record-amendment", expect=3).stderr)
+
+    def test_d8_refuses_an_unmarked_change_then_stops_at_research(self) -> None:
+        self.to_research_gate({"clue:clue-1": "pursue"})
         self.seam("approve", "research", *APPROVER)
         approved = (self.case / "data/methodology.json").read_bytes()
 
         def unmarked(methodology: dict) -> None:
             methodology["investigation_plan"][0]["steps"].append(
-                {"order": 2, "action": "Read the court docket", "tool": "fetch", "cites": ["clue:clue-1"]})
+                {"order": 2, "action": "Read the court docket", "tool": "fetch", "cites": ["clue:not-pursued"]})
 
         PHASE.amend(self.case, unmarked)
         self.seam("record-amendment")

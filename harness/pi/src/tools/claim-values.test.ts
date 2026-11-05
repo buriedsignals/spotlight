@@ -33,5 +33,7 @@ test('a claim\'s numbers and dates are found in its passage across formats, and 
 	assert.deepEqual(missingValues('on 2024/03/03', 'dated 2024-03-03'), []);
 	assert.deepEqual(missingValues('opened in 1885', 'opened in Basel', 'History: opened in 1885'), []);
 	assert.deepEqual(missingValues('paid 1,000,000,000,001', 'paid 1,000,000,000,002'), ['1,000,000,000,001']);
+	assert.deepEqual(missingValues('The Form 990 lists 12 directors', 'lists 12 directors'), [], 'a form\'s name is not a value');
+	assert.deepEqual(missingValues('They form 12 groups', 'They form 13 groups'), ['12'], 'the verb keeps its number');
 	assert.deepEqual(missingValues('Isabela Dias Fernandes leads the Tor Project', 'Marcus Holloway leads it'), [], 'names and meaning are not checked');
 });

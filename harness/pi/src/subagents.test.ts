@@ -54,8 +54,11 @@ test('validated progress refunds one allowance once per finding and stale or can
 	for (let tries = 0; tries < 4; tries++) await assert.rejects(correction(), /refused/);
 	assert.equal(cycle.spawns, 0);
 	assert.equal(cycle.corrections, 0);
+	response = { ok: false, error: 'ENOENT: no such file', notStarted: true };
+	await assert.rejects(spawn(), /^Error: spawn_agent could not start the fact-checker: ENOENT/);
+	assert.equal(cycle.spawns, 0, 'a launch that threw is no attempt');
 	response = { ok: false, error: 'worker failed' };
-	await assert.rejects(spawn(), /worker failed/);
+	await assert.rejects(spawn(), /^Error: worker failed/);
 	assert.equal(cycle.spawns, 1, 'a worker that started and failed is an attempt');
 });
 

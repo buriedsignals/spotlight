@@ -884,6 +884,36 @@ test('a correction task on a plan of two directions runs one investigator, unspl
 	assert.doesNotMatch(tasks[0], /DIRECTION \d of \d|Your deliverable/);
 });
 
+// Engine's two local routes set the model variables and strip
+// SPOTLIGHT_PROVIDER_REQUEST_BODY (run/spotlight.go); a catalog body is the only
+// other shape it has held. The real processes run, and each request is read;
+// the checkpoint's request is checked in the fold test below.
+test('on the environment Engine passes the fact-checker turn thinks and every other request stays off', async (t) => {
+ for (const [label, body] of [['no request body', undefined], ['catalog privacy body', '{"provider":{"zdr":true,"data_collection":"deny"}}']] as const) await t.test(label, async (t) => {
+	let reads = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return reads < 3 ? { toolCalls: [{ name: 'read_file', arguments: { path: `research/filing-${reads++}.md` } }] } : { text: 'Checked.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check every finding.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await factCheckCase(space, [{ id: 'F1', claim: 'Acme paid Doe.' }]);
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	for (const n of [0, 1, 2]) await writeFile(join(caseDir, 'research', `filing-${n}.md`), `${n} ${'The registry lists the fixture company. '.repeat(1500)}`);
+	const engine = { SPOTLIGHT_MODEL_ID: 'default', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960', SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_PROVIDER_API_KEY: 'agent-token', ...(body ? { SPOTLIGHT_PROVIDER_REQUEST_BODY: body } : {}) };
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), ...engine }), 'Continue.');
+
+	const thinking = (request: object) => (request as { chat_template_kwargs?: { enable_thinking?: unknown } }).chat_template_kwargs?.enable_thinking;
+	const checker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+	const others = fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker'));
+	t.diagnostic(`fact-checker ${checker.length} requests ${[...new Set(checker.map(thinking))]}; orchestrator ${others.length} ${[...new Set(others.map(thinking))]}`);
+	assert.ok(checker.length > 0 && others.length > 0, 'both roles ran');
+	for (const request of checker) assert.equal(thinking(request), true);
+	for (const request of others) assert.equal(thinking(request), false);
+	if (body) for (const request of fake.requests) assert.deepEqual((request as { provider?: unknown }).provider, JSON.parse(body).provider);
+ });
+});
+
 // wave 1 on 52bf6183: the fact-checker's whole task, case passages and the
 // fact-check structure included, came back after every fold (21.8k characters
 // median), and its post-fold prompt was 42.7k tokens.
@@ -931,6 +961,10 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	assert.match(userText(first), /PASSAGE-MARKER/, 'the fact-checker starts with its passages');
 	const folded = fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && JSON.stringify(request.messages).includes('CHECKPOINT-SENTINEL'));
 	assert.ok(folded, 'the fact-checker folded');
+	// A checkpoint is a summary: the fact-checker's own turns think, its fold does not.
+	const thinking = (request: object) => (request as { chat_template_kwargs?: { enable_thinking?: unknown } }).chat_template_kwargs?.enable_thinking;
+	assert.deepEqual([...new Set(fake.requests.filter((request) => (request.tools ?? []).length === 0).map(thinking))], [false]);
+	assert.equal(thinking(folded), true);
 	const text = JSON.stringify(folded.messages);
 	const checkpointMessage = folded.messages.find(message => JSON.stringify(message.content).includes('CHECKPOINT-SENTINEL'))!;
 	const checkpointText = JSON.stringify(checkpointMessage.content).split(TASK_AFTER_FOLD)[0];
@@ -5882,7 +5916,7 @@ test('open_review at the Methodology gate refuses a navigator status outside the
 // once the worker finishes.
 // A researched case whose Research gate the member approved: the resolver
 // is at research/amendment.
-function caseAtAmendment(space: Workspace): string {
+function caseAtAmendment(space: Workspace, dismissClues = false): string {
 	const caseDir = join(space.casesRoot, 'case-a');
 	const prepare = [
 		'import importlib.util, json, sys',
@@ -5898,6 +5932,7 @@ function caseAtAmendment(space: Workspace): string {
 		'm.write_json(case / "data/leads.json", json.loads(m.LEADS_SAMPLE.read_text(encoding="utf-8")))',
 		'm.write_json(case / "data/clues.json", json.loads(m.CLUES_SAMPLE.read_text(encoding="utf-8")))',
 		'm.prepare_research_gate(case)',
+		...(dismissClues ? ['marks = {f"clue:{clue[\'clue_id\']}": "dismiss" for clue in json.loads(m.CLUES_SAMPLE.read_text(encoding="utf-8"))["clues"]}', 'm.write_json(case / "data/research-review.json", {"schema_version": "spotlight-review/v1", "gate": "research", "reviewer": "journalist:fixture", "items": {t: {"target": t, "final": mark} for t, mark in marks.items()}})'] : []),
 		'seam("approve", "research", *m.APPROVER)',
 	].join('\n');
 	execFileSync(PYTHON, ['-c', prepare, caseDir]);
@@ -5975,6 +6010,41 @@ test('at a stalled investigation the resolver names the round, code launches the
 	// Continuity: the round's topic is in the plan and the case has left round_topics for the round.
 	assert.ok(JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')).research_plan.topics.some((topic: { topic_id: string }) => topic.topic_id === 'ownership-news-courts'));
 	assert.notEqual((lastResolution(chat) as { research?: { resume_at?: string } }).research?.resume_at, 'round_topics');
+ });
+});
+
+// qwen-u9-mac.md: a plain 4-bit model changed navigator.fallback_used on every
+// copy of a plan no mark changed, and r3 stopped there on the real seed.
+test('when no mark changes the plan no worker retypes it, whether the model spawns or a resumed case resolves', async (t) => {
+ for (const route of ['model spawn', 'resume'] as const) await t.test(route, async (t) => {
+	const space = await workspace(t);
+	const caseDir = caseAtAmendment(space, true);
+	const approved = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
+	let resumed = route === 'model spawn';
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Amended.' };
+		if (toolResults(request).length > 0 || !resumed) return { text: 'Done.' };
+		return route === 'model spawn'
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: METHODOLOGY AMENDMENT' } }] }
+			: { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
+	});
+	t.after(() => fake.close());
+	const env = { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' };
+	if (route === 'resume') {
+		const stopped = launch(t, env);
+		await settledPrompt(stopped, 'Continue.');
+		stopped.process.kill('SIGTERM');
+		await stopped.exited;
+		assert.match(JSON.stringify(JSON.parse(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'status', '--json', caseDir], { encoding: 'utf8', env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } })).research), /"resume_at":"amendment"/, 'the first run left the case at the step');
+		resumed = true;
+	}
+	const chat = launch(t, env);
+	await settledPrompt(chat, 'Continue.');
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && userText(request).startsWith('MODE: AMENDMENT')).length, 0, 'no worker ran the amendment');
+	assert.equal(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), approved);
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.ok(state.approvals.research.amended_methodology_sha256, 'the amendment was recorded');
+	if (route === 'model spawn') assert.ok(fake.requests.some((request) => toolResults(request).some((text) => text.includes('code built the amendment'))), 'the orchestrator is told');
  });
 });
 
@@ -6235,6 +6305,22 @@ test('with the code router a model that repeats a refused spawn is stopped, the 
 	await settledPrompt(chat, 'Try again.');
 	const after = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task')).length;
 	assert.ok(after > asked, 'the member\'s turn reaches the model again');
+});
+
+// r3 held-sfc: 373 spawns threw while the worker's launch was built, the text
+// named no refusal, and only the 500-call cap ended the run.
+test('with the code router a spawn that throws before a worker starts ends in a member stop', async (t) => {
+	const fake = await startFakeOpenAI((request) => (fake.requests.length > 40 ? { text: 'The test ended this.' } : { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Keep investigating.' } }] }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	await mkdir(join(space.dataDir, 'work'), { recursive: true });
+	await writeFile(join(space.dataDir, 'work', 'investigator'), 'a file where the worker\'s folder goes');
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CODE_ROUTER: 'on' });
+	await settledPrompt(chat, 'Continue.');
+	assert.ok(chat.lines.some((line) => line.includes('Spotlight stopped this turn because the investigator was refused 2 times')), 'the member reads the stop');
+	assert.ok(fake.requests.length <= 6, `${fake.requests.length} model requests`);
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, 0, 'no worker ran');
 });
 
 // Member consent: code never crosses a gate. At a member gate it acts only when

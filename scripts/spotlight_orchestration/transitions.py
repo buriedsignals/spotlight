@@ -335,6 +335,11 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     accepts it without a new Methodology approval and keeps the attempts.
     On a refusal the problems go back to AMENDMENT once; a second refusal
     stops the case at Research.
+
+    When no mark asks for a change the amendment is the approved methodology,
+    so its bytes are taken as it stands and every check below still runs: a
+    model that retypes the file only adds risk (qwen-u9-mac.md). The ledger
+    entry records that code built it.
     """
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
@@ -342,17 +347,19 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     if status.get("research", {}).get("resume_at") != "amendment":
         raise OrchestrationError("the case is not waiting for a methodology amendment")
     approved = research_rules.read_case_json(case, "data/methodology.json")
-    amendment_path = case_path(case, METHODOLOGY_AMENDMENT)
+    review_doc = research_rules.read_case_json(case, RESEARCH_REVIEW)
+    built_by_code = research_rules.checks().leaves_plan_unchanged(review_doc)
+    source = "data/methodology.json" if built_by_code else METHODOLOGY_AMENDMENT
+    amendment_path = case_path(case, source)
     if not amendment_path.is_file():
-        raise OrchestrationError(f"{METHODOLOGY_AMENDMENT} is missing")
+        raise OrchestrationError(f"{source} is missing")
     amendment_bytes = amendment_path.read_bytes()
     try:
         amended = json.loads(amendment_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise OrchestrationError(f"cannot read {METHODOLOGY_AMENDMENT}: {exc}") from exc
+        raise OrchestrationError(f"cannot read {source}: {exc}") from exc
     if not isinstance(amended, dict) or not isinstance(approved, dict):
         raise OrchestrationError("the methodology and its amendment must be JSON objects")
-    review_doc = research_rules.read_case_json(case, RESEARCH_REVIEW)
     problems = research_rules.checks().d8_amendment(
         approved, amended, review_doc if isinstance(review_doc, dict) else None
     )
@@ -380,6 +387,8 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     if entry is None:
         raise OrchestrationError("the Research approval has no ledger entry")
     entry["amended_methodology_sha256"] = amended_hashes
+    if built_by_code:
+        entry["amendment_built_by"] = "code"
     receipt["amended_methodology_sha256"] = amended_hashes
     state.pop("open_amendment", None)
     state["attempts"].pop(AMENDMENT_CORRECTION, None)

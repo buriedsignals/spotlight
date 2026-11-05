@@ -352,6 +352,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		running.set(request.id, controller);
 		let owed: Deliverable | undefined;
 		let amending = false;
+		let codeBuilt = false;
 		let rounding = false;
 		let started = false;
 		const factCheckProgress = new Set<string>();
@@ -364,6 +365,13 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			// The fact-checker's task is code-built: the orchestrator's text never
 			// reaches it (only the directives code reads; roles.ts factCheckerTask).
 			amending = request.agent === 'investigator' && atAmendment(status);
+			// Every way to this worker comes here, from a resolve's dispatch or the
+			// model's own spawn, and a resumed case resolves back to this step, so
+			// no worker retypes a plan no mark changes (qwen-u9-mac.md).
+			if (amending && (status.research as { no_change?: unknown }).no_change === true) {
+				codeBuilt = true;
+				return '';
+			}
 			rounding = request.agent === 'investigator' && atRoundTopics(status);
 			// A fact-check correction (the auto-dispatched one carries only its
 			// mode) gets the validator's FAIL lines read from the case now.
@@ -409,11 +417,12 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 						...(due?.recheckPath ? { SPOTLIGHT_TASK_RECHECK: due.recheckPath } : {}),
 					...extra,
 				};
-				started = true;
 				const answer = await runWorker(
 					{
 						...processLaunch(harness, request.agent, context ? { ...context, task: canonicalTask } : workerContext(harness, request.agent, worker.header, String(current.phase)), direction, fold),
 						onSpawn: (child) => {
+							// r3 held-sfc: 373 spawns threw before any process existed.
+							started ||= child.pid !== undefined;
 							track(harness, child);
 							serveEditorial(harness, child, request.agent, running);
 						},
@@ -483,8 +492,8 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				for (const key of keys) activeDirections.delete(key);
 			}
 		})
-			.then((text) => withValidation(harness, request.agent, text))
-			.then(async (text) => (amending ? `${text}\n\n${await applyAmendment(harness)}` : rounding ? `${text}\n\n${await applyRound(harness)}` : text))
+			.then((text) => (codeBuilt ? text : withValidation(harness, request.agent, text)))
+			.then(async (text) => (codeBuilt ? await recordAmendment(harness) : amending ? `${text}\n\n${await applyAmendment(harness)}` : rounding ? `${text}\n\n${await applyRound(harness)}` : text))
 			.then(async (text) => {
 				// Earlier batches may have completed before a later batch stopped.
 				// Revalidate surviving results before granting continuation credit.
@@ -582,15 +591,21 @@ async function applyAmendment(harness: Harness): Promise<string> {
 	if (existsSync(applied) && readFileSync(applied, 'utf8').trim() === hash) {
 		return '[Harness: data/methodology-amendment.json is unchanged since it was last applied, so recordAmendment was not applied again. Spawn the investigator to write a corrected amendment.]';
 	}
+	// The resolver reached an outcome (applied, or a refusal it recorded), so
+	// this content now counts as applied. A resolver error leaves the hash
+	// unset: that amendment was never checked (review-fix2 Z1).
+	return recordAmendment(harness, () => {
+		mkdirSync(dirname(applied), { recursive: true, mode: 0o700 });
+		writeFileSync(applied, `${hash}\n`, { mode: 0o600 });
+	});
+}
+
+async function recordAmendment(harness: Harness, reached?: () => void): Promise<string> {
+	const { config, active } = harness;
 	const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
 	try {
 		await runAdapter(transitionArguments('recordAmendment', {}, active, ORCHESTRATOR, true));
-		// The resolver reached an outcome (applied, or a refusal it recorded),
-		// so this content now counts as applied. A resolver error throws first
-		// and leaves the hash unset: that amendment was never checked
-		// (review-fix2 Z1).
-		mkdirSync(dirname(applied), { recursive: true, mode: 0o700 });
-		writeFileSync(applied, `${hash}\n`, { mode: 0o600 });
+		reached?.();
 		// A refusal is recorded, not raised (transitions.py record_amendment):
 		// the resolver's state says which it was.
 		const after = await caseStatus(harness);
@@ -599,7 +614,7 @@ async function applyAmendment(harness: Harness): Promise<string> {
 			const refused = (after.research as { refused?: unknown } | undefined)?.refused;
 			return `[Harness: recordAmendment refused the amendment. Spawn the investigator once more; its task carries these problems.]\n${harness.redact(JSON.stringify(refused ?? [])).slice(0, 1500)}`;
 		}
-		return '[Harness: recordAmendment applied; the amendment passed the check against the member\'s marks. Call spotlight_resolve.]';
+		return `[Harness: recordAmendment applied; ${reached ? 'the amendment' : 'no mark changes the plan, so code built the amendment from the approved methodology and no worker ran. It'} passed the check against the member's marks. Call spotlight_resolve.]`;
 	} catch (error) {
 		return `[Harness: recordAmendment did not reach an outcome (the resolver failed), so the amendment was not checked or counted. Spawn the investigator again to retry it.]\n${harness.redact((error as Error).message).slice(0, 1500)}`;
 	}

@@ -13,7 +13,7 @@ import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, 
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
-import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinkingOff, withoutHistoryReasoning } from './provider-policy.ts';
+import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinking, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, canonicalWriteCall, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
@@ -369,7 +369,8 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		log('case material on a route the operator does not run; refusing to start');
 		process.exit(78);
 	}
-	const fixedBody = withLocalThinkingOff(parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY), process.env.SPOTLIGHT_MODEL_TIER);
+	const operatorBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
+	const fixedBody = withLocalThinking(operatorBody, process.env.SPOTLIGHT_MODEL_TIER, role === 'fact-checker');
 	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
 		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : (role === 'investigator' || role === 'analyst') && routerOn(process.env) && (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') !== 'frontier' ? { streamSimple: commitStream } : {}),
@@ -410,7 +411,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		const recheck = recheckPath ? JSON.parse(readFileSync(readTarget(caseDir, recheckPath), 'utf8')) : {};
 		return assigned.length ? checkPacket(caseDir, readCheckDocs(caseDir), assigned, recheck, recheckPath) : nextCheckText(readCheckDocs(caseDir));
 	} : undefined;
-	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), remaining, fetched);
+	registerCompaction(pi, withLocalThinking(operatorBody, process.env.SPOTLIGHT_MODEL_TIER), process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), remaining, fetched);
 	// Every tier since constellation-20261102 (review W4): no recorded DeepSeek
 	// or Gemma4 31B worker repeated one call with the same result even twice.
 	const guarded = registerLoopGuard(pi, role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);

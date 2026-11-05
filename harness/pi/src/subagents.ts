@@ -167,7 +167,10 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 						cycle.spawns = Math.max(0, cycle.spawns - 1);
 						cycle.corrections = corrections;
 					}
-					throw new Error(result.error ?? `${agent} failed`);
+					// The orchestrator's stop counts spawn_agent failures (router.ts), and
+					// one that started no worker is one whatever threw it.
+					const failure = result.error ?? `${agent} failed`;
+					throw new Error(result.notStarted && !failure.startsWith('spawn_agent') ? `spawn_agent could not start the ${agent}: ${failure}` : failure);
 				}
 				// Only the launcher can attest strict-valid new batch work. Consume
 				// every ID once so withdrawing and recreating claims cannot earn retries.

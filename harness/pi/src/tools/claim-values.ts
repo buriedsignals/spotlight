@@ -53,8 +53,12 @@ function readings(written: string): number[] {
 	return bare.length - last - 1 === 3 ? [whole, decimal] : [decimal];
 }
 
+// A form's name is not a value (tor:F2, "Form 990"). Capitalised only: "they
+// form 12 groups" keeps its number.
+const FORM_NAME = /\bForm\s+\d[\dA-Z-]*/g;
+
 function numbersIn(text: string): Found[] {
-	return [...text.matchAll(NUMBER)].map((match) => {
+	return [...text.replace(FORM_NAME, ' ').matchAll(NUMBER)].map((match) => {
 		const scale = match[2] ? SCALE[match[2].toLowerCase()] : 1;
 		return { label: match[0].trim(), keys: readings(match[1]).map((value) => String(Number((value * scale).toPrecision(15)))) };
 	});

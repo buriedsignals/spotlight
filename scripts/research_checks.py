@@ -492,6 +492,12 @@ def pursued(marked: Mapping[str, str]) -> set[str]:
     return {t for t, m in marked.items() if m == "pursue" or (t.startswith("direction:") and m in ("keep", "add"))}
 
 
+def leaves_plan_unchanged(review: Mapping[str, Any] | None) -> bool:
+    """No mark asks the plan to change, so the amendment is the approved
+    methodology as it stands: a kept direction and a dismissed clue add nothing."""
+    return isinstance(review, Mapping) and not set(marks(review).values()) & {"drop", "add", "pursue"}
+
+
 def _directions(methodology: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     return {str(d.get("direction_id") or d.get("direction")): d
             for d in methodology.get("investigation_plan") or [] if isinstance(d, Mapping)}
@@ -500,6 +506,19 @@ def _directions(methodology: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
 def _cites(step: Mapping[str, Any]) -> list[str]:
     cites = step.get("cites")
     return [cites] if isinstance(cites, str) else [c for c in cites or [] if isinstance(c, str)]
+
+
+_ABSENT = object()
+
+
+def _changed_paths(before: Any, after: Any, path: str) -> list[str]:
+    """The dotted paths where two values differ, so a correction names the key."""
+    if before == after:
+        return []
+    if isinstance(before, Mapping) and isinstance(after, Mapping):
+        return [changed for key in sorted(set(before) | set(after), key=str)
+                for changed in _changed_paths(before.get(key, _ABSENT), after.get(key, _ABSENT), f"{path}.{key}")]
+    return [path]
 
 
 def d8_amendment(approved: Mapping[str, Any], amended: Mapping[str, Any], review: Mapping[str, Any] | None) -> list[str]:
@@ -511,7 +530,8 @@ def d8_amendment(approved: Mapping[str, Any], amended: Mapping[str, Any], review
     problems: list[str] = []
     for key in sorted(set(approved) | set(amended)):
         if key != "investigation_plan" and approved.get(key) != amended.get(key):
-            problems.append(f"{key} changed; an amendment changes only investigation_plan")
+            problems.extend(f"{path} changed; an amendment changes only investigation_plan"
+                            for path in _changed_paths(approved.get(key), amended.get(key), key))
     before, after = _directions(approved), _directions(amended)
     for direction in sorted(set(before) - set(after)):
         if marked.get(f"direction:{direction}") != "drop":

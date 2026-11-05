@@ -455,6 +455,20 @@ class D8Amendment(unittest.TestCase):
                 problems = checks.d8_amendment(self.approved, after, marks)
                 self.assertTrue(any(expected in p for p in problems), problems)
 
+    def test_a_refusal_names_the_changed_key_path(self) -> None:
+        self.approved["navigator"] = {"used": False, "fallback_used": False}
+        after = self.amended()
+        after["navigator"]["fallback_used"] = True
+        self.assertEqual(checks.d8_amendment(self.approved, after, review()),
+                         ["navigator.fallback_used changed; an amendment changes only investigation_plan"])
+
+    def test_only_a_drop_add_or_pursue_mark_changes_the_plan(self) -> None:
+        for marks, unchanged in (({"clue:a": "dismiss", "direction:b": "keep"}, True), ({}, True),
+                                 ({"clue:a": "pursue"}, False), ({"direction:b": "drop"}, False),
+                                 ({"direction:b": "add"}, False)):
+            self.assertIs(checks.leaves_plan_unchanged(review(**marks)), unchanged, marks)
+        self.assertIs(checks.leaves_plan_unchanged(None), False, "no review is no decision")
+
     def test_a_drop_mark_the_amendment_ignored_is_refused(self) -> None:
         problems = checks.d8_amendment(self.approved, self.amended(), review(**{"direction:contracts": "drop"}))
         self.assertEqual(problems, ["direction contracts was marked drop but is still in the plan"])

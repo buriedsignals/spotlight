@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinkingOff } from './provider-policy.ts';
+import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinking } from './provider-policy.ts';
 
 test('fixed request fields override and deep-merge into the provider payload', () => {
 	const outcome = applyFixedRequestBody(
@@ -30,8 +30,10 @@ test('fixed request policy must itself be a JSON object', () => {
 
 test('local tiers send thinking off beside an operator\'s fields, whose own value wins; frontier is untouched', () => {
 	const off = { enable_thinking: false };
-	assert.deepEqual(withLocalThinkingOff(undefined, undefined), { chat_template_kwargs: off });
-	assert.deepEqual(withLocalThinkingOff({ provider: { zdr: true } }, '12b'), { chat_template_kwargs: off, provider: { zdr: true } });
-	assert.deepEqual(withLocalThinkingOff({ chat_template_kwargs: { enable_thinking: true } }, '12b'), { chat_template_kwargs: { enable_thinking: true } });
-	assert.equal(withLocalThinkingOff(undefined, 'frontier'), undefined);
+	assert.deepEqual(withLocalThinking(undefined, undefined), { chat_template_kwargs: off });
+	assert.deepEqual(withLocalThinking({ provider: { zdr: true } }, '12b'), { chat_template_kwargs: off, provider: { zdr: true } });
+	assert.deepEqual(withLocalThinking({ chat_template_kwargs: { enable_thinking: true } }, '12b'), { chat_template_kwargs: { enable_thinking: true } });
+	assert.equal(withLocalThinking(undefined, 'frontier'), undefined);
+	assert.equal(withLocalThinking(undefined, 'frontier', true), undefined);
+	assert.deepEqual(withLocalThinking({ provider: { zdr: true } }, '12b', true), { chat_template_kwargs: { enable_thinking: true }, provider: { zdr: true } });
 });
