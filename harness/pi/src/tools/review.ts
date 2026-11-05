@@ -120,16 +120,18 @@ export const REVIEW_HOLD_NOTICE = 'Waiting for your decision on the review page.
 export type ReviewHold = { ms: number; say?: (text: string) => void; resolved: () => Promise<Record<string, unknown>>; decided?: () => void };
 
 // Whether the gate moved within the limit. Decisions write data/orchestration.json,
-// so the resolver runs only when that file changes.
-async function decisionLanded(caseDir: string, hold: ReviewHold, signal?: AbortSignal): Promise<boolean> {
-	const record = () => {
-		try { return readFileSync(join(caseDir, 'data/orchestration.json'), 'utf8'); } catch { return ''; }
-	};
-	let seen = record();
-	const before = JSON.stringify(await hold.resolved());
+// so the resolver runs only when that file changes. The starting point is taken
+// before the page opens, so a quick decision is not part of it (Codex R3).
+const orchestrationRecord = (caseDir: string) => {
+	try { return readFileSync(join(caseDir, 'data/orchestration.json'), 'utf8'); } catch { return ''; }
+};
+async function decisionLanded(caseDir: string, hold: ReviewHold, start: { seen: string; before: string }, signal?: AbortSignal): Promise<boolean> {
+	const record = () => orchestrationRecord(caseDir);
+	let { seen } = start;
+	const { before } = start;
 	const deadline = Date.now() + hold.ms;
-	while (Date.now() < deadline && !signal?.aborted) {
-		await new Promise<void>((done) => {
+	for (let first = true; Date.now() < deadline && !signal?.aborted; first = false) {
+		if (!first) await new Promise<void>((done) => {
 			const timer = setTimeout(done, Math.min(HOLD_POLL_MS, Math.max(deadline - Date.now(), 0)));
 			signal?.addEventListener('abort', () => { clearTimeout(timer); done(); }, { once: true });
 		});
@@ -151,12 +153,13 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 		async execute(_id, _params, signal) {
 			const failed = await check?.();
 			if (failed) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
+			const start = hold?.ms ? { seen: orchestrationRecord(caseDir), before: JSON.stringify(await hold.resolved()) } : undefined;
 			const result = await open({ caseDir });
 			const missing = result.status === 'opened' ? await note?.() : undefined;
 			// A page with nothing to approve needs the chat, so it holds nothing.
-			if (hold?.ms && result.status === 'opened' && !missing) {
+			if (hold && start && result.status === 'opened' && !missing) {
 				hold.say?.(REVIEW_HOLD_NOTICE);
-				if (await decisionLanded(caseDir, hold, signal)) {
+				if (await decisionLanded(caseDir, hold, start, signal)) {
 					hold.decided?.();
 					return { content: [{ type: 'text', text: REVIEW_DECIDED }], details: { opened: false, decided: true } };
 				}

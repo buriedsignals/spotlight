@@ -146,7 +146,15 @@ test('a hold ends on a decision, not on an edit, and a page with nothing to appr
 	assert.deepEqual(result.details, { opened: false, decided: true });
 	assert.deepEqual([decisions, said.length], [1, 1]);
 
+	// Codex R3: a decision made while the page is still opening counts.
+	const quick = await openReviewTool(active.caseDir, root, async () => {
+		phase = 'complete';
+		await writeFile(record, '{"n": 3}');
+		return { status: 'opened' };
+	}, undefined, undefined, hold).execute('call', {}, undefined, undefined, undefined as never);
+	assert.deepEqual(quick.details, { opened: false, decided: true });
+
 	const free = await run(async () => 'No report draft is written yet.');
 	assert.deepEqual(free.details, { opened: true });
-	assert.equal(said.length, 1, 'no hold notice');
+	assert.equal(said.length, 2, 'no hold notice');
 });
