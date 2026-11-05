@@ -1941,22 +1941,33 @@ function resolveCites(context: ToolContext, cites: Cite[]): ResolvedCite[] {
 		} catch (error) {
 			throw new ToolArgumentError(`${where}: ${(error as Error).message} Nothing was written.`);
 		}
-		const lines = sourceLines(text);
+		let lines = sourceLines(text);
+		// fetch's leads file (X) is a short distillation of the page it saved as X.raw. A cite outside X that X.raw holds is the page's lines
+		// (qwen real launch: the same refused cite repeated until the worker ended). Local tiers only; frontier gets the refusal.
+		let path = cite.path;
+		if (cite.line_end > lines.length && cite.line_end >= cite.line_start && localTier(context.env) && registeredCapture(context, `${cite.path}.raw`)) {
+			try {
+				const raw = sourceLines(readFileSync(readTarget(context.caseDir, `${cite.path}.raw`, context.scope), 'utf8'));
+				if (cite.line_end <= raw.length) { lines = raw; path = `${cite.path}.raw`; }
+			} catch {
+				// No readable .raw: the refusal below stands.
+			}
+		}
 		if (cite.line_end < cite.line_start || cite.line_end > lines.length) throw new ToolArgumentError(`${where}: lines ${cite.line_start}-${cite.line_end} are outside the file (lines 1-${lines.length}); give line_start and line_end inside it, as read_file numbers them. Nothing was written.`);
 		const quote = lines.slice(cite.line_start - 1, cite.line_end).join('\n').trim();
 		if (!quote) throw new ToolArgumentError(`${where}: lines ${cite.line_start}-${cite.line_end} are empty; cite the lines that hold the text. Nothing was written.`);
 		// Provenance only from the investigator's own fetch receipt, never from
 		// a bundle row it could write or another role's capture (Codex review of simp-2, P1).
-		const capture = registeredCapture(context, cite.path);
+		const capture = registeredCapture(context, path);
 		if (!capture || capture.acquired_by !== 'investigator') throw new ToolArgumentError(`${where}: cite works only on a capture your own fetch saved and that is unchanged since; this file is not one. Fetch the source (fetch with save_as under research/) and cite that capture, or record this finding with evidence and sources of your own. Nothing was written.`);
 		// Reuse an existing item only when it is this role's and direction's and records
 		// this very capture (Codex review of simp-link: a foreign-direction item is
 		// refused by the direction merge; a hand-written one may name another source).
 		const direction = context.env.SPOTLIGHT_DIRECTION;
-		const item = bundle.find((entry) => bundleFiles(entry).includes(cite.path) && entry.created_by !== 'fact-checker'
+		const item = bundle.find((entry) => bundleFiles(entry).includes(path) && entry.created_by !== 'fact-checker'
 			&& (!direction || String(entry.id).startsWith(`${direction}-`))
 			&& entry.source_url === capture.url && (entry.sha256 === undefined || entry.sha256 === capture.sha256));
-		return { ...cite, text: quote, url: capture.url, accessed: capture.accessed, item, capture };
+		return { ...cite, path, text: quote, url: capture.url, accessed: capture.accessed, item, capture };
 	});
 }
 
