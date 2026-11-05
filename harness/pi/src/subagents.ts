@@ -308,8 +308,12 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 // folder the operator names, never to stderr or the chat. A transcript that
 // cannot be written stops being written; it never fails the task.
 function openTranscript(): ((record: Record<string, unknown>) => void) | undefined {
-	const dir = process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
-	if (!dir) return undefined;
+	// Local installs keep them by default (qwen real launch: nothing explained a silent empty pass); 'off' turns that off. They hold case text,
+	// so they sit in the harness data folder, owner-only.
+	const set = process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
+	const data = process.env.SPOTLIGHT_HARNESS_DATA;
+	const dir = set ?? (localTier(process.env) && data ? join(data, 'transcripts') : undefined);
+	if (!dir || dir === 'off') return undefined;
 	const file = join(dir, `worker-${Date.now()}-${randomUUID()}.jsonl`);
 	let failed = false;
 	const attempt = (write: () => void) => {
