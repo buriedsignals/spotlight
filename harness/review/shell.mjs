@@ -32,6 +32,10 @@ export function renderShell({ nonce, boot = {} }) {
 </head>
 <body>
 <a class="skip" href="#main">Skip to the review</a>
+<header class="masthead">
+<span class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/></svg>Spotlight</span>
+<span class="byline">by Buried Signals</span>
+</header>
 <main id="main" tabindex="-1">
 <h1 id="title">Spotlight review</h1>
 <p id="status" role="status" aria-live="polite">Loading the review…</p>
