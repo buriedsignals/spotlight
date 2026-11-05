@@ -591,6 +591,12 @@ test('the summary step writes both gate files from the records, can be regenerat
 	await step('summary');
 	assert.notEqual(await readFile(join(dir, 'summary.md'), 'utf8'), markdown, 'a regenerated summary is not stale by hash');
 
+	// Codex R2: a later verified row must not hide a dispute.
+	await put('fact-check.json', { claims: [{ finding_id: 'F1', verdict: 'disputed' }, { finding_id: 'F1', verdict: 'verified' }, { finding_id: 'F2', verdict: 'unverified' }] });
+	await step('summary');
+	const conflicted = JSON.parse(await readFile(join(dir, 'data/summary.json'), 'utf8'));
+	assert.deepEqual([conflicted.key_conclusions, conflicted.verified_findings, conflicted.findings[0].fact_check_verdict], [[], 0, 'disputed']);
+
 	await rm(join(dir, 'summary.md'));
 	await put('fact-check.json', { claims: [{ finding_id: 'F1', verdict: 'verified' }] });
 	await assert.rejects(step('summary')!, /fact-check verdict for every finding/);

@@ -68,7 +68,9 @@ export function analystDeliverable(caseDir: string, model: string, local = false
 			source_positions: positions.filter((position) => position.finding_id === finding.id && !('withdrawn' in position)),
 		})),
 	};
-	const skeleton = local ? { proposal_skeleton: proposalSkeleton(context.findings, model) } : {};
+	// No claim is possible: the schema needs one, so an empty skeleton would only mislead.
+	const built = local ? proposalSkeleton(context.findings, model) : undefined;
+	const skeleton = built?.claims.length ? { proposal_skeleton: built } : {};
 	const path = writeConfined(caseDir, caseDir, 'data/harness-checks/analyst/context.json', JSON.stringify({ ...context, ...skeleton }));
 	let start = `The complete joined context is at ${path}; use read_file with a JSON pointer such as /findings/0 if more detail is needed.`;
 	for (const limit of [800, 240, 0]) {
@@ -84,6 +86,6 @@ export function analystDeliverable(caseDir: string, model: string, local = false
 	}
 	return {
 		files: ['data/knowledge-proposal.json'], start,
-		line: `Runtime analyst metadata: ${JSON.stringify({ interface_version: '1', model })}. Code writes these envelope values into the proposal; do not search case files for the runtime model. ${local ? LOCAL_LINE : `Your deliverable is data/knowledge-proposal.json, matching schemas/knowledge-proposal.schema.json. Use only the approved inputs in agents/analyst.md and this joined context; broader parent requests for summary, report, methodology, brief or raw research are outside this contract. Events and story arcs are optional. You decide the normalized proposition, language, statement, attribution and which eligible origin passage supports it; the packet chooses none of these. Preserve fact-check uncertainty. Write one complete proposal, not partial claim batches; the builder remains strict. Then finish.`}`,
+		line: `Runtime analyst metadata: ${JSON.stringify({ interface_version: '1', model })}. Code writes these envelope values into the proposal; do not search case files for the runtime model. ${built?.claims.length ? LOCAL_LINE : `Your deliverable is data/knowledge-proposal.json, matching schemas/knowledge-proposal.schema.json. Use only the approved inputs in agents/analyst.md and this joined context; broader parent requests for summary, report, methodology, brief or raw research are outside this contract. Events and story arcs are optional. You decide the normalized proposition, language, statement, attribution and which eligible origin passage supports it; the packet chooses none of these. Preserve fact-check uncertainty. Write one complete proposal, not partial claim batches; the builder remains strict. Then finish.`}`,
 	};
 }

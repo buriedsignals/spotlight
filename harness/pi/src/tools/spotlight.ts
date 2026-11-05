@@ -292,7 +292,7 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		case 'research_approval':
 			return NEXT_RESEARCH_APPROVAL;
 		case 'investigation_gate_approval':
-			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : NEXT_GATE_OWED;
+			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : stepFailed && localTier(process.env) ? nextFixedStep('summary', true) : NEXT_GATE_OWED;
 		case 'investigation_gate_finalization':
 			return nextFixedStep(String((resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at ?? missing[0] ?? ''), stepFailed);
 		case 'report':

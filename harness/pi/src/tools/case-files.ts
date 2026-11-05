@@ -943,7 +943,9 @@ function completeSummary(caseDir: string, merged: string, notes: string[]): stri
 		return merged;
 	}
 	if (!summary || typeof summary !== 'object' || Array.isArray(summary) || !Array.isArray(findings) || !Array.isArray(claims)) return merged;
-	const verdicts = new Map(claims.map((claim) => [claim?.finding_id, claim?.verdict]));
+	// A finding with several fact-check rows is verified only if every row is (Codex R2).
+	const verdicts = new Map<unknown, unknown>();
+	for (const claim of claims) if (!verdicts.has(claim?.finding_id) || verdicts.get(claim?.finding_id) === 'verified') verdicts.set(claim?.finding_id, claim?.verdict);
 	const rows = findings.map((finding) => ({ id: finding?.id, claim: finding?.claim, confidence: finding?.confidence, fact_check_verdict: verdicts.get(finding?.id), ...(Array.isArray(finding?.sources) ? { source_count: finding.sources.length } : {}) }));
 	if (rows.some((row) => typeof row.fact_check_verdict !== 'string')) return merged;
 	const counts = new Map<unknown, number>();
@@ -980,7 +982,7 @@ export function writeGateSummary(caseDir: string): string {
 	const cycles = Array.isArray(record('data/investigation-log.json').cycles) ? (record('data/investigation-log.json').cycles as { gaps_remaining?: unknown }[]) : [];
 	const lead = typeof methodology.lead === 'string' ? methodology.lead.trim() : '';
 	const limitations = [...new Set([...texts(cycles.at(-1)?.gaps_remaining), ...texts(methodology.limitations)])];
-	const title = lead.length > 120 ? `${lead.slice(0, 117)}...` : lead;
+	const title = lead.length > 120 ? `${lead.slice(0, lead.lastIndexOf(' ', 117))}...` : lead;
 	const done = completeSummary(caseDir, JSON.stringify({ title, cycles: Math.max(cycles.length, 1), limitations }), []);
 	const summary = JSON.parse(done) as { title: string; generated_at?: string; cycles: number; summary: string; findings?: { id: string; claim: string; confidence: unknown; fact_check_verdict: string; source_count?: number }[] };
 	if (!summary.findings || !summary.generated_at) throw new Error('the gate summary needs data/findings.json and a fact-check verdict for every finding');

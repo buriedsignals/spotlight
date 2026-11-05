@@ -62,16 +62,17 @@ test('a local tier gets the proposal skeleton: what the case fixes is filled, ju
 test('the skeleton leaves the origin open between two passages, and no claim for a finding the builder could not take', async (t) => {
 	const dir = await fixture(t, [passage('S1'), passage('S2', { language: 'de' }), passage('T1', { derivative_type: 'translation' })]);
 	analystDeliverable(dir, 'runtime-model', true);
-	const read = async () => JSON.parse(await readFile(join(dir, 'data/harness-checks/analyst/context.json'), 'utf8')).proposal_skeleton.claims;
+	const read = async () => JSON.parse(await readFile(join(dir, 'data/harness-checks/analyst/context.json'), 'utf8')).proposal_skeleton?.claims;
 	const [claim] = await read();
 	assert.deepEqual([claim.origin_expression_id, claim.language], ['', '']);
 
 	await writeFile(join(dir, 'data/source-expressions.json'), JSON.stringify({ expressions: [] }));
-	analystDeliverable(dir, 'runtime-model', true);
-	assert.deepEqual(await read(), []);
+	const none = analystDeliverable(dir, 'runtime-model', true);
+	assert.equal(await read(), undefined, 'the schema needs a claim, so an empty skeleton is left out');
+	assert.doesNotMatch(none.line, /proposal_skeleton/);
 
 	await writeFile(join(dir, 'data/source-expressions.json'), JSON.stringify({ expressions: [passage('S1')] }));
 	await writeFile(join(dir, 'data/fact-check.json'), JSON.stringify({ claims: [{ finding_id: 'F1', verdict: 'verified' }, { finding_id: 'F1', verdict: 'disputed' }] }));
 	analystDeliverable(dir, 'runtime-model', true);
-	assert.deepEqual(await read(), [], 'the builder cannot tell id-less rows apart');
+	assert.equal(await read(), undefined, 'the builder cannot tell id-less rows apart');
 });
