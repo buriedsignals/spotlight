@@ -118,11 +118,11 @@ test('on the local tier fetch returns RLM leads, keeps the raw page beside them,
 	assert.equal(result.saved_to, 'research/company-42.md');
 	assert.equal(result.raw_path, 'research/company-42.md.raw');
 	assert.match(String(result.leads), /Ada Lovelace is President of Analytical Engines SA since 2019\./);
-	assert.match(String(result.leads), /lines 5-5/);
+	assert.match(String(result.leads), /lines 2-7/, 'the pick keeps three lines either side, up to the end of the inspected page');
 	assert.deepEqual(result.inspected_lines, { start: 1, end: 7, total: 7 });
 	assert.equal(result.coverage_complete, true);
-	assert.deepEqual(result.selections, [{ path: 'research/company-42.md.raw', line_start: 5, line_end: 5 }]);
-	assert.equal(JSON.stringify(result).includes('Footer boilerplate'), false, 'the raw page must not reach the agent');
+	assert.deepEqual(result.selections, [{ path: 'research/company-42.md.raw', line_start: 2, line_end: 7 }]);
+	assert.equal(String(result.leads).includes('# Company 42'), false, 'the raw page must not reach the agent: line 1 is outside the widened pick');
 
 	const leadsBytes = await readFile(join(caseDir, 'research/company-42.md'));
 	const rawBytes = await readFile(join(caseDir, 'research/company-42.md.raw'));
@@ -215,7 +215,9 @@ test('a picked line keeps three lines either side, so a role and its holder arri
 
 test('bounded chunks expose late exact passages and disclose uninspected tail', async (t) => {
 	for (const rangeCount of [1, 14]) await t.test(`${rangeCount} exact ranges per selected chunk`, async (t) => {
+		// Each pick keeps three lines below it (the chunk's end bounds it above); picks that touch merge into one range.
 		const width = rangeCount === 1 ? 36 : 1;
+		const widened = rangeCount * width + 3;
 		const page = Array.from({length: 900}, (_, i) => `line ${i + 1} ${'x'.repeat(150)}`).join('\n');
 		const rlm = await standInRLM(t, 200, request => {
 			const numbers = [...request.messages[0].content.matchAll(/^(\d+): /gm)].map(m => Number(m[1]));
@@ -231,11 +233,11 @@ test('bounded chunks expose late exact passages and disclose uninspected tail', 
 		assert.equal(result.coverage_complete, false);
 		assert.match(String(result.coverage_note), /not inspected/);
 		const selections = result.selections as Array<{line_start:number;line_end:number;path:string}>;
-		assert.equal(selections.length,2*rangeCount);
+		assert.equal(selections.length,2,'one merged range per selected chunk');
 		assert.ok(String(result.leads).length < 30_000);
 		const rawLines = (await readFile(join(caseDir,'research/long.md.raw'),'utf8')).split('\n');
 		for (const selection of selections) {
-			assert.equal(selection.line_end - selection.line_start + 1, width);
+			assert.equal(selection.line_end - selection.line_start + 1, widened);
 			assert.ok(String(result.leads).includes(rawLines.slice(selection.line_start-1,selection.line_end).join('\n')));
 		}
 		assert.ok(selections[0].line_start > 160,'selection after an empty first chunk reaches beyond the old input prefix');
@@ -263,7 +265,7 @@ test('CRLF source selections use the same line numbers as source anchors', async
 	const result = await call({url:PAGE_URL,save_as:'research/crlf.md'});
 	assert.equal(result.distilled,true);
 	assert.deepEqual(result.inspected_lines,{start:1,end:3,total:3});
-	assert.deepEqual(result.selections,[{path:'research/crlf.md.raw',line_start:3,line_end:3}]);
+	assert.deepEqual(result.selections,[{path:'research/crlf.md.raw',line_start:1,line_end:3}]);
 	assert.match(String(result.leads), /Café filed the report\./);
 	assert.deepEqual(validatorErrors(caseDir,'research/crlf.md.raw',3,3,'Café filed the report.'),[]);
 	assert.equal(await readFile(join(caseDir,'research/crlf.md.raw'),'utf8'),page);
