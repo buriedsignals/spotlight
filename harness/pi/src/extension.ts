@@ -27,7 +27,7 @@ import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, recordsD
 import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
 import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool, withProgress } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { PAGE_NOT_OPENED, REVIEW_HOLD_MS, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
+import { PAGE_NOT_OPENED, REVIEW_HOLD_MS, batchBlocked, failureLines, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { deliverablePasses, evidenceValidates, hasDeliverableCheck, validateFactCheckBatch } from './validators.ts';
 
@@ -1176,7 +1176,6 @@ function registerCallBudget(pi: ExtensionAPI, budget: number): void {
 export const REVIEW_REFUSAL_CAP = 5;
 export const PAGE_COULD_NOT_START = 'The Spotlight review page could not start.';
 export const REVIEW_START_STOP = 'Spotlight stopped this turn because the review page could not start five times. Nothing was changed in your case. This is a problem with Spotlight on this computer, not with your case, so asking again will not help until it is fixed. The reason is in review-start.log in Spotlight\'s data folder.';
-const REVIEW_ERROR_LINES = 3;
 
 // The stop line is the member's, so it names the problem in plain words and
 // shows at most the validator's first three FAIL lines.
@@ -1185,12 +1184,7 @@ export function reviewRefusalStop(refusal: string): string {
 	const stop = report
 		? 'Spotlight stopped this turn because the report draft was refused five times. The draft did not pass the report check, so nothing was rendered or recorded. Ask Spotlight to try again, or say what to change.'
 		: 'Spotlight stopped this turn because the review page was refused five times. The case files it needed did not pass their check, so nothing was recorded and your case is saved. Send a message here to try again. If the same problems come back, the page cannot open until they are fixed.';
-	const errors = refusal
-		.split('\n')
-		.map((line) => line.trim())
-		.filter((line) => line.startsWith('FAIL ') || line.startsWith('• '))
-		.slice(0, REVIEW_ERROR_LINES)
-		.map((line) => line.replace(/^(?:FAIL\s+|•\s+)/, ''));
+	const errors = failureLines(refusal);
 	return errors.length > 0 ? `${stop}\nThe check found these problems.\n${errors.join('\n')}` : stop;
 }
 
@@ -1207,11 +1201,15 @@ export const REVIEW_OPEN_STOP = 'Spotlight opened the review page in your browse
 function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 	let opened = false;
 	let decided = false;
+	let stopLine = REVIEW_OPEN_STOP;
 	pi.on('agent_start', () => {
 		opened = false;
 	});
 	pi.on('tool_execution_end', (event) => {
-		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { opened?: unknown } | undefined)?.opened === true) opened = true;
+		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { opened?: unknown } | undefined)?.opened === true) {
+			opened = true;
+			stopLine = (event.result?.details as { stop?: string }).stop ?? REVIEW_OPEN_STOP;
+		}
 		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { decided?: unknown } | undefined)?.decided === true) decided = true;
 	});
 	// A decision on the page is the member's turn: a follow-up queued here starts a
@@ -1228,7 +1226,7 @@ function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 	pi.on('message_end', (event) => {
 		if (!opened || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		opened = false;
-		return { message: { ...event.message, content: [{ type: 'text', text: REVIEW_OPEN_STOP }] } as typeof event.message };
+		return { message: { ...event.message, content: [{ type: 'text', text: stopLine }] } as typeof event.message };
 	});
 }
 

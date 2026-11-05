@@ -2809,6 +2809,28 @@ test('at the gate a summary the check refuses is rebuilt by code on a local tier
 	}
 });
 
+// A failure at the gate that is not the summary: no worker may repair it there, but the page shows it and can send the case back.
+test('a gate check failure with no repair route opens the page at once and ends on code\'s stop, naming it and the next step; frontier keeps the refusal', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'open_review', arguments: {} }] }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'investigation_gate']);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_REVIEW_HOLD_MS: '300' });
+		await settledPrompt(chat, 'Continue.', 30_000);
+		const said = chat.lines.filter((line) => line.includes('"type":"message_end"') && line.includes('Spotlight stopped')).join('\n');
+		if (tier === 'frontier') {
+			assert.equal(chat.opened().length, 0, 'frontier refuses as before');
+			continue;
+		}
+		assert.equal(chat.opened().length, 1, 'the page opened');
+		assert.equal(fake.requests.length, 1, 'no refusal loop');
+		assert.match(said, /did not pass their check[\s\S]*The check found these problems\.[\s\S]*send the case back to Investigation/);
+		assert.ok(!said.includes(REVIEW_OPEN_STOP));
+		assert.ok(notices(chat).some((text) => text.includes('send the case back to Investigation')), 'the hold names it while the member decides');
+	}
+});
+
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
 // carries a skeleton whose placeholders the builder refuses until they are filled.
 test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {
