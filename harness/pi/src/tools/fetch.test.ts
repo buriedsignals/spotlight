@@ -213,6 +213,37 @@ test('a picked line keeps three lines either side, so a role and its holder arri
 	assert.ok(existsSync(join(caseDir, 'research/people.md.raw')));
 });
 
+// gate9 case-ab7e6c04 and u9mac-s856: the helper never picked the line holding the role, so no lead held it.
+test('an investigator\'s leads add the raw lines that match its direction, with their context, on the local tiers only', async (t) => {
+	const page = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`);
+	page[19] = '##### isabela';
+	page[21] = 'Executive Director of the Tor Project.';
+	page[34] = 'Director of nothing.';
+	const plan = JSON.stringify({ investigation_plan: [
+		{ direction: 'Identify current Executive Director', questions: ['Who is the current Executive Director of the Tor Project?'], direction_id: 'd1' },
+		{ direction: 'Map the funding', questions: ['Which grants paid for relays?'], direction_id: 'd2' },
+	] });
+	const run = async (env: Record<string, string>, ranges: unknown[] = [{ start: 2, end: 2 }]) => {
+		const back = await standInRLM(t, 200, () => JSON.stringify({ ranges }));
+		const { caseDir, call } = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: back.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own', SPOTLIGHT_ROLE: 'investigator', SPOTLIGHT_DIRECTION: 'D1', ...env }, page.join('\n'));
+		await mkdir(join(caseDir, 'data'));
+		await writeFile(join(caseDir, 'data', 'methodology.json'), plan);
+		return call({ url: PAGE_URL, save_as: 'research/people.md' });
+	};
+	const added = await run({});
+	assert.equal(added.distilled, true, String(added.rlm_error));
+	assert.deepEqual(added.selections, [{ path: 'research/people.md.raw', line_start: 1, line_end: 5 }, { path: 'research/people.md.raw', line_start: 19, line_end: 25 }]);
+	assert.match(String(added.leads), /##### isabela\nline 21\nExecutive Director of the Tor Project\./);
+	assert.doesNotMatch(String(added.leads), /Director of nothing/, 'one term alone is not a match');
+	// The helper answered with nothing: the matching lines still make a lead.
+	const rescued = await run({}, []);
+	assert.deepEqual(rescued.selections, [{ path: 'research/people.md.raw', line_start: 19, line_end: 25 }]);
+	// Another direction's terms, the fact-checker and frontier add nothing.
+	assert.deepEqual((await run({ SPOTLIGHT_DIRECTION: 'D2' })).selections, [{ path: 'research/people.md.raw', line_start: 1, line_end: 5 }]);
+	assert.deepEqual((await run({ SPOTLIGHT_ROLE: 'fact-checker' })).selections, [{ path: 'research/fc-people.md.raw', line_start: 1, line_end: 5 }]);
+	assert.deepEqual((await run({ SPOTLIGHT_MODEL_TIER: 'frontier' })).selections, [{ path: 'research/people.md.raw', line_start: 2, line_end: 2 }]);
+});
+
 test('bounded chunks expose late exact passages and disclose uninspected tail', async (t) => {
 	for (const rangeCount of [1, 14]) await t.test(`${rangeCount} exact ranges per selected chunk`, async (t) => {
 		// Each pick keeps three lines below it (the chunk's end bounds it above); picks that touch merge into one range.

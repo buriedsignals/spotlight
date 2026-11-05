@@ -30,6 +30,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
+import { directionTerms, wordsOf } from '../directions.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { LEAD_MARKER, localTier, readTarget, writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
@@ -122,8 +123,20 @@ function widened(picked: Array<{ line_start: number; line_end: number; lo: numbe
 	return out;
 }
 
+// Raw lines holding two or more of the direction's words, best first
+// (u9mac-s856, gate9 ab7e6c04: the helper never picked the line naming the
+// role). On the recorded Tor pages this finds 2 to 6 lines, the role line first.
+const MAX_TERM_LINES = 12;
+function termLines(lines: string[], terms: ReadonlySet<string>): number[] {
+	const scored = lines.flatMap((line, index) => {
+		const hits = [...wordsOf(line)].filter((word) => terms.has(word)).length;
+		return hits >= 2 ? [{ line: index + 1, hits }] : [];
+	});
+	return scored.sort((a, b) => b.hits - a.hits || a.line - b.line).slice(0, MAX_TERM_LINES).map(({ line }) => line);
+}
+
 // The helper chooses line ranges only. It never writes the text returned as a lead.
-async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<{ leads: string; inspected: number; total: number; selections: Array<{ line_start: number; line_end: number }> }> {
+async function distill(baseURL: string, env: ToolContext['env'], markdown: string, terms: ReadonlySet<string>, signal?: AbortSignal): Promise<{ leads: string; inspected: number; total: number; selections: Array<{ line_start: number; line_end: number }> }> {
 	const request = JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest;
 	const task = env.SPOTLIGHT_TASK_HEADER?.slice(0, 4000);
 	const scope = task ? `Task scope (not source evidence):\n${task}\n\n` : '';
@@ -154,12 +167,13 @@ async function distill(baseURL: string, env: ToolContext['env'], markdown: strin
 			picked.push({ line_start: first as number, line_end: last as number, lo: start + 1, hi: next });
 		}
 	}
-	if (!picked.length) throw new Error('RLM returned no extractive leads');
+	const matched = termLines(lines, terms).map((line) => ({ line_start: line, line_end: line, lo: 1, hi: lines.length }));
+	if (!picked.length && !matched.length) throw new Error('RLM returned no extractive leads');
 	const render = (ranges: Array<{ line_start: number; line_end: number }>) => ranges.map(({ line_start, line_end }) => `[raw lines ${line_start}-${line_end}]\n${lines.slice(line_start - 1, line_end).join('\n')}`).join('\n\n');
 	// qwen real launch (ab7e6c04): the helper picked 'Executive Director of the Tor Project.' and not the name two lines above it, so the page was
 	// refetched seven times. On the local tiers each pick keeps CONTEXT_LINES either side, inside the chunk the helper inspected; if that would
-	// pass the output bound, the picks stay as chosen.
-	const wide = localTier(env) ? widened(picked) : picked;
+	// pass the output bound, the helper's picks stay as chosen.
+	const wide = localTier(env) ? widened([...picked, ...matched]) : picked;
 	const selections = wide.map(({ line_start, line_end }) => ({ line_start, line_end }));
 	let leads = render(selections);
 	if (leads.length > MAX_RETURNED_CHARS && wide !== picked) {
@@ -167,7 +181,7 @@ async function distill(baseURL: string, env: ToolContext['env'], markdown: strin
 		leads = render(plain);
 		selections.splice(0, selections.length, ...plain);
 	}
-	if (leads.length > MAX_RETURNED_CHARS) throw new Error('RLM selections exceed the output bound');
+	if (!leads || leads.length > MAX_RETURNED_CHARS) throw new Error('RLM selections exceed the output bound');
 	return { leads, inspected: next, total: lines.length, selections };
 }
 
@@ -390,7 +404,8 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown) });
 			let selected: Awaited<ReturnType<typeof distill>>;
 			try {
-				selected = await distill(rlm, context.env, markdown, signal);
+				const terms = localTier(context.env) && context.env.SPOTLIGHT_ROLE === 'investigator' ? directionTerms(context.caseDir, context.env.SPOTLIGHT_DIRECTION) : new Set<string>();
+				selected = await distill(rlm, context.env, markdown, terms, signal);
 			} catch (error) {
 				// The page stays on disk; its text still never enters the context.
 				return jsonResult({

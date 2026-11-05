@@ -344,10 +344,16 @@ const commitStream: StreamFn = (model, context, options) => {
 			try {
 				const answer = await narrowedRequest(model, context, options, COMMIT_TEXT, COMMIT_TOOLS);
 				const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
-				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickCommit(calls, state.shown);
+				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickCommit(calls, state.shown, state.committed);
 				if ('args' in accepted) {
 					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})${accepted.dropped.length ? `; dropped ${accepted.dropped.join('; ')}` : ''}`);
 					emitCommit(out, answer, 'record_finding', accepted.args, accepted.dropped, 'Commit step: kept the first finding', `commit step: ${state.uncommitted.length} unrecorded line(s) shown`);
+					return;
+				}
+				// The worker sees why its cite was dropped and gets the lines; the next commit step can then keep it.
+				if ('read' in accepted && accepted.read && getCurrentTools(context.messages).some((tool) => tool.name === 'read_file')) {
+					log(`[commit] read_file at tool turn ${state.turns} (${accepted.note})`);
+					emitCommit(out, answer, 'read_file', accepted.read, [`the finding, whose cite names ${accepted.note}`], 'Commit step: reading the cited lines', 'commit step: cited lines not shown');
 					return;
 				}
 				reason = accepted.reason;

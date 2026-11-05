@@ -59,6 +59,16 @@ export function planDirections(caseDir: string): Direction[] {
 	}));
 }
 
+// The words a direction looks for, for matching page lines to it (fetch.ts):
+// four letters or more, without the question words and verbs every plan shares.
+const PLAIN_WORDS = new Set('about after against also been before between both could current currently data does during each find from full gather have identify information into more most name names official only other over public role some source sources such than that their them then there these they this those under using verify were what when where whether which while whom whose will with would your'.split(' '));
+export const wordsOf = (text: string) => new Set(text.toLowerCase().match(/\p{L}{4,}/gu) ?? []);
+export function directionTerms(caseDir: string, tag?: string): Set<string> {
+	const all = planDirections(caseDir);
+	const own = all.filter((direction) => direction.tag === tag);
+	return new Set((own.length ? own : all).flatMap((direction) => [direction.text, ...direction.questions]).flatMap((text) => [...wordsOf(text)]).filter((word) => !PLAIN_WORDS.has(word)));
+}
+
 // An explicit task selects an approved direction; incidental references to
 // other directions in its source/context do not select additional workers.
 const DECLARATION = /^\s*(?:THIS TASK\s*[—–-]\s*ONE METHODOLOGY DIRECTION ONLY:\s*)?DIRECTION_ID\b\s*:?\s*(.*?)\s*$/gmi;

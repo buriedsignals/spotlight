@@ -22,6 +22,8 @@ export const COMMIT_GAP_TURNS = 4;
 const GREP_LINE_CHARS = 400;
 const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
 const CAPTURE = /^(?:research|evidence)\//;
+// The most lines one read of a dropped cite asks for.
+const CITE_READ_LINES = 60;
 // case-files.ts readPage's note, the row before READ_TRUNCATED.
 const PAGE_NOTE = /\n\[page: lines (\d+)-\d+ of \d+, so the read stays under this model's context fold\.[^\n]*\]\n\[truncated: use offset and limit to read the rest\]$/;
 
@@ -99,6 +101,15 @@ export function commitState(messages: readonly unknown[], recorded: ReadonlySet<
 			// The row before a cut may be partial: only whole lines were shown.
 			const whole = cut ? rows.length - 1 : rows.length;
 			for (let index = 0; index < whole; index++) show(call.args.path.replace(/^\.\//, ''), from + index, call.turn);
+		} else if (call.name === 'fetch') {
+			// Leads print the page's own lines under their raw numbers, and the result names them
+			// (u9mac-s856: four commit answers citing them were dropped as unseen).
+			let selections: unknown;
+			try { selections = (JSON.parse(body) as { selections?: unknown }).selections; } catch { continue; }
+			for (const pick of (Array.isArray(selections) ? selections : []) as Array<{ path?: unknown; line_start?: unknown; line_end?: unknown }>) {
+				if (typeof pick?.path !== 'string' || !Number.isSafeInteger(pick.line_start) || !Number.isSafeInteger(pick.line_end)) continue;
+				for (let line = Number(pick.line_start); line <= Number(pick.line_end); line++) show(pick.path, line, call.turn);
+			}
 		} else if (call.name === 'record_finding' && Array.isArray(call.args.cite)) {
 			for (const cite of call.args.cite as Array<{ path?: unknown; line_start?: unknown; line_end?: unknown }>) {
 				if (typeof cite?.path !== 'string' || !Number.isInteger(cite.line_start) || !Number.isInteger(cite.line_end)) continue;
@@ -125,59 +136,70 @@ export function commitDue(state: CommitState, requestsSinceAttempt = Infinity): 
 }
 
 // The model's commit answer, with each cite clipped to the lines it was shown
-// (runs of consecutive shown lines become separate cites); or why it is not used.
+// and has not recorded (runs of consecutive shown lines become separate cites);
+// or why it is not used. `unseen`: the capture ranges it cited and was not shown.
 export type CommitArgs = { finding: { claim: string; confidence: string }; cite: Array<{ path: string; line_start: number; line_end: number }> };
-function acceptCommit(name: string | undefined, args: unknown, shown: Shown): { args: CommitArgs } | { reason: string } {
-	if (name === 'nothing_found') return { reason: 'the model answered nothing_found' };
-	if (name !== 'record_finding') return { reason: `the model answered ${name ?? 'no tool call'}` };
+type Range = { path: string; line_start: number; line_end: number };
+function acceptCommit(name: string | undefined, args: unknown, shown: Shown, recorded: ReadonlySet<string>): { args: CommitArgs; unseen: Range[] } | { reason: string; unseen: Range[] } {
+	const unseen: Range[] = [];
+	if (name === 'nothing_found') return { reason: 'the model answered nothing_found', unseen };
+	if (name !== 'record_finding') return { reason: `the model answered ${name ?? 'no tool call'}`, unseen };
 	const input = args as { finding?: { claim?: unknown; confidence?: unknown }; cite?: unknown };
 	const claim = input?.finding?.claim, confidence = input?.finding?.confidence;
-	if (typeof claim !== 'string' || !claim.trim() || !['high', 'medium', 'low'].includes(String(confidence))) return { reason: 'the commit answer has no claim or confidence' };
-	const cite: Array<{ path: string; line_start: number; line_end: number }> = [];
+	if (typeof claim !== 'string' || !claim.trim() || !['high', 'medium', 'low'].includes(String(confidence))) return { reason: 'the commit answer has no claim or confidence', unseen };
+	const cite: Range[] = [];
+	let repeated = false;
 	for (const entry of Array.isArray(input.cite) ? (input.cite as Array<{ path?: unknown; line_start?: unknown; line_end?: unknown }>) : []) {
 		const start = Number(entry?.line_start), end = Number(entry?.line_end);
 		if (typeof entry?.path !== 'string' || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end) continue;
-		const seen = shown.get(entry.path.replace(/^\.\//, ''));
-		if (!seen) continue;
-		// Only the shown lines inside the range are visited (Codex review of simp-commit, P2).
-		let run: { path: string; line_start: number; line_end: number } | undefined;
-		for (const line of [...seen.keys()].filter((line) => line >= start && line <= end).sort((a, b) => a - b)) {
+		// A leads path with the numbers the leads printed means the page's lines, as record_finding reads it.
+		const given = entry.path.replace(/^\.\//, '');
+		const path = shown.has(`${given}.raw`) ? `${given}.raw` : given;
+		const seen = shown.get(path);
+		// Each walk is bounded by the lines shown, not by the range (Codex review of simp-commit, P2).
+		let first = start, last = end;
+		while (seen?.has(first)) first++;
+		while (seen?.has(last)) last--;
+		if (first <= last && CAPTURE.test(path)) unseen.push({ path, line_start: first, line_end: last });
+		let run: Range | undefined;
+		for (const line of [...(seen?.keys() ?? [])].filter((line) => line >= start && line <= end).sort((a, b) => a - b)) {
+			if (recorded.has(`${path}:${line}`)) { repeated = true; continue; }
 			if (cite.length >= 10 && !(run && run.line_end === line - 1)) break;
 			if (run && run.line_end === line - 1) run.line_end = line;
-			else { run = { path: entry.path.replace(/^\.\//, ''), line_start: line, line_end: line }; cite.push(run); }
+			else { run = { path, line_start: line, line_end: line }; cite.push(run); }
 		}
 	}
-	if (!cite.length) return { reason: 'the commit answer cites no line the model was shown' };
-	return { args: { finding: { claim: claim.trim(), confidence: String(confidence) }, cite } };
+	if (!cite.length) return { reason: repeated ? 'the commit answer cites lines already recorded' : 'the commit answer cites no line the model was shown', unseen };
+	return { args: { finding: { claim: claim.trim(), confidence: String(confidence) }, cite }, unseen };
 }
+
+const unseenNote = ({ path, line_start, line_end }: Range) => `${path} lines ${line_start}-${line_end} (not shown to you: read them with read_file, then cite them)`;
 
 // inv-retest-def8674f.md: LFM3's commit answer carried two record_finding calls
 // and the one-call rule dropped both. The first call that passes the cite rules
-// is kept; every other call is dropped and named, so the model sees it.
-export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unknown }>, shown: Shown): { args: CommitArgs; dropped: string[] } | { reason: string } {
-	let kept: number | undefined;
-	let args: CommitArgs | undefined;
-	const reasons = calls.map((call) => {
-		const accepted = acceptCommit(call.name, call.arguments, shown);
-		return 'args' in accepted ? undefined : accepted.reason;
-	});
-	for (const [index, call] of calls.entries()) {
-		if (reasons[index] !== undefined) continue;
-		kept = index;
-		args = (acceptCommit(call.name, call.arguments, shown) as { args: CommitArgs }).args;
-		break;
+// is kept; every other call is dropped and named, so the model sees it. With
+// none kept, `read` is the first unseen range: the commit turn reads it, and
+// `note` says why, so a dropped cite is never silent.
+export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unknown }>, shown: Shown, recorded: ReadonlySet<string> = new Set()): { args: CommitArgs; dropped: string[] } | { reason: string; read?: { path: string; offset: number; limit: number }; note?: string } {
+	const answers = calls.map((call) => acceptCommit(call.name, call.arguments, shown, recorded));
+	const kept = answers.findIndex((answer) => 'args' in answer);
+	if (kept < 0) {
+		const reason = answers.flatMap((answer) => ('reason' in answer ? [answer.reason] : [])).join('; ') || 'the model answered no tool call';
+		const range = answers.flatMap((answer) => answer.unseen)[0];
+		return range && !/already recorded/.test(reason) ? { reason, read: { path: range.path, offset: range.line_start, limit: Math.min(range.line_end - range.line_start + 1, CITE_READ_LINES) }, note: unseenNote(range) } : { reason };
 	}
-	if (kept === undefined || !args) return { reason: reasons.filter(Boolean).join('; ') || 'the model answered no tool call' };
+	const accepted = answers[kept] as { args: CommitArgs; unseen: Range[] };
 	// Calls are named by number, tool and reason only: the model's own text
 	// never reappears as harness prose (Codex review of simp-commit2, P2).
 	const dropped = calls.flatMap((call, index) => {
 		if (index === kept) return [];
+		const answer = answers[index];
 		const why = call.name === 'nothing_found' ? 'a finding was recorded'
-			: call.name === 'record_finding' && reasons[index] === undefined ? 'one finding per commit step; record it with record_finding'
-			: reasons[index] ?? 'not used';
+			: call.name === 'record_finding' && 'args' in answer ? 'one finding per commit step; record it with record_finding'
+			: 'reason' in answer ? answer.reason : 'not used';
 		return [`call ${index + 1} (${call.name === 'record_finding' || call.name === 'nothing_found' ? call.name : 'another tool'}: ${why})`];
 	});
-	return { args, dropped };
+	return { args: accepted.args, dropped: [...dropped, ...accepted.unseen.map(unseenNote)] };
 }
 
 // B18 (fine-tuning briefs/b18.md): the same step for a worker whose deliverable
