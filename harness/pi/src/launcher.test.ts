@@ -5604,14 +5604,11 @@ test('after the member approves the gate, spotlight_resolve builds the provenanc
 	assert.match(await readFile(join(caseDir, 'review.html'), 'utf8'), /<!doctype html>/i);
 });
 
-test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open_review reaches the report gate; the analyst writes the summary and the draft', async (t) => {
+test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open_review reaches the report gate; code writes the summary and the analyst the draft', async (t) => {
 	const space = await workspace(t);
 	const caseDir = caseAtGate(space);
-	const summaryMd = await readFile(join(caseDir, 'summary.md'), 'utf8');
-	// P3W-1 (pod-3way-qwen35-9b.md): the file as Qwen3.5-9B wrote it, no title, status, summary or generated_at, findings with claim_text.
-	// Code completes it from the findings and the fact-check, and the case reaches the report gate.
+	// P4 (qwen-u9-mac.md): r3 left summary.md a template. On a local tier no analyst writes it.
 	const [finding] = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')).findings;
-	const summaryJson = JSON.stringify({ schema_version: '1.0', project: 'offline-demo', findings: [{ id: finding.id, claim_text: finding.claim }] });
 	await unlink(join(caseDir, 'summary.md'));
 	await unlink(join(caseDir, 'data', 'summary.json'));
 	const fake = await startFakeOpenAI((request) => {
@@ -5620,9 +5617,7 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 			// The analyst writes only prose into the structure the harness wrote.
 			const skeleton = () => JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
 			const prose = () => ({ ...skeleton(), title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments });
-			return /report-draft\.json/.test(userText(request))
-				? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(prose()) } }] }
-				: { toolCalls: [{ name: 'write_file', arguments: { path: 'summary.md', content: summaryMd } }, { name: 'write_file', arguments: { path: 'data/summary.json', content: summaryJson } }] };
+			return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(prose()) } }] };
 		}
 		const last = request.messages.at(-1)!;
 		if (last.role !== 'tool') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
@@ -5642,11 +5637,11 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
 	const called = orchestrator.flatMap((request) => (request.messages.filter((message) => message.role === 'assistant').flatMap((message) => (message.tool_calls ?? []) as Array<{ function: { name: string } }>)).map((call) => call.function.name));
 	assert.deepEqual([...new Set(called)].sort(), ['open_review', 'spawn_agent', 'spotlight_resolve']);
-	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), summaryMd);
+	assert.ok((await readFile(join(caseDir, 'summary.md'), 'utf8')).includes(finding.claim));
 	const completed = JSON.parse(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8'));
 	assert.deepEqual(completed.findings, [{ id: 'F1', claim: finding.claim, confidence: 'high', fact_check_verdict: 'verified', source_count: 1 }]);
 	assert.match(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir], { encoding: 'utf8' }), /PASS|valid/i, 'the completed file passes the check that stopped the Qwen run');
-	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /write title, summary, key_conclusions and limitations; code fills the rest/);
+	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /report-draft\.json/, 'the first analyst is the Report one');
 	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, caveats: [], next_steps: [] });
 	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)))!), /holds the report's structure/);
 	// report-direct-quote-diff.md: the Report analyst reads which passages are

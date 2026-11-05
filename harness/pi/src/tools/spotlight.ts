@@ -375,7 +375,7 @@ function jsonResult(value: unknown) {
 // and both seals only when the resolver's resume point named them. Code now
 // runs each at that point. A step that fails stops the run with its output;
 // nothing is retried here.
-export type FixedStep = 'provenance' | 'review' | 'wiki' | 'seal_gate' | 'seal_ingest';
+export type FixedStep = 'summary' | 'provenance' | 'review' | 'wiki' | 'seal_gate' | 'seal_ingest';
 // Runs one program step; undefined when the step does not apply here (the
 // newsroom edition has no wiki write).
 export type FixedStepRunner = (step: FixedStep, signal?: AbortSignal) => Promise<string | undefined>;
@@ -383,6 +383,9 @@ export type FixedStepRunner = (step: FixedStep, signal?: AbortSignal) => Promise
 export function fixedStepAt(resolved: Record<string, unknown>): FixedStep | undefined {
 	const gate = (resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at;
 	const ingest = resolved.ingest as { resume_at?: unknown; state?: unknown } | undefined;
+	// A local tier's gate summaries are code's (case-files.ts writeGateSummary); when
+	// the step fails the analyst dispatch below still runs, as on frontier.
+	if (resolved.phase === 'investigation_gate_approval' && localTier(process.env) && Array.isArray(resolved.missing) && resolved.missing.some((item) => /summary/.test(String(item)))) return 'summary';
 	if (resolved.phase === 'investigation_gate_finalization') return ({ provenance: 'provenance', review: 'review', seal: 'seal_gate' } as Record<string, FixedStep>)[String(gate)];
 	if (resolved.phase === 'ingest' && ingest?.resume_at === 'ingest' && ingest.state === 'requested') return 'wiki';
 	if (resolved.phase === 'ingest' && ingest?.resume_at === 'seal' && ingest.state === 'completed') return 'seal_ingest';

@@ -218,6 +218,7 @@ Every `execute-shell` step in `agents/` and in the skills these roles load, and 
 | investigator | `scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings` | `source_expressions` with action `fingerprint_findings` |
 | phase-investigation | `scripts/migrate-source-expressions.py` (dry run and apply) | not available: an operator-reviewed flow outside the model |
 | phase-investigation-gate, report-drafting, phase-methodology | `scripts/decision-signals.py` (including `--check` and `--case-opt-in`) | not in the Pi harness: no decision checks run |
+| phase-investigation-gate | "Generate summary": `summary.md` and `data/summary.json` | on a local tier, written by `spotlight_resolve` from the records (`writeGateSummary`); on frontier, and when that step fails, by the analyst |
 | phase-investigation-gate, provenance-signing | `scripts/build-provenance-manifest.py` (build, `--sign-endpoint`) | run by `spotlight_resolve` at `resume_at: provenance`, signed when Noosphere is configured |
 | phase-preflight | step 0: `test -f skills/... && test -f scripts/...` | skipped: `spotlight_resolve` answering confirms the checkout |
 | phase-preflight | `scripts/spotlight-orchestration.py status` | `spotlight_resolve` |
