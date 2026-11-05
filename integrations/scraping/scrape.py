@@ -8,7 +8,8 @@ bot-block/empty the seam escalates to **Firecrawl**'s managed proxy pool — the
 optional paid escape hatch (KTD6) — but only when FIRECRAWL_API_KEY is present;
 with no key the seam stays sovereign and surfaces the block honestly. (The
 Scrapling stealth middle rung was dropped 2026-07-08 — ladder is Crawl4AI ->
-optional Firecrawl.)
+optional Firecrawl.) With ``firecrawl_mode: always`` a member reads pages through
+Firecrawl first, and Crawl4AI takes over when it fails.
 
 Tor (U7 / KTD8): pass ``anonymize=True`` (or set ``SPOTLIGHT_ANONYMIZE_FETCH=true``
 for a whole run) to route the Crawl4AI fetch through the local Tor SOCKS proxy, so
@@ -26,7 +27,7 @@ import os
 import sys
 from pathlib import Path
 
-from .._firecrawl_policy import refusal
+from .._firecrawl_policy import mode, refusal
 from .._protected import ProtectedSourceError, check_outgoing
 from .scrape_types import ScrapeError, ScrapeResult
 
@@ -66,13 +67,20 @@ def _blocked(result: ScrapeResult) -> bool:
     return result.is_empty() or (result.status_code in _BLOCK_STATUSES)
 
 
+def _firecrawl_first(provider: str | None, proxy: str | None, escalate: bool) -> bool:
+    # The member's `always`, unless the operator chose a provider or this fetch
+    # is Tor's. refusal() covers sensitive cases; a withheld key stays on Crawl4AI.
+    return (escalate and proxy is None and not provider and not os.environ.get("SCRAPE_PROVIDER")
+            and mode() == "always" and refusal() is None and bool(credential("FIRECRAWL_API_KEY")))
+
+
 def scrape(url: str, *, provider: str | None = None, timeout_ms: int = 45_000,
            escalate: bool = True, anonymize: bool | None = None) -> ScrapeResult:
     """Fetch url to a ScrapeResult via the selected backend.
 
     Default ladder (KTD6): Crawl4AI primary -> Firecrawl (managed proxy pool) only
     when Crawl4AI is bot-blocked/empty AND FIRECRAWL_API_KEY is set. escalate=False,
-    or selecting a non-default provider, disables the ladder. ``anonymize`` routes
+    or selecting a non-default provider, disables the ladder and `always`. ``anonymize`` routes
     the Crawl4AI fetch through Tor (U7). Raises ScrapeError on an unknown provider,
     an absent backend, or a fetch failure that isn't a recoverable bot-block.
     """
@@ -85,6 +93,17 @@ def scrape(url: str, *, provider: str | None = None, timeout_ms: int = 45_000,
     if name == "crawl4ai":
         from . import crawl4ai_provider
 
+        if _firecrawl_first(provider, proxy, escalate):
+            from . import firecrawl_provider
+
+            try:
+                result = firecrawl_provider.fetch(url, timeout_ms=timeout_ms)
+                if not result.is_empty():
+                    return result
+                print(f"firecrawl returned nothing for {url}; reading it with crawl4ai", file=sys.stderr)
+            except ScrapeError as exc:
+                print(f"{exc}; reading it with crawl4ai", file=sys.stderr)
+            escalate = False  # Firecrawl has just had its try at this page
         try:
             result = crawl4ai_provider.fetch(url, timeout_ms=timeout_ms, proxy=proxy)
         except ScrapeError as exc:
