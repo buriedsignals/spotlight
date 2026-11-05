@@ -436,6 +436,20 @@ def test_report_fidelity_stage(tmp: Path) -> None:
         assert check.returncode == 1 and "changed after the decision check" in check.stdout
 
 
+def test_a_local_decision_model_gets_time_to_load(tmp: Path | None = None) -> None:
+    """D1 loads on demand, so a local call waits 90 s; the cloud route keeps 30 s."""
+    seen: list[float] = []
+
+    def opener(request, timeout):
+        seen.append(timeout)
+        return io.BytesIO(json.dumps({"answers": {"q": {"noul": 0.5}}}).encode())
+
+    question = {"q": {"type": "noul", "instructions": "x"}}
+    client.JevOpenRouterProvider("", opener=opener, url="http://127.0.0.1:8019/v1/systemone").decide({"x": 1}, question)
+    client.JevOpenRouterProvider("key", opener=opener).decide({"x": 1}, question)
+    assert seen == [90.0, 30.0], seen
+
+
 def test_invalid_and_unsafe_signal_files(tmp: Path) -> None:
     case = fresh_case(tmp / "invalid")
     (case / lib.SIGNALS_PATH).write_text("{not json")
@@ -747,7 +761,7 @@ def main() -> int:
                      test_backwards_compatible_without_signals, test_investigation_gate_advisory_and_enforce,
                      test_saved_gate1_keys_still_apply,
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
-                     test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
+                     test_a_local_decision_model_gets_time_to_load, test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_no_ingest_phase, test_retired_ingest_block_is_dropped_on_load, test_missing_grounding_cap_warns,
                      test_round_two_regressions, test_round_three_regressions, test_input_containment,
                      test_round_five_regressions, test_round_six_regression, test_round_seven_regression,

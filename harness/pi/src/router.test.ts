@@ -3,7 +3,7 @@
 // model that only writes text does too").
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ROUTER_MODEL, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { ROUTER_MODEL, decisionHelperStop, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { INPUTS_REFUSED, refusedSpawnMove } from './tools/spotlight.ts';
 import { FACT_CHECKERS_SPENT } from './subagents.ts';
 import { EMPTY_TURN_NUDGE, RUNAWAY_TURN_NUDGE } from './extension.ts';
@@ -126,4 +126,17 @@ test('one refusal, changed records and the router\'s own call all leave the turn
 	assert.deepEqual(routeRefusedSpawn(atModel(KDE), handed, twice, 'changed', refusedSpawnMove), handed, 'the count starts again after a change');
 	const resolve = { kind: 'call', tool: 'spotlight_resolve', reason: 'fresh state first' } as const;
 	assert.deepEqual(routeRefusedSpawn(atModel(SFC), resolve, refusedTwice('analyst', 'no'), 'd', refusedSpawnMove), resolve);
+});
+
+// D1 loads on demand: a triage it could not answer ends on code's line, not the model's retelling (qwen-no-d1.md: asked the same question four times).
+test('a round held at triage stops on code\'s words, naming the failure and both ways on', () => {
+	const held = routerState([call('spotlight_resolve', true), resolved({ phase: 'research', research: { resume_at: 'triage' }, research_round: { triage: { ok: false, error: 'traceback\nresearch-triage: no triage written: local unavailable: HTTP 503' } } })]);
+	const move = routeWithoutMember(held) as { kind: string; text: string };
+	assert.equal(move.kind, 'stop');
+	assert.match(move.text, /could not triage[\s\S]*HTTP 503[\s\S]*Send a message here to try again[\s\S]*turn Research off/);
+	assert.doesNotMatch(move.text, /traceback/);
+});
+
+test('the decision helper stop names the failure and the next step', () => {
+	assert.match(decisionHelperStop('HTTP 503'), /did not answer \(HTTP 503\)[\s\S]*Your case is saved[\s\S]*Send your message again/);
 });

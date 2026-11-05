@@ -14,8 +14,8 @@ import { programEnv, runFixed } from './tools/run.ts';
 import type { Env } from './tools/run.ts';
 
 const SCRIPT = join(CHECKOUT_ROOT, 'scripts', 'anomaly-decision.py');
-// A local d1 answers in seconds; the cloud route retries twice.
-const DECISION_TIMEOUT_MS = 120_000;
+// A cold local d1 can take 90 s a try, and the client retries twice.
+const DECISION_TIMEOUT_MS = 300_000;
 
 type Options = { caseDir: string; python: string; configPath: string; sensitive: boolean; env: Env; log: (message: string) => void; signal?: AbortSignal };
 

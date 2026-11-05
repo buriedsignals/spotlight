@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { DECISION_RECORDED, MEMBER_DECIDED, ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { DECISION_RECORDED, MEMBER_DECIDED, ROUTER_CALL_PREFIX, decisionHelperStop, memberHasTheMove, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
@@ -167,19 +167,20 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 // reason in responseId) so records, detectors, scoring and training extraction
 // never count it as a model decision; every other request goes to the model
 // unchanged. Each decision is logged with its reason.
-const INTENT_TIMEOUT_MS = 8000;
-function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number }> {
+// Past member-intent.py's own 90 s, so the script reports the failure itself.
+const INTENT_TIMEOUT_MS = 95_000;
+function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number; failed?: string }> {
 	const started = Date.now();
 	return new Promise((answered) => {
-		const done = (intent?: Intent, probability?: number) => answered({ intent, probability, ms: Date.now() - started });
+		const done = (intent?: Intent, probability?: number, failed?: string) => answered({ intent, probability, ms: Date.now() - started, failed });
 		const child = execFile(process.env.SPOTLIGHT_PYTHON || 'python3', [resolve(CHECKOUT_ROOT, 'scripts', 'member-intent.py'), ...(process.env.SPOTLIGHT_CONFIG ? ['--config', process.env.SPOTLIGHT_CONFIG] : [])], { timeout: INTENT_TIMEOUT_MS, encoding: 'utf8', signal }, (error, stdout) => {
-			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined); return; }
+			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined, undefined, signal?.aborted ? undefined : error.killed ? 'it timed out' : 'its check could not run'); return; }
 			try {
-				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; probability?: number; unavailable?: string };
+				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; probability?: number; unavailable?: string; failed?: boolean };
 				if (answer.unavailable) log(`[router] decision model unavailable: ${answer.unavailable.slice(0, 200)}`);
-				done(answer.intent, answer.probability);
+				done(answer.intent, answer.probability, answer.failed ? answer.unavailable : undefined);
 			} catch {
-				done(undefined);
+				done(undefined, undefined, 'its answer could not be read');
 			}
 		});
 		child.stdin?.end(message);
@@ -212,7 +213,7 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 				const asked = await memberIntent(state.member, options?.signal);
 				// r1-router-smoke.md: each decision logs D1's probability and latency.
 				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
-				move = routeMember(state, asked.intent);
+				move = asked.failed ? { kind: 'stop', text: decisionHelperStop(asked.failed), reason: 'the decision model failed' } : routeMember(state, asked.intent);
 				if (move.kind === 'call' && move.tool === 'spawn_agent' && (await casePhase?.()) !== 'methodology_approval') move = { kind: 'model', reason: 'member change_request, but the case is no longer at the methodology review' };
 			} else move = routeRefusedSpawn(state, routeWithoutMember(state, state.resolved?.phase === 'complete' ? closingMessage(required('SPOTLIGHT_CASE_DIR')) : undefined), refusedSpawns, refusedSpawns.seen.size ? recordsDigest(required('SPOTLIGHT_CASE_DIR')) : '', refusedSpawnMove);
 		} catch (error) {
@@ -897,7 +898,7 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 		}
 		if (message.stopReason !== 'stop' || nudged || held() || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
 		// The run that ends a held review: the decision's own fresh run follows (registerEndTurnOnOpen).
-		if (parts.some((part) => part.text === DECISION_RECORDED)) return;
+		if (parts.some((part) => part.text === DECISION_RECORDED || memberHasTheMove(part.text))) return;
 		let status: Record<string, unknown>;
 		try {
 			status = await resolve();

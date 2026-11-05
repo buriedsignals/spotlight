@@ -2831,6 +2831,35 @@ test('a gate check failure with no repair route opens the page at once and ends 
 	}
 });
 
+// D1 loads on demand: the router waits for a slow answer, and an error status stops on code's line instead of falling to the model.
+test('the router waits out a cold decision model, and an error from it ends on code\'s stop with no model request', async (t) => {
+	for (const [name, status, delay] of [['slow', 200, 9_000], ['error', 503, 0]] as const) {
+		const decision = createServer((_req, res) => {
+			_req.resume();
+			setTimeout(() => {
+				res.writeHead(status, { 'content-type': 'application/json' });
+				res.end(JSON.stringify({ answers: { intent: { choice: 'question', probabilities: { question: 0.9 } } } }));
+			}, delay);
+		});
+		await new Promise<void>((done) => decision.listen(0, '127.0.0.1', done));
+		t.after(() => decision.close());
+		const fake = await startFakeOpenAI(() => ({ text: 'The model answered.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const config = join(space.root, 'decision-config.json');
+		await writeFile(config, JSON.stringify({ integrations: { decisions: { endpoint: { url: `http://127.0.0.1:${(decision.address() as AddressInfo).port}/v1/systemone`, credential_env: 'SPOTLIGHT_NO_KEY', api: 'openrouter-decisions' } } } }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_CONFIG: config });
+		await settledPrompt(chat, 'What is the status?', 30_000);
+		if (name === 'slow') {
+			assert.match(chat.stderr(), /\[D1 question/, chat.stderr().slice(-400));
+			assert.equal(fake.requests.length, 1);
+			continue;
+		}
+		assert.equal(fake.requests.length, 0, 'no fall-through to the model');
+		assert.equal(chat.lines.filter((line) => line.includes('"type":"message_end"') && line.includes('did not answer (HTTP 503)')).length, 1, 'said once, with no nudge after it');
+	}
+});
+
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
 // carries a skeleton whose placeholders the builder refuses until they are filled.
 test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {

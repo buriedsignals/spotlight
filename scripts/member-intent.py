@@ -4,13 +4,14 @@ decision model on this computer (plan step 4, reports/step4-routing-design.md).
 
     scripts/spotlight-python scripts/member-intent.py [--config PATH] < message.txt
 
-Prints one JSON line: {"intent": "<choice>", "probability": p} or
-{"unavailable": "<reason>"}. Only a decision endpoint on a literal loopback
+Prints one JSON line: {"intent": "<choice>", "probability": p},
+{"unavailable": "<reason>"} when no local model is configured, or that plus
+"failed": true when a configured model did not answer. Only a decision endpoint on a literal loopback
 address is asked: a member's words never go to a cloud model here. The
 question wording is the one the step1 intent test scored (R2), unchanged.
 The harness's code router uses the answer to choose between resolving and
 handing the turn to the orchestrator model; an unavailable answer hands it
-to the model.
+to the model, and a failed one ends the turn on the router's own line.
 """
 from __future__ import annotations
 
@@ -40,8 +41,9 @@ QUESTION = {
     },
 }
 MESSAGE_CHARS = 2000
-# The router waits this long, then hands the turn to the model (design: 5 s).
-TIMEOUT_S = 5.0
+# Engine loads the decision model on demand. The router stops on code's line
+# after this, so an answer that needed a cold load still counts.
+TIMEOUT_S = client.LOCAL_TIMEOUT_S
 
 
 def ask(message: str, config: dict[str, Any]) -> dict[str, Any]:
@@ -57,10 +59,10 @@ def ask(message: str, config: dict[str, Any]) -> dict[str, Any]:
                                                 timeout=TIMEOUT_S, retries=0)
         answer = provider.decide({"member_message": message[:MESSAGE_CHARS]}, {QUESTION_KEY: QUESTION})["answers"][QUESTION_KEY]
     except (client.DecisionUnavailable, KeyError, TypeError) as exc:
-        return {"unavailable": str(exc) or type(exc).__name__}
+        return {"unavailable": str(exc) or type(exc).__name__, "failed": True}
     choice = answer.get("choice")
     if choice not in QUESTION["criteria"]:
-        return {"unavailable": f"the decision model chose {choice!r}"}
+        return {"unavailable": f"the decision model chose {choice!r}", "failed": True}
     return {"intent": choice, "probability": float((answer.get("probabilities") or {}).get(choice, 0.0))}
 
 
