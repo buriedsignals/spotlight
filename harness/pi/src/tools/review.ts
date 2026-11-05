@@ -122,6 +122,21 @@ export async function missingForApproval(caseDir: string, resolved: Record<strin
 	return undefined;
 }
 
+// The validator's first lines, for the member: at most three, FAIL or bullet.
+export function failureLines(refusal: string): string[] {
+	return refusal.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('FAIL ') || line.startsWith('• ')).slice(0, 3).map((line) => line.replace(/^(?:FAIL\s+|•\s+)/, ''));
+}
+
+// A failed Investigation gate check that is not the summary has no worker to
+// repair it: only the approval is missing, so spawns are refused and resolve names
+// open_review again. The page shows the failure and can send the case back, so on
+// a local tier it opens and the turn ends on this line.
+const NO_REPAIR_ROUTE = /^data\/(?:findings|fact-check)\.json does not pass /;
+export function gateBlockedStop(failure: string): string {
+	const lines = failureLines(failure);
+	return `Spotlight stopped before the Investigation gate: the case files did not pass their check, so it cannot be approved yet. Your case is saved.${lines.length ? `\nThe check found these problems.\n${lines.join('\n')}` : ''}\nNext: on the review page, send the case back to Investigation with a note saying what to fix.`;
+}
+
 // Option D (paperwork-p5-option-d.md): members expect the case to go on once
 // they decide in the browser, but Osaurus shows nothing outside a turn, so on a
 // local tier open_review holds the turn until the decision lands. The time limit
@@ -167,20 +182,22 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal) {
 			const failed = await check?.();
-			if (failed) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
+			const blocked = hold && failed && NO_REPAIR_ROUTE.test(failed) ? gateBlockedStop(failed) : undefined;
+			if (failed && !blocked) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
 			const start = hold?.ms ? { seen: orchestrationRecord(caseDir), before: JSON.stringify(await hold.resolved()) } : undefined;
 			const result = await open({ caseDir });
-			const missing = result.status === 'opened' ? await note?.() : undefined;
+			if (blocked && result.status !== 'opened') throw new Error(`${PAGE_NOT_OPENED}${failed}`);
+			const missing = result.status === 'opened' && !blocked ? await note?.() : undefined;
 			// A page with nothing to approve needs the chat, so it holds nothing.
 			if (hold?.ms && result.status === 'opened' && missing) hold.say?.(REVIEW_DECLINE_NOTICE);
 			if (hold && start && result.status === 'opened' && !missing) {
-				hold.say?.(REVIEW_HOLD_NOTICE);
+				hold.say?.(blocked ?? REVIEW_HOLD_NOTICE);
 				if (await decisionLanded(caseDir, hold, start, signal)) {
 					hold.decided?.();
 					return { content: [{ type: 'text', text: REVIEW_DECIDED }], details: { opened: false, decided: true } };
 				}
 			}
-			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: { opened: result.status === 'opened' } };
+			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: { opened: result.status === 'opened', ...(blocked ? { stop: blocked } : {}) } };
 		},
 	};
 }
