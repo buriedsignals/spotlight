@@ -37,3 +37,23 @@ test('a claim\'s numbers and dates are found in its passage across formats, and 
 	assert.deepEqual(missingValues('They form 12 groups', 'They form 13 groups'), ['12'], 'the verb keeps its number');
 	assert.deepEqual(missingValues('Isabela Dias Fernandes leads the Tor Project', 'Marcus Holloway leads it'), [], 'names and meaning are not checked');
 });
+
+// u9mac-od3b81 F2: ProPublica's "Chair (as Of 9/25)" against a claim of "September 2025" downgraded a true finding.
+test('a source\'s M/YY holds a claim naming that month and year, and nothing else', () => {
+	const row = '|  Christian Kaufmann (Vice-chair (until 9/25) Chair (as Of 9/25))  | $0  |';
+	assert.deepEqual(missingValues('Chair as of September 2025.', row), []);
+	assert.deepEqual(missingValues('Chair as of Sept 2025.', 'Chair (as Of 09/25)'), []);
+	assert.deepEqual(missingValues('Chair as of September 2025.', '', row), [], 'held by the page, as other dates are');
+	for (const [claim, source] of [
+		['Chair as of August 2025.', row],
+		['Chair as of September 2024.', row],
+		['Chair as of September 1925.', row],
+		['Chair on 3 September 2025.', row],
+		['Chair as of September 2025.', 'Chair (as Of 8/25)'],
+		['Chair as of September 2025.', 'Page 19/25'],
+		['Chair as of September 2025.', 'Filed 1/9/25'],
+		['Chair as of September 2025.', 'Filed 9/25/2024'],
+	]) assert.equal(missingValues(claim, source).length, 1, `${claim} against ${source}`);
+	// The form holds no day.
+	assert.deepEqual(missingValues('Chair on 25 September.', row), ['25 September']);
+});

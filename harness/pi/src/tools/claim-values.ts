@@ -72,16 +72,20 @@ const YEAR = /^(?:1[0-9]|20)\d\d$/;
 // date of its own release, and on the recorded control a passage-only date check
 // left 33% of originals verified, while a page-wide figure check caught nothing,
 // since a statistics page holds most figures somewhere (pod-base/false-support).
+const MONTH_YEAR = /(?<![\d/.-])(\d{1,2})\/(\d{2})(?![\d/])/g;
+
 export function missingValues(claim: string, passages: string, pages = ''): string[] {
 	const own = datesIn(claim);
 	const passage = datesIn(passages);
 	const held = datesIn(`${passages}\n${pages}`);
 	const dateKeys = new Set(held.dates.flatMap(({ keys }) => keys.flatMap((key) => [key, key.slice(0, 7), `--${key.slice(5)}`])));
 	const years = new Set([...held.dates.flatMap(({ keys }) => keys.map((key) => key.slice(0, 4))), ...numbersIn(held.rest).map(({ label }) => label)].filter((year) => YEAR.test(year)));
+	// u9mac-od3b81 F2: a source's M/YY (Chair as of 9/25) counts only for a claim's bare month and year; it holds no day, number or other date.
+	const monthYears = new Set([...`${passages}\n${pages}`.matchAll(MONTH_YEAR)].map((match) => `20${match[2]}-${pad(match[1])}`));
 	const numberKeys = new Set(numbersIn(passage.rest).flatMap(({ keys }) => keys));
 	WORDS.forEach((word, value) => { if (new RegExp(`\\b${word}\\b`, 'i').test(passage.rest)) numberKeys.add(String(value)); });
 	return [
-		...own.dates.filter(({ keys }) => !keys.some((key) => dateKeys.has(key))),
+		...own.dates.filter(({ keys }) => !keys.some((key) => dateKeys.has(key) || monthYears.has(key))),
 		...numbersIn(own.rest).filter(({ label, keys }) => YEAR.test(label) ? !years.has(label) : !keys.some((key) => numberKeys.has(key))),
 	].map(({ label }) => label);
 }
