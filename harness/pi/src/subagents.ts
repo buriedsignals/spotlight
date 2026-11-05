@@ -113,7 +113,7 @@ export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no inves
 
 export const INVESTIGATOR_TASK_NEEDED = 'spawn_agent needs a task for the investigator that says what to do (for example MODE: EXECUTION and the approved scope). Call spotlight_resolve for the next step.';
 
-// P6: a worker can run for many minutes with nothing in the chat. On a local tier
+// P6: a worker or research round can run for many minutes with nothing in the chat. On a local tier
 // code says so about once a minute. ctx.ui.notify reaches Osaurus as an inline
 // notice (PiRPCCodec, 0.25.31) and stays out of the transcript; it drops
 // tool_execution_update, so Pi's onUpdate would show nothing there.

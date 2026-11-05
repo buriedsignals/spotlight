@@ -4058,6 +4058,9 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
 	assert.equal(lane.status, 'completed');
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+	// P6: a round is a long silence too; on the default local tier it reports as a worker does.
+	const notices = chat.lines.map((line) => JSON.parse(line) as { method?: string; message?: string }).filter((record) => record.method === 'notify').map((record) => record.message);
+	assert.ok(notices.includes('The research round started.') && notices.includes('The research round finished.'), JSON.stringify(notices));
 });
 
 // Constellation G5b through the launcher: a decision endpoint that fails with

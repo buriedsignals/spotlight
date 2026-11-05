@@ -25,7 +25,7 @@ import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/h
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, recordsDigest, refusedSpawnMove, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
-import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
+import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool, withProgress } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
@@ -116,7 +116,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
 		});
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle, progress);
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
+		tools.push(...spotlightTools(active, runAdapter, role, (retry, signal) => withProgress(progress.say, 'research round', requestResearchRound(retry, signal)), () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
 		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));
 		casePhase = async () => String((await resolveCase(active, runAdapter)).phase ?? '');
