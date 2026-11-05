@@ -3,7 +3,7 @@
 // model that only writes text does too").
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ROUTER_MODEL, decisionHelperStop, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { ROUTER_MODEL, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { INPUTS_REFUSED, refusedSpawnMove } from './tools/spotlight.ts';
 import { FACT_CHECKERS_SPENT } from './subagents.ts';
 import { EMPTY_TURN_NUDGE, RUNAWAY_TURN_NUDGE } from './extension.ts';
@@ -135,8 +135,4 @@ test('a round held at triage stops on code\'s words, naming the failure and both
 	assert.equal(move.kind, 'stop');
 	assert.match(move.text, /could not triage[\s\S]*HTTP 503[\s\S]*Send a message here to try again[\s\S]*turn Research off/);
 	assert.doesNotMatch(move.text, /traceback/);
-});
-
-test('the decision helper stop names the failure and the next step', () => {
-	assert.match(decisionHelperStop('HTTP 503'), /did not answer \(HTTP 503\)[\s\S]*Your case is saved[\s\S]*Send your message again/);
 });

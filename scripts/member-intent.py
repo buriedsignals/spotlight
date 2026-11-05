@@ -11,7 +11,7 @@ address is asked: a member's words never go to a cloud model here. The
 question wording is the one the step1 intent test scored (R2), unchanged.
 The harness's code router uses the answer to choose between resolving and
 handing the turn to the orchestrator model; an unavailable answer hands it
-to the model, and a failed one ends the turn on the router's own line.
+to the model, and a failed one does too, with a notice to the member.
 """
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ QUESTION = {
     },
 }
 MESSAGE_CHARS = 2000
-# Engine loads the decision model on demand. The router stops on code's line
-# after this, so an answer that needed a cold load still counts.
+# Engine loads the decision model on demand, so an answer that needs a cold
+# load still counts. Past this the turn goes to the model, with a notice.
 TIMEOUT_S = client.LOCAL_TIMEOUT_S
 
 

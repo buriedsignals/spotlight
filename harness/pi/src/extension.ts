@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { DECISION_RECORDED, MEMBER_DECIDED, ROUTER_CALL_PREFIX, decisionHelperStop, memberHasTheMove, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { DECISION_RECORDED, MEMBER_DECIDED, ROUTER_CALL_PREFIX, decisionHelperNotice, memberHasTheMove, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
@@ -89,6 +89,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
 		const progress: { say?: (text: string) => void } = {};
+		memberNotice = (text) => progress.say?.(text);
 		// What a member's message resets. A decision on a held review page counts too:
 		// its fresh run fires agent_start but not before_agent_start.
 		const memberTurn = (byHarness = false) => {
@@ -167,6 +168,8 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 // reason in responseId) so records, detectors, scoring and training extraction
 // never count it as a model decision; every other request goes to the model
 // unchanged. Each decision is logged with its reason.
+// The orchestrator's notice to the member, for the router below.
+let memberNotice: ((text: string) => void) | undefined;
 // Past member-intent.py's own 90 s, so the script reports the failure itself.
 const INTENT_TIMEOUT_MS = 95_000;
 function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number; failed?: string }> {
@@ -213,7 +216,8 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 				const asked = await memberIntent(state.member, options?.signal);
 				// r1-router-smoke.md: each decision logs D1's probability and latency.
 				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
-				move = asked.failed ? { kind: 'stop', text: decisionHelperStop(asked.failed), reason: 'the decision model failed' } : routeMember(state, asked.intent);
+				if (asked.failed) memberNotice?.(decisionHelperNotice(asked.failed));
+				move = routeMember(state, asked.intent);
 				if (move.kind === 'call' && move.tool === 'spawn_agent' && (await casePhase?.()) !== 'methodology_approval') move = { kind: 'model', reason: 'member change_request, but the case is no longer at the methodology review' };
 			} else move = routeRefusedSpawn(state, routeWithoutMember(state, state.resolved?.phase === 'complete' ? closingMessage(required('SPOTLIGHT_CASE_DIR')) : undefined), refusedSpawns, refusedSpawns.seen.size ? recordsDigest(required('SPOTLIGHT_CASE_DIR')) : '', refusedSpawnMove);
 		} catch (error) {

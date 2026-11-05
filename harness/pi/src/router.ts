@@ -40,13 +40,12 @@ type Msg = { role?: string; content?: unknown; toolName?: string; responseModel?
 // Turns the harness writes into the chat, not the member (step1 intents_build HARNESS).
 // The tool result of a held open_review (tools/review.ts); the context the router reads carries no details.
 export const REVIEW_DECIDED = 'The member decided on the review page.';
-// D1 loads on demand, so these are real states, and only code can say them reliably.
-const DECISION_HELPER_FAILED = 'Spotlight\'s decision helper on this computer did not answer';
-export const decisionHelperStop = (reason: string) => `${DECISION_HELPER_FAILED} (${reason.slice(0, 200)}), so your message was not acted on. Your case is saved. Send your message again. If this keeps happening, close this chat and open it again, which restarts the helper.`;
+// A member message still goes to the model when D1 fails: the member keeps the case (No-D1 check), and this notice says why routing is plainer.
+export const decisionHelperNotice = (reason: string) => `Spotlight's decision helper on this computer did not answer (${reason.slice(0, 200)}). The assistant is taking your message directly.`;
 const TRIAGE_HELD = 'Spotlight paused before the Research page because its decision helper could not triage the leads';
 const triageHeldStop = (error: string) => `${TRIAGE_HELD}${error ? ` (${error})` : ''}. Your research is saved. Send a message here to try again, or turn Research off in the app and continue without research.`;
 // A stop no nudge may turn into another run: the member has the next move.
-export const memberHasTheMove = (text: string | undefined) => !!text && (text.startsWith(DECISION_HELPER_FAILED) || text.startsWith(TRIAGE_HELD));
+export const memberHasTheMove = (text: string | undefined) => !!text && text.startsWith(TRIAGE_HELD);
 export const DECISION_RECORDED = 'Your decision is recorded. Spotlight is carrying on.';
 export const MEMBER_DECIDED = 'I decided on the review page.';
 const HARNESS_TURN = /^(The conversation history before this point was compacted|Your turn ended with text)/;

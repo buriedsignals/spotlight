@@ -2831,8 +2831,8 @@ test('a gate check failure with no repair route opens the page at once and ends 
 	}
 });
 
-// D1 loads on demand: the router waits for a slow answer, and an error status stops on code's line instead of falling to the model.
-test('the router waits out a cold decision model, and an error from it ends on code\'s stop with no model request', async (t) => {
+// D1 loads on demand: the router waits for a slow answer. A failure never locks the member out: the model takes the turn, with a notice.
+test('the router waits out a cold decision model, and when it fails the model takes the turn and the member is told', async (t) => {
 	for (const [name, status, delay] of [['slow', 200, 9_000], ['error', 503, 0]] as const) {
 		const decision = createServer((_req, res) => {
 			_req.resume();
@@ -2855,8 +2855,10 @@ test('the router waits out a cold decision model, and an error from it ends on c
 			assert.equal(fake.requests.length, 1);
 			continue;
 		}
-		assert.equal(fake.requests.length, 0, 'no fall-through to the model');
-		assert.equal(chat.lines.filter((line) => line.includes('"type":"message_end"') && line.includes('did not answer (HTTP 503)')).length, 1, 'said once, with no nudge after it');
+		assert.equal(fake.requests.length, 1, 'the model takes the turn');
+		assert.ok(chat.lines.some((line) => line.includes('The model answered.')), 'and the member gets its reply');
+		assert.deepEqual(notices(chat).filter((text) => text.includes('did not answer (HTTP 503)')).length, 1, 'with one notice');
+		assert.doesNotMatch(JSON.stringify(fake.requests[0].messages), /did not answer/, 'outside the transcript');
 	}
 });
 
