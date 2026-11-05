@@ -10,6 +10,7 @@ import { createReviewOpener, describeOpenResult } from '../../../review/open.mjs
 import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { REVIEW_DECIDED } from '../router.ts';
+import { localTier, writeGateSummary } from './case-files.ts';
 import { RECEIPTS, runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
 import { NEXT_METHODOLOGY_FAILING, draftWritten, resolveCase } from './spotlight.ts';
@@ -51,7 +52,18 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 		}
 		const checks = GATE_CHECKS[phase]?.(context) ?? [];
 		for (const { file, args } of checks) {
-			const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
+			const run = () => runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
+			let result = await run();
+			// Lab OptiQ leg on d3b8305f: a model's template summary refused the page five
+			// times and no role could repair it. On a local tier the summary is code's.
+			if (result.code !== 0 && phase === 'investigation_gate_approval' && localTier(context.env) && /summary\.(?:md|json)/.test(`${result.stdout}\n${result.stderr}`)) {
+				try {
+					writeGateSummary(context.caseDir);
+					result = await run();
+				} catch {
+					// No verdicts to build from: the refusal below names what is wrong.
+				}
+			}
 			if (result.code !== 0) {
 				const output = `${result.stdout}\n${result.stderr}`.trim();
 				// The plan's own errors are code's to correct (spotlight.ts
