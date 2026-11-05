@@ -13,17 +13,18 @@ write.
    blocking integrity failures, then come the findings with their fact-check
    table (on the Research page, the clues and their marks), the flags that need
    a disposition and the selection (the Report page shows the draft that
-   publishing renders), then the member's name, the digest and the decision
-   buttons. Run details, sources, leads and passages sit in closed blocks.
+   publishing renders), then the digest and the decision buttons (in newsroom
+   mode, the member's name first). Run details, sources, leads and passages sit in closed blocks.
 3. Every mark, disposition, selection change, note and the member's name is
    saved at once to `data/<gate>-review.json` by
    `scripts/spotlight-orchestration.py review-edit`, under the case lock. The
    file keeps each suggestion and the member's final value separately and counts
    how many suggestions were accepted unchanged.
-4. Every decision needs the member's name, which is recorded with it. A name
-   counts only for the decision it was entered for: when a follow-up reopens the
-   gate, the page starts with an empty name and shows the earlier one as
-   history. The Report page shows each finding's fact-check verdict and
+4. A solo decision is recorded under the fixed name `Member`, and the page asks
+   for no name. In newsroom mode every decision needs the member's name, which
+   is recorded with it. A name counts only for the decision it was entered for:
+   when a follow-up reopens the gate, the page starts with an empty name and
+   shows the earlier one as history. The Report page shows each finding's fact-check verdict and
    confidence, and marks the ones the fact-check did not verify. Approve
    stays unavailable while a blocking failure or a required disposition is
    open. The Investigation gate also offers "Request follow-up" with a

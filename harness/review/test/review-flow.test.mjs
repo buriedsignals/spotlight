@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createCaseBridge } from "../case-bridge.mjs";
-import { authed, buildCase, seamStatus, standInBsig, tempRoot } from "./helpers.mjs";
+import { authed, buildCase, newsroomEnv, seamStatus, standInBsig, tempRoot } from "./helpers.mjs";
 
 const HOSTILE = '</script><script type="module">fetch("/api/decide",{method:"POST"})</script>';
 
@@ -54,14 +54,25 @@ test("approval is refused while a blocking failure is open", async (t) => {
   assert.equal(seamStatus(caseDir).phase, "investigation_gate_approval");
 });
 
-test("an approval needs the member's name", async (t) => {
+test("a newsroom approval needs the member's name", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "methodology");
-  const { json } = await authed(t, caseDir);
+  const { json } = await authed(t, caseDir, { bridgeEnv: newsroomEnv(root) });
   const view = (await json("/api/view")).body;
+  assert.equal(view.name_required, true);
   const refused = await json("/api/decide", { decision: "approved", digest: view.digest });
   assert.equal(refused.status, 422);
   assert.equal(refused.body.code, "reviewer-required");
+});
+
+test("a solo approval is recorded under the fixed name", async (t) => {
+  const caseDir = buildCase(tempRoot(t), "case", "methodology");
+  const { json } = await authed(t, caseDir);
+  const view = (await json("/api/view")).body;
+  assert.equal(view.name_required, false);
+  const decided = await json("/api/decide", { decision: "approved", digest: view.digest });
+  assert.equal(decided.status, 200, JSON.stringify(decided.body));
+  assert.equal(decided.body.receipt.approved_by, "Member");
 });
 
 test("case text reaches the page only as escaped JSON data", async (t) => {
@@ -85,9 +96,6 @@ test("report and ingest decisions from the page complete the case", async (t) =>
   let view = (await json("/api/view")).body;
   assert.equal(view.gate, "report");
   assert.equal(view.content.draft_ready, false);
-  const unnamed = await json("/api/decide", { decision: "declined", digest: view.digest });
-  assert.equal(unnamed.status, 422);
-  assert.equal(unnamed.body.code, "reviewer-required");
   view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
   view = (await json("/api/decide", { decision: "declined", digest: view.digest })).body;
   assert.equal(view.receipt.decision, "declined");
@@ -111,9 +119,6 @@ test("the Investigation gate page requests a follow-up with a note and the membe
   const { json } = await authed(t, caseDir);
   let view = (await json("/api/view")).body;
   assert.ok(view.blocking.length > 0);
-  const unnamed = await json("/api/follow-up", { instructions: "Find a second filing.", digest: view.digest });
-  assert.equal(unnamed.status, 422);
-  assert.equal(unnamed.body.code, "reviewer-required");
   view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
   const empty = await json("/api/follow-up", { instructions: "  ", digest: view.digest });
   assert.equal(empty.status, 400);
@@ -149,7 +154,7 @@ test("the reopened Investigation gate after a follow-up starts with no decider's
   }
   assert.equal(seamStatus(caseDir).phase, "investigation_gate_approval");
 
-  const reopened = await authed(t, caseDir);
+  const reopened = await authed(t, caseDir, { bridgeEnv: newsroomEnv(root) });
   view = (await reopened.json("/api/view")).body;
   assert.equal(view.reviewer, "", "the previous decider's name is not offered as this decision's name");
   assert.equal(view.previous_reviewer, "A. Reviewer", "the previous decider is shown as history");

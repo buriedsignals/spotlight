@@ -22,6 +22,13 @@ export function buildCase(root, name, stage, ...flags) {
   return caseDir;
 }
 
+// The bridge environment of a newsroom install: its decisions must name their decider.
+export function newsroomEnv(root) {
+  const config = join(root, "newsroom-config.json");
+  writeFileSync(config, JSON.stringify({ knowledge_destination: { mode: "newsroom" } }));
+  return safeChildEnvironment({ ...process.env, SPOTLIGHT_CONFIG: config });
+}
+
 export function seamStatus(caseDir) {
   const out = execFileSync(
     PYTHON,

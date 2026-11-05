@@ -997,6 +997,7 @@ function memberName() {
 }
 
 function reviewerField() {
+  if (!view.name_required) return null;
   return el(
     "div",
     {},
