@@ -473,3 +473,13 @@ test('at the gate only the summary step\'s own failure reads as one', (t) => {
 	process.env.SPOTLIGHT_MODEL_TIER = '12b';
 	assert.equal(nextAction({ phase: 'investigation_gate_approval', missing: ['summary.md'], fixed_steps: [{ step: 'spawn fact-checker', ok: false, output: 'refused' }, { step: 'spawn fact-checker', ok: true, output: 'done' }] }), NEXT_GATE_OWED);
 });
+
+test('at Investigation a finding with no verdict goes to the fact-checker before an investigator fault, on a local tier', (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	const state = { phase: 'investigation', status: 'active', missing: ['validate-fact-check: FAIL  record:D2-F1 [investigator]: evidence bundle D2-E1 has no explicit finding link', 'validate-fact-check: FAIL  missing:D2-F9 [fact-checker]: finding D2-F9 has no fact-check verdict — every finding must be assessed'] };
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	assert.deepEqual(dispatchAt(state), { agent: 'fact-checker', task: '', step: 'fact-checker' });
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	assert.equal(dispatchAt(state)?.agent, 'investigator');
+});

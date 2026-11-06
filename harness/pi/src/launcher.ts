@@ -355,6 +355,9 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		let codeBuilt = false;
 		let rounding = false;
 		let structural = false;
+		// Local tiers: one bound for every correction mode, whoever sends it (countCorrection).
+		let correcting = false;
+		let defectsBefore = 0;
 		let started = false;
 		const factCheckProgress = new Set<string>();
 		const validatedBatch = (ids: string[]) => { for (const id of ids) factCheckProgress.add(id); };
@@ -385,6 +388,8 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			// validator's own text, never the orchestrator's retyping of it, and
 			// every correction that leaves the errors in place counts (qwen-u9-mac.md).
 			structural = request.agent === 'investigator' && harness.config.modelTier !== 'frontier' && taskMode(request.task) === 'STRUCTURAL CORRECTION';
+			correcting = harness.config.modelTier !== 'frontier' && (request.agent === 'investigator' || request.agent === 'fact-checker') && Boolean(taskMode(request.task)?.endsWith('CORRECTION'));
+			if (correcting) defectsBefore = defectLines(await factCheckDefects(checkContext(harness), controller.signal)).length;
 			const built = structural ? await structuralTask(harness, status, controller.signal) : undefined;
 			const workerTask = built ?? (request.agent === 'fact-checker' ? factCheckerTask(request.task, harness.lastFactCheckReport) : amending ? amendmentTask(status) : rounding ? roundTask(harness, status) : request.task);
 			if (workerTask !== request.task) harness.log(`${request.agent}: the orchestrator's task text (${request.task.length} characters) was not passed on; the harness built the task`);
@@ -501,7 +506,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			}
 		})
 			.then((text) => (codeBuilt ? text : withValidation(harness, request.agent, text)))
-			.then(async (text) => (structural ? `${text}\n\n${await countStructuralCorrection(harness, controller.signal)}` : text))
+			.then(async (text) => (correcting ? `${text}\n\n${await countCorrection(harness, defectsBefore, controller.signal)}` : text))
 			.then(async (text) => (codeBuilt ? await recordAmendment(harness, undefined, true) : amending ? `${text}\n\n${await applyAmendment(harness)}` : rounding ? `${text}\n\n${await applyRound(harness)}` : text))
 			.then(async (text) => {
 				// Earlier batches may have completed before a later batch stopped.
@@ -586,23 +591,26 @@ async function structuralTask(harness: Harness, status: Record<string, unknown>,
 	return checked.passed ? undefined : inputsRepair(`${INPUTS_REFUSED}\n${checked.report}`)?.task;
 }
 
-// A correction after which the inputs still fail is a failed correction
-// (phase-investigation: two exhaust the case). Code counts it; the model never
-// did (qwen-u9-mac.md: 43 corrections, attempts empty).
-async function countStructuralCorrection(harness: Harness, signal: AbortSignal): Promise<string> {
+// A correction after which nothing improved is a failed correction (phase-investigation:
+// two exhaust the case). Code counts it; the model never did (qwen-u9-mac.md: 43 corrections,
+// attempts empty). Case 2bd8d15c ran 11 and then more with attempts {}: the count read only
+// validate-case, and a model-sent EVIDENCE CORRECTION was not counted at all. So every
+// correction mode shares this one count, and fewer validate-fact-check failures, a new
+// verdict or a repaired link, is progress and costs nothing.
+const defectLines = (report: string) => report.split('\n').filter((line) => /^\s*FAIL\b/.test(line));
+async function countCorrection(harness: Harness, before: number, signal: AbortSignal): Promise<string> {
 	try {
 		const checked = await validateInvestigationInputs(checkContext(harness), signal);
-		// Case 2bd8d15c: about 10 corrections with attempts {}. validate-case passed, so each read
-		// as fixed, while validate-fact-check still gave the [investigator] fault they were sent for.
-		const left = checked.passed ? (await factCheckDefects(checkContext(harness), signal)).split('\n').filter((line) => line.includes('[investigator]')).join('\n') : checked.report;
-		if (!left) return '[Harness: the structural errors are fixed.]';
+		const left = defectLines(await factCheckDefects(checkContext(harness), signal));
+		if (checked.passed && left.length === 0) return '[Harness: the errors are fixed.]';
+		if (checked.passed && left.length < before) return `[Harness: this correction made progress: ${before} failures, now ${left.length}.]`;
 		const { config, active } = harness;
 		const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
-		await runAdapter(transitionArguments('recordAttempt', { kind: 'structural-correction', gap: harness.redact(left).slice(0, 800) }, active, ORCHESTRATOR, true));
+		await runAdapter(transitionArguments('recordAttempt', { kind: 'structural-correction', gap: harness.redact(checked.passed ? left.join('\n') : checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
 		const after = await caseStatus(harness);
 		return after.status === 'blocked'
-			? '[Harness: the structural errors remain after the second correction, so the case is blocked. Call spotlight_resolve and present it.]'
-			: '[Harness: the structural errors remain; this correction was counted (2 end the case).]';
+			? '[Harness: the errors remain after the second correction with no progress, so the case is blocked. Call spotlight_resolve and present it.]'
+			: '[Harness: the errors remain; this correction was counted (2 end the case).]';
 	} catch (error) {
 		return `[Harness: the correction could not be counted: ${harness.redact((error as Error).message).slice(0, 300)}]`;
 	}

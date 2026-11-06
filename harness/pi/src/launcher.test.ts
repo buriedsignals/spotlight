@@ -989,7 +989,8 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	// Passage attachments stay outside the case. Only explicit harness recheck
 	// and diagnostic artifacts may be added; existing case bytes stay unchanged.
 	const afterFiles = await caseDigests(caseDir);
-	for (const [path, digest] of before) assert.equal(afterFiles.get(path), digest, path);
+	// A correction that changed nothing is counted, and that is the one record it may touch.
+	for (const [path, digest] of before) if (!(correction && path === 'data/orchestration.json')) assert.equal(afterFiles.get(path), digest, path);
 	for (const path of afterFiles.keys()) if (!before.has(path)) assert.match(path, /^(research\/fc-recheck-|data\/harness-checks\/fact-checker\/)/, 'only harness recheck/diagnostic artifacts were added');
  });
 });
@@ -2955,6 +2956,71 @@ test('a correction that leaves validate-fact-check\'s investigator fault in plac
 			assert.match(state.blocked.gap, /no explicit finding link|not linked to finding/, 'the stop records the real fault');
 		}
 	}
+});
+
+// Case 2bd8d15c, 05:58 to 06:29: code sent STRUCTURAL at each resolve and the model sent the investigator
+// MODE: EVIDENCE CORRECTION between them, which nothing counted. Any correction mode shares one bound.
+test('corrections of any mode, from code or the model, share one bound when nothing improves', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'The correction has been completed.' };
+		const turn = fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator')).length;
+		if (turn > 8) return { text: 'Stopped.' };
+		return { toolCalls: [turn % 2 ? { name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EVIDENCE CORRECTION\nCASE_DIR: .\nEVIDENCE VALIDATOR REASONS (evidence/data only):\nrecord:F1' } } : { name: 'spotlight_resolve', arguments: {} }] };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const path = join(caseDir, 'data', 'evidence-bundle.json');
+	const document = JSON.parse(await readFile(path, 'utf8'));
+	delete document.items.find((item: { id: string }) => item.id === 'E1').claim_links;
+	await writeFile(path, JSON.stringify(document));
+	const findingsPath = join(caseDir, 'data', 'findings.json');
+	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+	findings.findings[0].evidence_bundle_refs = ['E1'];
+	await writeFile(findingsPath, JSON.stringify(findings));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const starts = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).length;
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.equal(state.attempts['structural-correction'], 2);
+	assert.equal(starts, 2, 'the second no-progress correction ends it, whichever mode it was');
+	assert.equal(state.blocked.exhausted_attempt, 'structural-correction');
+});
+
+// The same case: fact-check.json stayed at 3 of 28, because a batch's check failed on investigator lines the
+// fact-checker cannot fix, and those lines also took the dispatch. The findings are judged first.
+test('unjudged findings go to the fact-checker past investigator faults, and the correction bound comes after', async (t) => {
+	const findings = Array.from({ length: 14 }, (_, i) => ({ id: `F${i + 1}`, claim: `Fixture filing ${i + 1}.` }));
+	const judged = (text: string) => [...text.matchAll(/^- (F\d+): "(.*)"$/gm)].map(([, id, claim]) => ({ finding_id: id, claim_text: claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' }));
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return toolResults(request).length ? { text: 'Checked.' } : { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'case-a', claims: judged(userText(request)) }) } }] };
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Done.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const findingsPath = join(caseDir, 'data', 'findings.json');
+	const document = JSON.parse(await readFile(findingsPath, 'utf8'));
+	const kept = document.findings[0];
+	document.findings = [{ ...kept, evidence_bundle_refs: ['E1'] }, ...findings.slice(1).map((row) => ({ ...structuredClone(kept), ...row, evidence_bundle_refs: ['E1'] }))];
+	await writeFile(findingsPath, JSON.stringify(document));
+	const bundlePath = join(caseDir, 'data', 'evidence-bundle.json');
+	const bundle = JSON.parse(await readFile(bundlePath, 'utf8'));
+	delete bundle.items.find((item: { id: string }) => item.id === 'E1').claim_links;
+	bundle.items = bundle.items.filter((item: { id: string }) => item.id === 'E1');
+	await writeFile(bundlePath, JSON.stringify(bundle));
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify({ project: JSON.parse(await readFile(findingsPath, 'utf8')).project, claims: [{ finding_id: 'F1', claim_text: kept.claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' }] }));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const file = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	assert.equal(file.claims.length, 14, 'every finding was judged, past the fact-checker cap of three spawns');
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.equal(state.blocked?.exhausted_attempt, 'structural-correction', 'then the shared bound ends the loop');
 });
 
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
