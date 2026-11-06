@@ -222,7 +222,7 @@ def _decider(
     return {"decided_by": decided_by, "decided_at": decided_at}
 
 
-def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> None:
+def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str, reopen: bool = True) -> None:
     if kind not in RECORDABLE_ATTEMPTS:
         raise OrchestrationError(f"unsupported attempt kind: {kind}")
     if not gap.strip():
@@ -249,7 +249,7 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     attempts[kind] = attempts.get(kind, 0) + 1
     if research:
         state["open_research"] = {"kind": kind, "gap": gap}
-    else:
+    elif reopen:
         state["open_cycle"] = {"kind": kind, "gap": gap, **rework_snapshot(case)}
     if kind in (CYCLE, ROUND_CYCLE):
         state["cycle_gaps"] = [*state.get("cycle_gaps", []), gap]

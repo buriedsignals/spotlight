@@ -66,6 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     attempt = commands.add_parser("record-attempt")
     attempt.add_argument("kind", choices=RECORDABLE_ATTEMPTS)
     attempt.add_argument("--gap", required=True)
+    # Code's count of a failed correction: the resolver keeps reporting the real failures.
+    attempt.add_argument("--no-reopen", dest="reopen", action="store_false")
     add_case_boundary(attempt)
     add_case_boundary(commands.add_parser("reset-corrections"))
     research_round = commands.add_parser("start-research-round")
@@ -152,7 +154,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
             **boundary,
         )
     elif args.command == "record-attempt":
-        record_attempt(args.case_dir, args.kind, args.gap, **boundary)
+        record_attempt(args.case_dir, args.kind, args.gap, args.reopen, **boundary)
     elif args.command == "reset-corrections":
         reset_corrections(args.case_dir, **boundary)
     elif args.command == "start-research-round":

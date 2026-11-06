@@ -83,6 +83,7 @@ def record_attempt(
     case_dir: str | Path,
     kind: str,
     gap: str,
+    reopen: bool = True,
     *,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
@@ -91,6 +92,7 @@ def record_attempt(
         transitions.record_attempt,
         kind,
         gap,
+        reopen,
         authorized_cases_root=authorized_cases_root,
     )
 

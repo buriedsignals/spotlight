@@ -617,7 +617,7 @@ async function countCorrection(harness: Harness, before: number, signal: AbortSi
 		}
 		if (checked.passed && harness.defectsAtLastCount !== undefined && before < harness.defectsAtLastCount) await runAdapter(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true));
 		harness.defectsAtLastCount = left.length;
-		await runAdapter(transitionArguments('recordAttempt', { kind: 'structural-correction', gap: harness.redact(checked.passed ? left.join('\n') : checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
+		await runAdapter(transitionArguments('countCorrection', { gap: harness.redact(checked.passed ? left.join('\n') : checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
 		const after = await caseStatus(harness);
 		return after.status === 'blocked'
 			? '[Harness: the errors remain after the second correction with no progress, so the case is blocked. Call spotlight_resolve and present it.]'

@@ -18,7 +18,7 @@ const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 // decision and the ingest request or decline come from the review page.
 export const MODEL_OPERATIONS = ['recordAttempt', 'startResearchRound', 'recordAmendment', 'continueWithoutResearch'] as const;
 // The seals are mechanical: spotlight_resolve applies them at their fixed points.
-const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest', 'resetCorrections'] as const;
+const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest', 'resetCorrections', 'countCorrection'] as const;
 type ModelOperation = (typeof MODEL_OPERATIONS)[number] | (typeof CODE_OPERATIONS)[number];
 type Payload = Record<string, unknown>;
 
@@ -117,6 +117,10 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 			return ['seal-investigation-gate', ...boundary];
 		case 'resetCorrections':
 			return ['reset-corrections', ...boundary];
+		// No open cycle: it would replace the resolver's real failures with "investigator update", and
+		// the fact-checker would never run (case 2bd8d15c's order: correction, verdicts, correction).
+		case 'countCorrection':
+			return ['record-attempt', 'structural-correction', '--gap', stringField(payload, 'gap'), '--no-reopen', ...boundary];
 		// Both read case files the model wrote and are checked in code: the
 		// round against D1, the amendment against the member's marks (D8).
 		case 'startResearchRound':
@@ -527,10 +531,8 @@ export function dispatchAt(resolved: Record<string, unknown>, methodologyFailure
 			return undefined;
 	}
 	// A member's follow-up or a recorded cycle gap carries instructions code
-	// does not route: that cycle stays the model's (review-fix4 A1, A2). A counted
-	// structural correction carries none, and code owes the second try (case 2bd8d15c).
-	const cycleKind = (resolved.open_cycle as { kind?: unknown } | undefined)?.kind;
-	if (resolved.follow_up || (resolved.open_cycle && !(cycleKind === 'structural-correction' && localTier(process.env)))) return undefined;
+	// does not route: that cycle stays the model's (review-fix4 A1, A2).
+	if (resolved.follow_up || resolved.open_cycle) return undefined;
 	if (missing.includes('data/findings.json')) return { agent: 'investigator', task: 'MODE: EXECUTION\nWork the approved methodology.', step: 'investigator EXECUTION' };
 	// A fresh check after an update is a plain batch, never the cycle's one
 	// evidence correction (review-fix4 A3).
