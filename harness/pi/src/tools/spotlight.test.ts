@@ -360,7 +360,7 @@ test('every state the resolver can return names a next step, and only member dec
 		['ingest requested', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other'],
 		['ingest requested, newsroom', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other', undefined, 'newsroom'],
 		['ingest seal', { phase: 'ingest', ingest: { resume_at: 'seal' } }, [], 'other'],
-		['blocked', { phase: 'blocked', status: 'blocked' }, [], 'other'],
+		['blocked', { phase: 'blocked', status: 'blocked' }, [], 'member'],
 		['complete', { phase: 'complete', status: 'completed' }, [], 'other'],
 		['worker stalled', { phase: 'methodology', worker_stalled: { step: 'investigator (investigator PLANNING)', attempts: 2 } }, [], 'other'],
 	];
@@ -491,7 +491,9 @@ test('only code can reset the correction count', () => {
 });
 
 // Case 2bd8d15c: the blocked case's next step is the page, the route that exists.
-test('a case stopped by failed corrections is sent to the review page; another block is not', () => {
-	assert.match(nextAction({ phase: 'blocked', status: 'blocked', blocked: { phase: 'investigation', exhausted_attempt: 'structural-correction' } }) ?? '', /call open_review/);
-	assert.doesNotMatch(nextAction({ phase: 'blocked', status: 'blocked', blocked: { phase: 'research', exhausted_attempt: 'amendment-correction' } }) ?? '', /open_review/);
+test('every stop names its way out; a failed research round waits for the member', () => {
+	const at = (phase: string, exhausted_attempt: string) => nextAction({ phase: 'blocked', status: 'blocked', blocked: { phase, exhausted_attempt } }) ?? '';
+	for (const kind of ['structural-correction', 'fact-check-evidence-repair', 'investigation-cycle', 'research-round-cycle']) assert.match(at('investigation', kind), /^Next: call open_review .*send the case back/);
+	assert.match(at('research', 'amendment-correction'), /^Next: call open_review .*change their marks/);
+	assert.match(at('research', 'research-lane'), /^Next: tell the member .*Once the member says/);
 });

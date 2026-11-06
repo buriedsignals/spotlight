@@ -18,7 +18,7 @@ const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 // decision and the ingest request or decline come from the review page.
 export const MODEL_OPERATIONS = ['recordAttempt', 'startResearchRound', 'recordAmendment', 'continueWithoutResearch'] as const;
 // The seals are mechanical: spotlight_resolve applies them at their fixed points.
-const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest', 'resetCorrections', 'countCorrection'] as const;
+const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest', 'resetCorrections', 'countCorrection', 'resumeResearch'] as const;
 type ModelOperation = (typeof MODEL_OPERATIONS)[number] | (typeof CODE_OPERATIONS)[number];
 type Payload = Record<string, unknown>;
 
@@ -117,6 +117,8 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 			return ['seal-investigation-gate', ...boundary];
 		case 'resetCorrections':
 			return ['reset-corrections', ...boundary];
+		case 'resumeResearch':
+			return ['resume-research', ...boundary];
 		// No open cycle: it would replace the resolver's real failures with "investigator update", and
 		// the fact-checker would never run (case 2bd8d15c's order: correction, verdicts, correction).
 		case 'countCorrection':
@@ -245,9 +247,11 @@ export function batchDraftError(caseDir: string): string | undefined {
 		return undefined;
 	}
 }
-// Case 2bd8d15c: the stop's way out is the page, the one route from here (review.py correction_stop).
-export const NEXT_CORRECTION_STOP = 'Next: call open_review so the member can see what failed and send the case back to Investigation with a note, then end your turn.';
-export const NEXT_BLOCKED = 'Next: the case is blocked (blocked says why). Tell the member in plain words why, and what they can do, then end your turn.';
+// Case 2bd8d15c: every stop has one way out, open_review (review.ts stopExit).
+export const NEXT_INVESTIGATION_STOP = 'Next: call open_review so the member can see what failed and send the case back to Investigation with a note, then end your turn.';
+export const NEXT_AMENDMENT_STOP = 'Next: call open_review so the member can change their marks on the Research page, then end your turn.';
+// Not a page, and only on the member's word: a round run unasked would just fail again.
+export const NEXT_RESEARCH_LANE_STOP = 'Next: tell the member what failed (blocked.gap) and end your turn. Once the member says it is fixed or asks to try again, call open_review: it runs the research again.';
 export const NEXT_COMPLETE = 'Next: the case is complete. Tell the member, and end your turn.';
 export const NEXT_UNKNOWN = 'Next: call spotlight_resolve again; if the case does not move, tell the member what it reports and end your turn.';
 export const NEXT_METHODOLOGY_APPROVAL =
@@ -330,7 +334,11 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 			return onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : NEXT_INGEST_ANALYST;
 		}
 		case 'blocked':
-			return (resolved.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt === 'structural-correction' ? NEXT_CORRECTION_STOP : NEXT_BLOCKED;
+			switch ((resolved.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt) {
+				case 'research-lane': return NEXT_RESEARCH_LANE_STOP;
+				case 'amendment-correction': return NEXT_AMENDMENT_STOP;
+				default: return NEXT_INVESTIGATION_STOP;
+			}
 		case 'complete':
 			return NEXT_COMPLETE;
 		case 'investigation':

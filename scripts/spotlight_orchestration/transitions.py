@@ -425,6 +425,22 @@ def record_amendment(case: Path, data_descriptor: int, build: bool = False) -> N
     _publish(case, data_descriptor, state, ledger, {"data/methodology.json": amendment_bytes})
 
 
+def resume_stopped_research(case: Path, data_descriptor: int) -> None:
+    """The way out of a stop at Research. A refused amendment goes back to the Research
+    page, where the member changes the marks; a failed round runs again. Each try needs
+    the member, so this cannot loop by itself."""
+    state = load_state(case, data_descriptor)
+    status = status_for(case, state, data_descriptor)
+    if status["next_phase"] != "blocked" or status["blocked"].get("phase") != "research":
+        raise OrchestrationError("only a case stopped at Research can resume it")
+    kind = state.pop("blocked")["exhausted_attempt"]
+    state["attempts"].pop(kind, None)
+    if kind == AMENDMENT_CORRECTION:
+        state["approvals"].pop("research", None)
+        state.pop("open_amendment", None)
+    _publish(case, data_descriptor, state)
+
+
 def continue_without_research(case: Path, data_descriptor: int) -> None:
     """The member's choice while Research is off: drop the research plan.
     The methodology changes, so the Methodology gate reopens and the member
@@ -501,7 +517,7 @@ def request_follow_up(
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
     phase = status["next_phase"]
-    stopped = review.correction_stop(status)
+    stopped = review.investigation_stop(status)
     # Bind the Report the member actually saw in this same locked transaction.
     if shown_gate is not None or shown_digest is not None:
         if shown_gate != "report" or nonce is None or not isinstance(shown_digest, str):
@@ -539,8 +555,7 @@ def request_follow_up(
         "review": binding,
     }
     if stopped:  # the member's note starts a new try
-        state.pop("blocked")
-        state["attempts"].pop("structural-correction", None)
+        state["attempts"].pop(state.pop("blocked")["exhausted_attempt"], None)
     state["approvals"].pop("investigation_gate", None)
     state.pop("investigation_gate_finalization", None)
     state["decisions"].clear()

@@ -199,7 +199,8 @@ def status_for(
     dependency_digest = str(dependencies["dependency_digest"])
     follow_up = state.get("follow_up")
     if not dependencies["investigation_ready"]:
-        return investigation_status(status, list(dependencies["investigation_missing"]))
+        # A case sent back from a stop can lack a file; the member's note still goes with it.
+        return investigation_status(status, list(dependencies["investigation_missing"]), follow_up)
     if isinstance(follow_up, dict) and isinstance(follow_up.get("instructions"), str):
         pending = rework_pending(case, follow_up, dependency_digest)
         if pending:

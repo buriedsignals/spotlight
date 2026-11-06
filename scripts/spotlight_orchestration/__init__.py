@@ -14,6 +14,7 @@ __all__ = [
     "OrchestrationError",
     "approve",
     "continue_without_research",
+    "resume_stopped_research",
     "decide_ingest",
     "decide_report",
     "issue_review_nonce",
@@ -114,6 +115,15 @@ def continue_without_research(
     the Methodology gate reopens for the plan without research."""
     _transition(
         case_dir, transitions.continue_without_research, authorized_cases_root=authorized_cases_root
+    )
+
+
+def resume_stopped_research(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> None:
+    """The way out of a stop at Research (transitions.resume_stopped_research)."""
+    _transition(
+        case_dir, transitions.resume_stopped_research, authorized_cases_root=authorized_cases_root
     )
 
 
@@ -316,9 +326,10 @@ def review_view(
             "review_digest": None,
             "nonce_sha256": None,
         }
-    stopped = gate == "investigation_gate" and review.correction_stop(status)
+    stopped = gate == "investigation_gate" and review.investigation_stop(status)
     if stopped:  # the failures block approval, so sending the case back is the one decision left
-        lines = [line.strip() for line in str(status["blocked"].get("gap") or "").splitlines() if line.strip()]
+        gaps = status["blocked"].get("gaps_report") or [status["blocked"].get("gap") or ""]
+        lines = [line.strip() for gap in gaps for line in str(gap).splitlines() if line.strip()]
         view = {**view, "blocking": lines + view["blocking"]}
     return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
             "can_request_follow_up": stopped or (gate in {"investigation_gate", "report"}

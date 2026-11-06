@@ -284,7 +284,17 @@ class ResearchGate(SeamCase):
         self.assertEqual(stopped["status"], "blocked")
         self.assertEqual(stopped["blocked"]["exhausted_attempt"], "amendment-correction")
         self.assertIn("clue:clue-1 has no direction left", stopped["blocked"]["gap"])
-        # The way out the blocked message names: change the methodology, then approve it again.
+        # The way out the stop names: the Research page again, where a changed mark passes.
+        self.seam("resume-research", case=case)
+        reopened = self.status(case)
+        self.assertEqual((reopened["status"], reopened["phase"], reopened["attempts"]), ("pending", "research_approval", {}))
+        write_json(case / "data/research-review.json", marks_review({"clue:clue-1": "pursue"}))
+        self.seam("approve", "research", *APPROVER, case=case)
+        self.seam("record-amendment", "--build", case=case)
+        self.assertEqual(self.status(case)["phase"], "investigation")
+
+    def test_a_changed_methodology_still_clears_a_stop_at_research(self) -> None:
+        case = self.built(marks={"direction:ownership": "drop", "clue:clue-1": "pursue"})
         methodology = read_json(case / "data/methodology.json")
         methodology["investigation_plan"][0]["questions"].append("Who else owns it?")
         write_json(case / "data/methodology.json", methodology)
@@ -318,6 +328,16 @@ class ResearchGate(SeamCase):
         self.assertEqual((stopped["status"], stopped["owner"]), ("blocked", "phase-research"))
         self.assertEqual(stopped["blocked"]["exhausted_attempt"], "amendment-correction")
         self.assertEqual((self.case / "data/methodology.json").read_bytes(), approved)
+
+    def test_a_failed_round_runs_again_only_from_its_stop(self) -> None:
+        self.seam("approve", "methodology", *APPROVER)
+        self.assertIn("only a case stopped at Research", self.seam("resume-research", expect=3).stderr)
+        for _ in range(3):
+            self.seam("record-attempt", "research-lane", "--gap", "OpenRouter key rejected")
+        self.assertEqual(self.status()["blocked"]["exhausted_attempt"], "research-lane")
+        self.seam("resume-research")
+        running = self.status()
+        self.assertEqual((running["phase"], running["research"]["resume_at"], running["attempts"]), ("research", "lanes", {}))
 
     def test_an_approved_amendment_goes_to_investigation_with_attempts_kept(self) -> None:
         self.seam("approve", "methodology", *APPROVER)

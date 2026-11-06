@@ -79,17 +79,16 @@ def require_gate(gate: str) -> None:
         raise OrchestrationError(f"unknown review gate: {gate}")
 
 
-def correction_stop(status: dict[str, Any]) -> bool:
-    """The case stopped on failed corrections (case 2bd8d15c). The Investigation page is its
-    way out: it lists the failures and can send the case back, and nothing else moves it."""
+def investigation_stop(status: dict[str, Any]) -> bool:
+    """The case stopped during Investigation, whichever attempt ran out (case 2bd8d15c). The
+    Investigation page is its way out: it lists the failures and can send the case back."""
     blocked = status.get("blocked")
-    return (status.get("next_phase") == "blocked" and isinstance(blocked, dict)
-            and blocked.get("phase") == "investigation" and blocked.get("exhausted_attempt") == "structural-correction")
+    return status.get("next_phase") == "blocked" and isinstance(blocked, dict) and blocked.get("phase") == "investigation"
 
 
 def pending_gate(status: dict[str, Any]) -> str | None:
     """The gate a member can decide now, from a resolver status."""
-    if correction_stop(status):
+    if investigation_stop(status):
         return "investigation_gate"
     phase = status.get("next_phase")
     if phase == "methodology_approval":

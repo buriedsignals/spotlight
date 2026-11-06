@@ -17,7 +17,7 @@ import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, sett
 import { DECISION_RECORDED } from './router.ts';
 import { NEXT_BRIEF } from './tools/spotlight.ts';
 import { reviewRefusalStop } from './extension.ts';
-import { PAGE_NOT_OPENED, REVIEW_HOLD_NOTICE } from './tools/review.ts';
+import { AMENDMENT_STOP, PAGE_NOT_OPENED, REVIEW_HOLD_NOTICE } from './tools/review.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { registerCapture } from './test-support/receipts.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
@@ -3127,12 +3127,63 @@ test('a member message at the correction stop opens the gate page, says what fai
 
 	const turn = settledPrompt(chat, 'Reopen the methodology please.', 40_000);
 	await waitUntil(() => chat.opened().length === 1, 20_000);
-	await waitUntil(() => notices(chat).some((text) => text.includes('send the case back to Investigation')), 20_000);
+	await waitUntil(() => notices(chat).some((text) => text.includes('Send the case back to Investigation')), 20_000);
 	assert.ok(notices(chat).some((text) => text.includes('no explicit finding link')), 'the failure is named');
 	execFileSync(PYTHON, [SEAM, 'request-follow-up', '--instructions', 'Link the findings to E1.', '--requested-by-role', 'orchestrator', caseDir]);
 	await turn;
 	assert.equal(settles(chat), 1, 'the turn carries on from the page');
 	assert.equal(JSON.parse(await readFile(path, 'utf8')).blocked, undefined);
+});
+
+const stopCase = async (caseDir: string, stop: Record<string, unknown>) => {
+	const path = join(caseDir, 'data', 'orchestration.json');
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	await writeFile(path, JSON.stringify({ ...state, attempts: { [String(stop.exhausted_attempt)]: 1 }, blocked: { ...stop, attempts: {} } }));
+	return path;
+};
+
+test('on a frontier tier a stop opens the gate page too, with no hold, and the turn ends on the failures and the way out', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	await stopCase(caseDir, { phase: 'investigation', exhausted_attempt: 'investigation-cycle', gap: 'who owns the fund', gaps_report: ['who owns the fund'] });
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Reopen the methodology please.', 30_000);
+	assert.equal(chat.opened().length, 1);
+	assert.match(notices(chat).join('\n'), /every cycle[\s\S]*who owns the fund[\s\S]*Send the case back to Investigation/);
+});
+
+test('a member message at a refused amendment reopens the Research page and says the marks are theirs to change', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'research'], { env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } });
+	const path = await stopCase(caseDir, { phase: 'research', exhausted_attempt: 'amendment-correction', gap: 'D8: no direction left' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_REVIEW_HOLD_MS: '1' });
+
+	await settledPrompt(chat, 'What now?', 40_000);
+	assert.equal(chat.opened().length, 1);
+	assert.ok(notices(chat).includes(AMENDMENT_STOP));
+	assert.equal(JSON.parse(await readFile(path, 'utf8')).blocked, undefined);
+});
+
+test('a member message at a failed research round runs it again, with no page', async (t) => {
+	const fake = await startFakeOpenAI((request) => (request.messages.some((message) => message.role === 'tool') ? { text: 'Done.' } : { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'research'], { env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } });
+	const path = await stopCase(caseDir, { phase: 'research', exhausted_attempt: 'research-lane', gap: 'OpenRouter key rejected' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_RESEARCH_SWARMS: 'on' });
+
+	await settledPrompt(chat, 'The key is fixed.', 40_000);
+	assert.equal(chat.opened().length, 0);
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	assert.equal(state.blocked, undefined);
+	assert.deepEqual(state.attempts, {});
 });
 
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
@@ -3983,7 +4034,7 @@ test('once the case is blocked, the orchestrator\'s next tool calls end the turn
 
 	assert.equal(fake.requests.length, 2, 'no call runs after the blocked resolve');
 	assert.match(toolResults(fake.requests[1])[0], /"status":"blocked"/);
-	assert.ok(chat.lines.some((line) => line.includes(blockedStop(1))), 'the member is told why');
+	assert.ok(chat.lines.some((line) => line.includes(blockedStop())), 'the member is told why');
 });
 
 // U3 census stage 1 (0af4585b): told to spawn the fact-checker, the r5

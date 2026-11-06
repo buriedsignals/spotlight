@@ -1,11 +1,12 @@
 // Page edits and decisions through the real server and orchestration seam.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createCaseBridge } from "../case-bridge.mjs";
-import { authed, buildCase, newsroomEnv, seamStatus, standInBsig, tempRoot } from "./helpers.mjs";
+import { CHECKOUT_ROOT, createCaseBridge } from "../case-bridge.mjs";
+import { PYTHON, authed, buildCase, newsroomEnv, seamStatus, standInBsig, tempRoot } from "./helpers.mjs";
 
 const HOSTILE = '</script><script type="module">fetch("/api/decide",{method:"POST"})</script>';
 
@@ -420,30 +421,64 @@ test("a Report follow-up binds the member's displayed digest atomically", async 
 });
 
 // Case 2bd8d15c: the stop told the member to edit the plan, and no page could open from a blocked case.
-test("a case stopped by failed corrections opens the gate page, listing them, and the member can only send it back", async (t) => {
+// Every attempt that can stop Investigation. A stop can come before a file exists, so some lack one.
+for (const [kind, gone] of [["structural-correction"], ["fact-check-evidence-repair", "fact-check.json"], ["investigation-cycle", "findings.json"], ["research-round-cycle", "evidence-bundle.json"]]) {
+  test(`a case stopped on ${kind}${gone ? ` without ${gone}` : ""} opens the gate page, listing the failures, and the member can only send it back`, async (t) => {
+    const root = tempRoot(t);
+    const caseDir = buildCase(root, "case", "investigation_gate");
+    if (gone) unlinkSync(join(caseDir, "data", gone));
+    const path = join(caseDir, "data", "orchestration.json");
+    const state = JSON.parse(readFileSync(path, "utf8"));
+    const gap = "FAIL  record:F1 [investigator]: evidence bundle E1 has no explicit finding link";
+    state.attempts = { [kind]: 1 };
+    state.blocked = { phase: "investigation", exhausted_attempt: kind, gap, attempts: state.attempts };
+    writeFileSync(path, JSON.stringify(state));
+    assert.equal(seamStatus(caseDir).phase, "blocked");
+
+    const { json } = await authed(t, caseDir);
+    let view = (await json("/api/view")).body;
+    assert.equal(view.gate, "investigation_gate");
+    assert.equal(view.pending_gate, "investigation_gate");
+    assert.ok(view.blocking.some((line) => line.includes("no explicit finding link")), JSON.stringify(view.blocking));
+    view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
+    const approved = await json("/api/decide", { decision: "approved", digest: view.digest });
+    assert.notEqual(approved.status, 200, "the failures block approval");
+
+    const requested = await json("/api/follow-up", { instructions: "Link the findings to E1.", digest: (await json("/api/view")).body.digest });
+    assert.equal(requested.status, 200, JSON.stringify(requested.body));
+    const status = seamStatus(caseDir);
+    assert.equal(status.phase, "investigation");
+    assert.deepEqual(status.resume, { instructions: "Link the findings to E1." });
+    assert.deepEqual(status.attempts, {}, "a new try");
+  });
+}
+
+test("a case stopped on a refused amendment comes back to the Research page, where changed marks can be approved", async (t) => {
+  process.env.SPOTLIGHT_RESEARCH_SWARMS = "on";
+  t.after(() => delete process.env.SPOTLIGHT_RESEARCH_SWARMS);
   const root = tempRoot(t);
-  const caseDir = buildCase(root, "case", "investigation_gate");
+  const caseDir = buildCase(root, "case", "research");
+  const { json } = await authed(t, caseDir);
+  let view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
+  assert.equal((await json("/api/decide", { decision: "approved", digest: view.digest })).status, 200);
   const path = join(caseDir, "data", "orchestration.json");
   const state = JSON.parse(readFileSync(path, "utf8"));
-  const gap = "FAIL  record:F1 [investigator]: evidence bundle E1 has no explicit finding link";
-  state.attempts = { "structural-correction": 2 };
-  state.blocked = { phase: "investigation", exhausted_attempt: "structural-correction", gap, attempts: state.attempts };
+  state.attempts = { "amendment-correction": 2 };
+  state.open_amendment = { problems: ["no direction left"] };
+  state.blocked = { phase: "research", exhausted_attempt: "amendment-correction", gap: "D8: no direction left", attempts: state.attempts };
   writeFileSync(path, JSON.stringify(state));
   assert.equal(seamStatus(caseDir).phase, "blocked");
 
-  const { json } = await authed(t, caseDir);
-  let view = (await json("/api/view")).body;
-  assert.equal(view.gate, "investigation_gate");
-  assert.equal(view.pending_gate, "investigation_gate");
-  assert.ok(view.blocking.some((line) => line.includes("no explicit finding link")), JSON.stringify(view.blocking));
-  view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
-  const approved = await json("/api/decide", { decision: "approved", digest: view.digest });
-  assert.notEqual(approved.status, 200, "the failures block approval");
-
-  const requested = await json("/api/follow-up", { instructions: "Link the findings to E1.", digest: (await json("/api/view")).body.digest });
-  assert.equal(requested.status, 200, JSON.stringify(requested.body));
+  execFileSync(PYTHON, [join(CHECKOUT_ROOT, "scripts", "spotlight-orchestration.py"), "resume-research", caseDir], { stdio: "pipe" });
+  assert.equal(seamStatus(caseDir).phase, "research_approval");
+  const again = await authed(t, caseDir);
+  view = (await again.json("/api/view")).body;
+  assert.equal(view.pending_gate, "research");
+  const mark = view.items.find((item) => item.key.startsWith("clue:k5-")).key;
+  view = (await again.json("/api/edit", { edit: { kind: "mark", key: mark, value: "pursue" } })).body;
+  view = (await again.json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
+  assert.equal((await again.json("/api/decide", { decision: "approved", digest: view.digest })).status, 200);
   const status = seamStatus(caseDir);
-  assert.equal(status.phase, "investigation");
-  assert.deepEqual(status.resume, { instructions: "Link the findings to E1." });
-  assert.deepEqual(status.attempts, {}, "two more tries");
+  assert.equal(status.phase, "research");
+  assert.equal(status.research.resume_at, "amendment");
 });

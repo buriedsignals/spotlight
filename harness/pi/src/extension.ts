@@ -1517,23 +1517,19 @@ function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
 // methodology. Once a resolve or transition returns it, a text answer ends
 // the turn as usual; a message with more tool calls is replaced by this line,
 // with no calls, so the turn ends. The member's next message starts afresh.
-export const blockedStop = (open: number) =>
-	`Spotlight stopped the investigation because it has tried every step it is allowed and ${open > 1 ? 'some questions are' : 'one question is'} still open. To continue, change the methodology and approve it again.`;
+export const blockedStop = () => 'Spotlight stopped this case, and your case is saved. Send a message here and Spotlight takes you to the way on: the review page, or a new research round.';
 
 function registerBlockedStop(pi: ExtensionAPI): void {
 	let blocked = false;
-	let open = 1;
 	pi.on('agent_start', () => {
 		blocked = false;
 	});
 	pi.on('tool_execution_end', (event) => {
 		if ((event.toolName !== 'spotlight_resolve' && event.toolName !== 'spotlight_transition') || event.isError) return;
 		try {
-			const status = JSON.parse(event.result?.content?.[0]?.text ?? '') as { status?: unknown; blocked?: { gaps_report?: unknown } };
+			const status = JSON.parse(event.result?.content?.[0]?.text ?? '') as { status?: unknown };
 			if (status.status !== 'blocked') return;
 			blocked = true;
-			const gaps = status.blocked?.gaps_report;
-			open = Array.isArray(gaps) && gaps.length > 1 ? gaps.length : 1;
 		} catch {
 			// Not a resolved state.
 		}
@@ -1544,7 +1540,7 @@ function registerBlockedStop(pi: ExtensionAPI): void {
 		// The page is a stopped case's way out (case 2bd8d15c: the stop swallowed this call).
 		if (message.content.every((part) => part.type !== 'toolCall' || part.name === 'open_review')) return undefined;
 		log('the case is blocked and the orchestrator went on; its turn was ended');
-		return shownStop(event, blockedStop(open));
+		return shownStop(event, blockedStop());
 	});
 }
 

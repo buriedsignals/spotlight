@@ -10,6 +10,7 @@ from . import (
     OrchestrationError,
     approve,
     continue_without_research,
+    resume_stopped_research,
     decide_ingest,
     decide_report,
     issue_review_nonce,
@@ -70,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     attempt.add_argument("--no-reopen", dest="reopen", action="store_false")
     add_case_boundary(attempt)
     add_case_boundary(commands.add_parser("reset-corrections"))
+    add_case_boundary(commands.add_parser("resume-research"))
     research_round = commands.add_parser("start-research-round")
     add_case_boundary(research_round)
     amendment = commands.add_parser("record-amendment")
@@ -161,6 +163,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         start_research_round(args.case_dir, **boundary)
     elif args.command == "record-amendment":
         record_amendment(args.case_dir, build=args.build, **boundary)
+    elif args.command == "resume-research":
+        resume_stopped_research(args.case_dir, **boundary)
     elif args.command == "continue-without-research":
         continue_without_research(args.case_dir, **boundary)
     elif args.command == "request-follow-up":
