@@ -92,9 +92,9 @@ async function keepAlive(response: ServerResponse, { count, everyMs }: { count: 
 async function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
 	response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
 	if (reply.keepAlives) await keepAlive(response, reply.keepAlives);
-	// Osaurus cold (t9gaps.py, 38k chars): one early chunk, then no data until the answer. Its SSE comments do not reach Pi.
+	// Osaurus cold (t9gaps.py, 38k chars): one early chunk with choices: [], then no data until the answer. Its SSE comments do not reach Pi.
 	if (reply.quietMs) {
-		chunk(response, { content: '' }, null);
+		response.write(`data: ${JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion.chunk', created: 0, model: 'fake', choices: [] })}\n\n`);
 		await new Promise((done) => setTimeout(done, reply.quietMs));
 	}
 	if (reply.reasoning) chunk(response, { role: 'assistant', reasoning_content: reply.reasoning }, null);

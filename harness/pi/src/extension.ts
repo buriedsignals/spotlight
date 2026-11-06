@@ -796,7 +796,8 @@ const MIN_CUT_TOKENS = 10;
 // Whether a raw OpenAI-style stream chunk carries anything the turn keeps.
 function visibleChunk(data: unknown): boolean {
 	const delta = (data as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined)?.choices?.[0]?.delta;
-	if (!delta) return true;
+	// Osaurus's prefill progress has choices: [] and no delta: nothing the turn keeps (T9 on 1a1aca40).
+	if (!delta) return false;
 	const text = (value: unknown) => typeof value === 'string' && value.length > 0;
 	return text(delta.content) || text(delta.reasoning_content) || text(delta.reasoning) || (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0);
 }
