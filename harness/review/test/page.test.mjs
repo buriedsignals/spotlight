@@ -147,3 +147,14 @@ test("the methodology page offers the drop for a plan code added, and says when 
   assert.match(dropped, /Research is dropped for this case/);
   assert.doesNotMatch(dropped, /Run Research on this case/);
 });
+
+test("a lead that shares its source says so on the Research page", async (t) => {
+  const switched = process.env.SPOTLIGHT_RESEARCH_SWARMS;
+  process.env.SPOTLIGHT_RESEARCH_SWARMS = "on";
+  t.after(() => { if (switched === undefined) delete process.env.SPOTLIGHT_RESEARCH_SWARMS; else process.env.SPOTLIGHT_RESEARCH_SWARMS = switched; });
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "research") }).view("research");
+  const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+  const leads = view.content.leads.map((lead, index) => ({ ...lead, same_source: index === 0 ? 2 : 0 }));
+  const page = await renderClient({ ...view, content: { ...view.content, leads } });
+  assert.ok(words(page.getElementById("app")).includes("Same source as 2 other leads, counts once"));
+});

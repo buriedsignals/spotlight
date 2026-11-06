@@ -100,3 +100,15 @@ test('a relevant conflict retains its linked cross-direction counterevidence as 
 	assert.match(packet, /Cross-direction leads are context for that question, not additional task assignments/);
 	assert.doesNotMatch(packet, /UNRELATED-PERSON-TASK/);
 });
+
+// Case 275a35b6: different claims of one source reach the investigator, each naming that source.
+test('every claim of one source reaches the packet, and each names the source they share', async (t) => {
+	const f = await fixture(t);
+	const lead = (id: string, summary: string) => ({ merge_key: { canonical_url: 'https://ec.europa.eu/eurostat/page', content_sha256: 'a'.repeat(64) }, copies: [], lead: { lead_id: id, topic_id: 'rates', direction_id: 'rates', status: 'candidate', summary, capture: { source_url: 'https://ec.europa.eu/eurostat/page' } } });
+	await f.write('leads', { leads: [lead('l1', 'The definition follows the ILO.'), lead('l2', 'Full quarters arrive after 75 days.')] });
+	await f.write('clues', { clues: [] });
+	const packet = f.packet();
+	assert.match(packet, /The definition follows the ILO\./);
+	assert.match(packet, /Full quarters arrive after 75 days\./);
+	assert.equal(packet.split('"source_url":"https://ec.europa.eu/eurostat/page"').length - 1, 2, 'a reader can see they are one source');
+});

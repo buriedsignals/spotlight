@@ -14,8 +14,9 @@ when any other folder exists there or a lane has not ended. Per lane:
   ``unverifiable``; it is kept, never deleted.
 - D5: a lane that spent past its budget without stopping is reported partial.
 
-Then D4 (merge by canonical URL and content hash: syndicated copies collapse,
-the same source twice is not corroboration), D6 (each direction's gap, with
+Then D4 (merge by canonical URL and content hash: the same claim from one
+source collapses, different claims from it each stay, and the same source twice
+is not corroboration), D6 (each direction's gap, with
 the queries tried) and the fixed clue rules K1-K6, with no model.
 The output is deterministic: the same lanes give byte-identical files, so a
 re-run never reopens the Research gate.
@@ -199,10 +200,29 @@ def _keep_order(item: Mapping[str, Any]) -> tuple:
             (lead.get("capture") or {}).get("captured_at", ""), lead["topic_id"], lead["lead_id"])
 
 
+def _claim(lead: Mapping[str, Any]) -> str:
+    """What makes two leads of one source the same claim: their excerpt."""
+    return checks.normalized(str((lead.get("excerpt") or {}).get("text") or lead.get("summary") or ""))
+
+
+def _source_of(entries: Iterable[Mapping[str, Any]]) -> dict[str, str]:
+    """Each lead's source: its entry's merge_key, or the lead alone without one."""
+    out = {}
+    for entry in entries:
+        key = entry.get("merge_key") or {}
+        lead_id = entry["lead"]["lead_id"]
+        out[lead_id] = key.get("canonical_url") or key.get("content_sha256") or lead_id
+    return out
+
+
 def merge(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """D4: one entry per source. Leads sharing a canonical URL, an original's
-    sha256 or an extracted text's sha256 collapse into one; the kept copy is a
-    stored page before a snippet, verified before unverifiable, then earliest."""
+    """D4: one source, by canonical URL, an original's sha256 or an extracted
+    text's sha256. Its leads share one merge_key, and each different excerpt
+    stays an entry: case 275a35b6 lost five facts of one Eurostat page when a
+    source meant one lead. The same excerpt collapses, and so does a snippet
+    of a stored page. The kept copy is a stored page before a snippet, verified
+    before unverifiable, then earliest. merge_key is what makes these one source
+    for corroboration (_same_source, K1, K2)."""
     parent = list(range(len(items)))
 
     def find(i: int) -> int:
@@ -232,13 +252,19 @@ def merge(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged = []
     for members in groups.values():
         members.sort(key=_keep_order)
-        kept = members[0]["lead"]
-        merged.append({
-            "merge_key": {"canonical_url": canonical_url((kept.get("capture") or {}).get("source_url")),
-                          "content_sha256": kept.get("content_sha256")},
-            "lead": kept,
-            "copies": [{"topic_id": m["lead"]["topic_id"], "lead_id": m["lead"]["lead_id"]} for m in members[1:]],
-        })
+        first = members[0]["lead"]
+        merge_key = {"canonical_url": canonical_url((first.get("capture") or {}).get("source_url")),
+                     "content_sha256": first.get("content_sha256")}
+        claims: dict[str, list[dict[str, Any]]] = {}
+        for member in members:
+            snippet_of_page = member["lead"].get("stored") != "page" and first.get("stored") == "page"
+            claims.setdefault(_claim(first if snippet_of_page else member["lead"]), []).append(member)
+        for claim in claims.values():
+            merged.append({
+                "merge_key": merge_key,
+                "lead": claim[0]["lead"],
+                "copies": [{"topic_id": m["lead"]["topic_id"], "lead_id": m["lead"]["lead_id"]} for m in claim[1:]],
+            })
     merged.sort(key=lambda entry: (entry["lead"]["topic_id"], entry["lead"]["lead_id"]))
     ids = [entry["lead"]["lead_id"] for entry in merged]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
@@ -299,6 +325,7 @@ def clue_rules(leads_doc: Mapping[str, Any], methodology: Mapping[str, Any]) -> 
     lane_type = {str(t.get("topic_id")): t.get("lane_type") for t in checks.topics(plan)}
     brief = brief_text(methodology)
     leads = [entry["lead"] for entry in leads_doc.get("leads") or []]
+    source = _source_of(leads_doc.get("leads") or [])
     sourced = [lead for lead in leads if not lead.get("absence")]
     verified = [lead for lead in sourced if lead.get("status") == "candidate"]
     clues: list[dict[str, Any]] = []
@@ -312,7 +339,10 @@ def clue_rules(leads_doc: Mapping[str, Any], methodology: Mapping[str, Any]) -> 
     for key, group in sorted(seen.items()):
         lanes = {lead["topic_id"] for lead in group}
         families = {_family(lead) for lead in group}
-        if len(lanes) >= 2 and len(families) >= 2:
+        # D4: one source in two lanes is no convergence, even on two sites.
+        apart = any(a["topic_id"] != b["topic_id"] and source[a["lead_id"]] != source[b["lead_id"]]
+                    for a, b in itertools.combinations(group, 2))
+        if apart and len(families) >= 2:
             label = next(s for s in group[0]["subjects"] if name_key(s) == key)
             clues.append(_clue("K1", "new_actor", (l["lead_id"] for l in group), (l["direction_id"] for l in group),
                                f"{label} is not named in the brief and appears in {len(lanes)} lanes from "
@@ -335,7 +365,8 @@ def clue_rules(leads_doc: Mapping[str, Any], methodology: Mapping[str, Any]) -> 
                 identifiers.setdefault((IDENTIFIER_KINDS[attribute], value_key), []).append((lead, subject))
     for (subject, attribute), group in sorted(values.items()):
         pairs = [(a, b) for a, b in itertools.combinations(sorted(group, key=lambda g: g[0]["lead_id"]), 2)
-                 if a[1] != b[1] and a[0]["lead_id"] != b[0]["lead_id"]]
+                 if a[1] != b[1] and a[0]["lead_id"] != b[0]["lead_id"]
+                 and source[a[0]["lead_id"]] != source[b[0]["lead_id"]]]  # D4: one source does not conflict with itself
         for a, b in pairs[:MAX_PAIRS]:
             ids = [a[0]["lead_id"], b[0]["lead_id"]]
             clues.append(_clue("K2", "conflict", ids, (a[0]["direction_id"], b[0]["direction_id"]),

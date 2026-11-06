@@ -770,6 +770,7 @@ function leadTags(lead) {
     lead.status !== "candidate" ? el("span", { className: "tag strong", text: words(lead.status) }) : null,
     lead.source_families ? el("span", { className: "tag", text: `Source families: ${lead.source_families}` }) : null,
     lead.copies ? el("span", { className: "tag", text: `Copies collapsed: ${lead.copies}` }) : null,
+    lead.same_source ? el("span", { className: "tag", text: `Same source as ${lead.same_source} other ${lead.same_source === 1 ? "lead" : "leads"}, counts once` }) : null,
     lead.journalist_input ? el("span", { className: "tag strong", text: "Journalist input (local only)" }) : null,
     (lead.triage?.context ?? []).map((context) => el("span", { className: "tag", text: CONTEXT_LABELS[context] ?? words(context) })),
     lead.clues.map((clue) => el("span", { className: "tag strong", text: `Clue: ${words(clue)}` })),
