@@ -1,5 +1,6 @@
 // The launcher side of delegation: runWorker and the worker queue, driven
 // with small stand-in worker processes instead of pi.
+import { REPEAT_STOP, STALL_STOP } from './tools/run.ts';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
@@ -171,6 +172,10 @@ test('a worker whose last turn ended in a model error is a failed task, even wit
 	const after = (...reasons: string[]) => NOISY_WORKER.replace("'worker answer'", "(" + JSON.stringify(reasons) + ".forEach((reason) => console.log(JSON.stringify({ type: 'message_end', message: { role: 'assistant', stopReason: reason } }))), 'earlier text')");
 
 	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', after('stop', 'error')]), 'task', new AbortController().signal), /worker was cut off/);
+	const silenced = NOISY_WORKER.replace("'worker answer'", JSON.stringify(STALL_STOP));
+	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', silenced]), 'task', new AbortController().signal), /worker was cut off/);
+	const ranOn = NOISY_WORKER.replace("'worker answer'", JSON.stringify(REPEAT_STOP));
+	assert.equal(await runWorker(worker(root, process.execPath, ['-e', ranOn]), 'task', new AbortController().signal), REPEAT_STOP, 'a real run-on stays an answer, so it counts');
 	assert.equal(await runWorker(worker(root, process.execPath, ['-e', after('error', 'stop')]), 'task', new AbortController().signal), 'earlier text');
 });
 

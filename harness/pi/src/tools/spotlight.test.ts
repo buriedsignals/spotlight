@@ -7,7 +7,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
 import { FACT_CHECKERS_SPENT } from '../subagents.ts';
-import { INPUTS_REFUSED, transitionArguments, NEXT_GATE_OWED, nextFixedStep, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { INPUTS_REFUSED, fixedStepAt, transitionArguments, NEXT_GATE_OWED, nextFixedStep, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 import { batchBlockedFile, factCheckHash, missingForApproval } from './review.ts';
 
@@ -491,6 +491,17 @@ test('only code can reset the correction count', () => {
 });
 
 // Case 2bd8d15c: the blocked case's next step is the page, the route that exists.
+test('on a local tier a send-back with owed verdicts reaches the fact-checker, and repairable links go first', (t) => {
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	t.after(() => { delete process.env.SPOTLIGHT_MODEL_TIER; });
+	const owed = { phase: 'investigation', status: 'active', missing: ['investigator update'], follow_up: { instructions: 'Fix.' }, unverdicted: ['validate-fact-check: FAIL  missing:F1 [fact-checker]: finding F1 has no fact-check verdict'] };
+	assert.equal(dispatchAt(owed)?.agent, 'fact-checker');
+	assert.equal(dispatchAt({ ...owed, unverdicted: undefined }), undefined, 'with no verdict owed, the note stays the model\'s');
+	assert.equal(fixedStepAt({ ...owed, repairable_claim_links: true }), 'claim_links');
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	assert.equal(fixedStepAt({ ...owed, repairable_claim_links: true }), undefined, 'frontier unchanged');
+});
+
 test('every stop names its way out; a failed research round waits for the member', () => {
 	const at = (phase: string, exhausted_attempt: string) => nextAction({ phase: 'blocked', status: 'blocked', blocked: { phase, exhausted_attempt } }) ?? '';
 	for (const kind of ['structural-correction', 'fact-check-evidence-repair', 'investigation-cycle', 'research-round-cycle']) assert.match(at('investigation', kind), /^Next: call open_review .*send the case back/);

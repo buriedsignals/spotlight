@@ -33,7 +33,7 @@ from .dependencies import (
     sha256,
     validate_approval,
 )
-from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, research_plan, research_switch_on, status_for
+from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, rebuilt_claim_links, research_plan, research_switch_on, status_for
 from . import research as research_rules
 from .research import AMENDMENT_CORRECTION, CYCLE, ROUND_CYCLE
 from .case_contract import bind as bind_case_contract
@@ -281,6 +281,29 @@ def reset_corrections(case: Path, data_descriptor: int) -> None:
     if (state.get("open_cycle") or {}).get("kind") == "structural-correction":
         state.pop("open_cycle")
     _publish(case, data_descriptor, state)
+
+
+def repair_claim_links(case: Path, data_descriptor: int) -> None:
+    """Write the claim links findings already name. Code's own step. A repaired link is
+    not the investigator's update: an open follow-up still waits for one, so the member's
+    note cannot lapse on this write. The repair ends a correction that was about links."""
+    state = load_state(case, data_descriptor)
+    if status_for(case, state, data_descriptor)["next_phase"] != "investigation":
+        raise OrchestrationError("claim links are repaired during investigation")
+    bundle = rebuilt_claim_links(case)
+    if bundle is None:
+        return
+    path = "data/evidence-bundle.json"
+    before = sha256(case_path(case, path))
+    updated = (json.dumps(bundle, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    state["attempts"].pop("structural-correction", None)
+    if (state.get("open_cycle") or {}).get("kind") == "structural-correction":
+        state.pop("open_cycle")
+    for record in (state.get("follow_up"), state.get("open_cycle")):
+        hashes = record.get("investigator_sha256") if isinstance(record, dict) else None
+        if isinstance(hashes, dict) and hashes.get(path) == before:
+            hashes[path] = hashlib.sha256(updated).hexdigest()
+    _publish(case, data_descriptor, state, extra={path: updated})
 
 
 def start_research_round(case: Path, data_descriptor: int) -> None:

@@ -11,6 +11,7 @@ from . import (
     approve,
     continue_without_research,
     resume_stopped_research,
+    repair_claim_links,
     decide_ingest,
     decide_report,
     issue_review_nonce,
@@ -72,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_case_boundary(attempt)
     add_case_boundary(commands.add_parser("reset-corrections"))
     add_case_boundary(commands.add_parser("resume-research"))
+    add_case_boundary(commands.add_parser("repair-claim-links"))
     research_round = commands.add_parser("start-research-round")
     add_case_boundary(research_round)
     amendment = commands.add_parser("record-amendment")
@@ -163,6 +165,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         start_research_round(args.case_dir, **boundary)
     elif args.command == "record-amendment":
         record_amendment(args.case_dir, build=args.build, **boundary)
+    elif args.command == "repair-claim-links":
+        repair_claim_links(args.case_dir, **boundary)
     elif args.command == "resume-research":
         resume_stopped_research(args.case_dir, **boundary)
     elif args.command == "continue-without-research":

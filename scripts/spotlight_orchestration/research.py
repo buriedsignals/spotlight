@@ -36,6 +36,7 @@ from .dependencies import approval_matches, current_hashes, sha256
 from .storage import case_path
 
 CYCLE = "investigation-cycle"
+NO_VERDICT = "has no fact-check verdict"
 ROUND_CYCLE = "research-round-cycle"
 AMENDMENT_CORRECTION = "amendment-correction"
 Backed = Callable[[str, object], bool]
@@ -298,6 +299,8 @@ def fact_check_problems(case: Path) -> list[str]:
     if not lines:
         detail = result.stderr.strip() or result.stdout.strip() or "validate-fact-check.py failed"
         lines = detail.splitlines()[-5:]
+    # The fact-checker's owed verdicts first: the cap must not hide them behind link lines (case 2bd8d15c).
+    lines.sort(key=lambda line: NO_VERDICT not in line)
     return [f"validate-fact-check: {line}" for line in lines[:20]]
 
 

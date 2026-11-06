@@ -13,7 +13,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { taskMode } from './roles.ts';
 import { canonicalWriteCall, localTier } from './tools/case-files.ts';
 import { onJsonlRecords } from './pi-process.ts';
-import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
+import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP, STALL_STOP } from './tools/run.ts';
 
 export type SpawnRequest = { kind: 'spotlight-spawn'; id: string; agent: string; task: string };
 export type CancelRequest = { kind: 'spotlight-cancel'; id: string };
@@ -309,7 +309,7 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 			// A worker that ended with nothing, or only a chat-template control
 			// token such as <|tool_response>, failed; it did not answer.
 			if (stopped) answer.resolve(stopped);
-			else if (cut) answer.reject(new Error('worker was cut off: its model request failed'));
+			else if (cut || text.includes(STALL_STOP)) answer.reject(new Error('worker was cut off: its model stopped responding'));
 			else if (text.replace(CONTROL_TOKENS, '').trim() === '') answer.reject(new Error('worker ended without an answer'));
 			else answer.resolve(text);
 		}

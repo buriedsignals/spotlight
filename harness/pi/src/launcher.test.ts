@@ -1132,7 +1132,7 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 			assert.equal(fake.requests.length, 2, 'one nudge, then the answer');
 			const history = fake.requests[1].messages;
 			assert.match(JSON.stringify(history[history.length - 1].content), /Your last turn ran on without a tool call and was cut off/);
-		} else if (name === 'stalled after calls') {
+		} else if (name === 'stalled' || name === 'stalled after calls') {
 			assert.equal(fake.requests.length, 1, `${name}: the run ends at the stop`);
 			assert.match(settled, /Spotlight stopped this turn because the model stopped responding\. Ask Spotlight to continue\./, name);
 			assert.ok(!chat.lines.some((line) => line.includes('"type":"tool_execution_start"')), `${name}: the dropped calls do not run`);
@@ -2914,16 +2914,26 @@ test('at the Brief a member\'s reply changes what resolve says, and following it
 	}
 });
 
+// An [investigator] fault code cannot repair (a link it can): a cited row with no stored artifact.
+type Row = { id: string; raw_path?: string; sha256?: string; text_derivatives?: unknown };
+const unrepairable = (items: Row[], id = 'E9') => {
+	const { raw_path: _path, sha256: _hash, text_derivatives: _text, ...row } = structuredClone(items.find((item) => item.id === 'E1')!);
+	items.push({ ...row, id });
+};
+const withArtifact = (path: string) => {
+	const items = JSON.parse(readFileSync(path, 'utf8')).items as Row[];
+	const { raw_path, sha256 } = items.find((item) => item.id === 'E1')!;
+	return items.map((item) => (item.id === 'E9' ? { ...item, raw_path, sha256 } : item));
+};
+
 // Case 2bd8d15c: about 10 corrections in an hour with attempts {}: validate-case passed, so each read as fixed
 // while validate-fact-check still named the same [investigator] fault, and the resolver sent the next one.
 test('a correction that leaves validate-fact-check\'s investigator fault in place is counted, and two end in the stop; a real repair is not', async (t) => {
 	for (const repaired of [false, true]) {
-		let links: unknown;
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
 				if (!repaired || toolResults(request).length) return { text: 'The structural correction has been completed.' };
-				const row = JSON.parse(readFileSync(path, 'utf8')).items.find((item: { id: string }) => item.id === 'E1');
-				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...row, claim_links: links }] }) } }] };
+				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: withArtifact(path) }) } }] };
 			}
 			if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
 			return fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator') && !isWorkerRequest(seen, 'fact-checker')).length <= 6 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
@@ -2934,12 +2944,11 @@ test('a correction that leaves validate-fact-check\'s investigator fault in plac
 		const path = join(caseDir, 'data', 'evidence-bundle.json');
 		const document = JSON.parse(await readFile(path, 'utf8'));
 		const row = document.items.find((item: { id: string }) => item.id === 'E1');
-		links = row.claim_links;
-		delete row.claim_links;
+		unrepairable(document.items);
 		await writeFile(path, JSON.stringify(document));
 		const findingsPath = join(caseDir, 'data', 'findings.json');
 		const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
-		findings.findings[0].evidence_bundle_refs = ['E1'];
+		findings.findings[0].evidence_bundle_refs = ['E1', 'E9'];
 		await writeFile(findingsPath, JSON.stringify(findings));
 		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
 
@@ -2953,7 +2962,7 @@ test('a correction that leaves validate-fact-check\'s investigator fault in plac
 		} else {
 			assert.equal(corrections.length, 2, 'bounded');
 			assert.equal(state.attempts['structural-correction'], 2);
-			assert.match(state.blocked.gap, /no explicit finding link|not linked to finding/, 'the stop records the real fault');
+			assert.match(state.blocked.gap, /no stored artifact path/, 'the stop records the real fault');
 		}
 	}
 });
@@ -2972,11 +2981,11 @@ test('corrections of any mode, from code or the model, share one bound when noth
 	const caseDir = atGate(space);
 	const path = join(caseDir, 'data', 'evidence-bundle.json');
 	const document = JSON.parse(await readFile(path, 'utf8'));
-	delete document.items.find((item: { id: string }) => item.id === 'E1').claim_links;
+	unrepairable(document.items);
 	await writeFile(path, JSON.stringify(document));
 	const findingsPath = join(caseDir, 'data', 'findings.json');
 	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
-	findings.findings[0].evidence_bundle_refs = ['E1'];
+	findings.findings[0].evidence_bundle_refs = ['E1', 'E9'];
 	await writeFile(findingsPath, JSON.stringify(findings));
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
 
@@ -3015,13 +3024,11 @@ test('a correction that leaves only the fact-checker\'s next step is not counted
 
 // Tom: two no-progress corrections with real progress between them must not end a long case.
 test('a correction that reduces the failures resets the count, and two in a row with no progress still stop', async (t) => {
-	let links: { finding_id: string }[] = [];
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
 			const started = fake.requests.filter((seen) => isWorkerRequest(seen, 'investigator') && toolResults(seen).length === 0).length;
 			if (started !== 2 || toolResults(request).length) return { text: 'Done.' };
-			const row = JSON.parse(readFileSync(path, 'utf8')).items.find((item: { id: string }) => item.id === 'E1');
-			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...row, claim_links: links }] }) } }] };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: withArtifact(path) }) } }] };
 		}
 		return fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator')).length <= 8 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
 	});
@@ -3030,14 +3037,13 @@ test('a correction that reduces the failures resets the count, and two in a row 
 	const caseDir = atGate(space);
 	const path = join(caseDir, 'data', 'evidence-bundle.json');
 	const document = JSON.parse(await readFile(path, 'utf8'));
-	const row = document.items.find((item: { id: string }) => item.id === 'E1');
-	links = row.claim_links;
-	delete row.claim_links;
+	unrepairable(document.items);
+	unrepairable(document.items, 'E8');
 	await writeFile(path, JSON.stringify(document));
 	const findingsPath = join(caseDir, 'data', 'findings.json');
 	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
 	const first = findings.findings[0];
-	findings.findings = [{ ...first, evidence_bundle_refs: ['E1'] }, { ...structuredClone(first), id: 'F2', claim: 'A second fixture claim.', evidence_bundle_refs: ['E1'] }];
+	findings.findings = [{ ...first, evidence_bundle_refs: ['E1', 'E9'] }, { ...structuredClone(first), id: 'F2', claim: 'A second fixture claim.', evidence_bundle_refs: ['E1', 'E8'] }];
 	await writeFile(findingsPath, JSON.stringify(findings));
 	const checkPath = join(caseDir, 'data', 'fact-check.json');
 	const check = JSON.parse(await readFile(checkPath, 'utf8'));
@@ -3069,12 +3075,12 @@ test('a verdict between two corrections resets the count, and the stop comes aft
 	const caseDir = atGate(space);
 	const path = join(caseDir, 'data', 'evidence-bundle.json');
 	const document = JSON.parse(await readFile(path, 'utf8'));
-	delete document.items.find((item: { id: string }) => item.id === 'E1').claim_links;
+	unrepairable(document.items);
 	await writeFile(path, JSON.stringify(document));
 	const findingsPath = join(caseDir, 'data', 'findings.json');
 	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
 	const first = findings.findings[0];
-	findings.findings = [{ ...first, evidence_bundle_refs: ['E1'] }, ...[2, 3].map((n) => ({ ...structuredClone(first), id: `F${n}`, claim: `Fixture claim ${n}.`, evidence_bundle_refs: ['E1'] }))];
+	findings.findings = [{ ...first, evidence_bundle_refs: ['E1', 'E9'] }, ...[2, 3].map((n) => ({ ...structuredClone(first), id: `F${n}`, claim: `Fixture claim ${n}.`, evidence_bundle_refs: ['E1', 'E9'] }))];
 	await writeFile(findingsPath, JSON.stringify(findings));
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
 
@@ -3089,7 +3095,7 @@ test('a verdict between two corrections resets the count, and the stop comes aft
 
 // The same case: fact-check.json stayed at 3 of 28, because a batch's check failed on investigator lines the
 // fact-checker cannot fix, and those lines also took the dispatch. The findings are judged first.
-test('unjudged findings go to the fact-checker past investigator faults, and the correction bound comes after', async (t) => {
+test('missing claim links are repaired by code: every finding reaches a verdict and no correction is sent', async (t) => {
 	const findings = Array.from({ length: 14 }, (_, i) => ({ id: `F${i + 1}`, claim: `Fixture filing ${i + 1}.` }));
 	const judged = (text: string) => [...text.matchAll(/^- (F\d+): "(.*)"$/gm)].map(([, id, claim]) => ({ finding_id: id, claim_text: claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' }));
 	const fake = await startFakeOpenAI((request) => {
@@ -3107,8 +3113,8 @@ test('unjudged findings go to the fact-checker past investigator faults, and the
 	await writeFile(findingsPath, JSON.stringify(document));
 	const bundlePath = join(caseDir, 'data', 'evidence-bundle.json');
 	const bundle = JSON.parse(await readFile(bundlePath, 'utf8'));
-	delete bundle.items.find((item: { id: string }) => item.id === 'E1').claim_links;
 	bundle.items = bundle.items.filter((item: { id: string }) => item.id === 'E1');
+	delete bundle.items[0].claim_links;
 	await writeFile(bundlePath, JSON.stringify(bundle));
 	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify({ project: JSON.parse(await readFile(findingsPath, 'utf8')).project, claims: [{ finding_id: 'F1', claim_text: kept.claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' }] }));
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
@@ -3117,8 +3123,8 @@ test('unjudged findings go to the fact-checker past investigator faults, and the
 
 	const file = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
 	assert.equal(file.claims.length, 14, 'every finding was judged, past the fact-checker cap of three spawns');
-	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
-	assert.equal(state.blocked?.exhausted_attempt, 'structural-correction', 'then the shared bound ends the loop');
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, 0, 'no correction is sent');
+	assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8')).blocked, undefined);
 });
 
 // Case 3f58f43b: only the worker saw the rejected key. The member hears it once, in the chat.

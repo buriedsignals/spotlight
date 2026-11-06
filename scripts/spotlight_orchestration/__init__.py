@@ -15,6 +15,7 @@ __all__ = [
     "approve",
     "continue_without_research",
     "resume_stopped_research",
+    "repair_claim_links",
     "decide_ingest",
     "decide_report",
     "issue_review_nonce",
@@ -124,6 +125,15 @@ def resume_stopped_research(
     """The way out of a stop at Research (transitions.resume_stopped_research)."""
     _transition(
         case_dir, transitions.resume_stopped_research, authorized_cases_root=authorized_cases_root
+    )
+
+
+def repair_claim_links(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> None:
+    """Write the claim links findings already name (transitions.repair_claim_links)."""
+    _transition(
+        case_dir, transitions.repair_claim_links, authorized_cases_root=authorized_cases_root
     )
 
 

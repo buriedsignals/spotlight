@@ -1,6 +1,7 @@
 // The Spotlight extension, loaded by path into every Spotlight pi process. It
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
+import { REPEAT_STOP, STALL_STOP } from './tools/run.ts';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
@@ -800,11 +801,7 @@ export function repeatsItself(text: string): boolean {
 	return false;
 }
 
-export const REPEAT_STOP = 'Spotlight stopped this turn because it ran on without calling a tool or writing anything usable; nothing in it was used. The results before it stand.';
-// lfm3-r5 on uk-cpi (rc3, 52bf6183): the server streamed two complete tool
-// calls, then held the stream open for 223 s. The stop dropped the calls and
-// the run ended with no line for the member.
-export const STALL_STOP = 'Spotlight stopped this turn because the model stopped responding. Ask Spotlight to continue.';
+export { REPEAT_STOP, STALL_STOP };
 
 function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let nudged = false;
@@ -812,6 +809,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let unchecked = 0;
 	let stopped = false;
 	let stalled = false;
+	let silent = false;
 	let invisible = 0;
 	let lastVisible = 0;
 	let clock: ReturnType<typeof setInterval> | undefined;
@@ -834,6 +832,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		invisible = 0;
 		stopped = false;
 		stalled = false;
+		silent = false;
 		stopClock();
 	});
 	pi.on('provider_stream_event', (event, ctx) => {
@@ -849,7 +848,10 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		if (!clock) {
 			lastVisible = Date.now();
 			clock = setInterval(() => {
-				if (!stopped && Date.now() - lastVisible >= INVISIBLE_MS) stopInvisible(() => ctx.abort());
+				if (!stopped && Date.now() - lastVisible >= INVISIBLE_MS) {
+					silent = true;
+					stopInvisible(() => ctx.abort());
+				}
 			}, 1000);
 			clock.unref();
 		}
@@ -881,7 +883,8 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		// it, and a worker's line is its answer to the orchestrator. A turn stopped
 		// after it streamed tool calls lost them in the abort.
 		const calls = parts.some((part) => part.type === 'toolCall');
-		if (stopped) return shownStop(event, stalled && calls ? STALL_STOP : REPEAT_STOP);
+		// Case 96f45e2d: a closed laptop silenced a worker for 17 minutes, and this said it ran on.
+		if (stopped) return shownStop(event, stalled && (calls || silent) ? STALL_STOP : REPEAT_STOP);
 		if (calls) return undefined;
 		const output = (event.message as { usage?: { output?: number } }).usage?.output;
 		if (message.stopReason === 'length' && output && output < MIN_CUT_TOKENS) return undefined;

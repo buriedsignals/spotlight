@@ -1,0 +1,313 @@
+{
+ "findings": [
+  {
+   "id": "D1-F1",
+   "claim": "Isabela Bagueros is the Executive Director of the Tor Project.",
+   "evidence_bundle_refs": [
+    "D1-E1"
+   ]
+  },
+  {
+   "id": "D1-F2",
+   "claim": "Alissa Cooper is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F3",
+   "claim": "Christian Kaufmann is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F4",
+   "claim": "Dees Chinniah is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F5",
+   "claim": "Dennis Jackson is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F6",
+   "claim": "Esra'a Al Shafei is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F7",
+   "claim": "Gaba is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F8",
+   "claim": "Maria Xynou is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F9",
+   "claim": "mattlav is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F10",
+   "claim": "Nathan Freitas is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F11",
+   "claim": "Sarah Gran is a member of the Tor Project Board of Directors.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F12",
+   "claim": "The current members of the Tor Project Board of Directors include Alissa Cooper, Christian Kaufmann, Dees Chinniah, Dennis Jackson, Esra'a Al Shafei, Gaba, Maria Xynou, mattlav, Nathan Freitas, and Sarah Gran.",
+   "evidence_bundle_refs": [
+    "D1-E2"
+   ]
+  },
+  {
+   "id": "D1-F13",
+   "claim": "The Tor Project Board of Directors was replaced in July 2016 with Matt Blaze, Cindy Cohn, Gabriella Coleman, Linus Nordberg, Megan Price, and Bruce Schneier.",
+   "evidence_bundle_refs": [
+    "D1-E1"
+   ]
+  },
+  {
+   "id": "D2-F1",
+   "claim": "Alissa Cooper is a member of the Tor Project's Board of Directors.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F2",
+   "claim": "Christian Kaufmann is a member of the Tor Project's Board of Directors.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F3",
+   "claim": "Dees Chinniah is a member of the Tor Project's Board of Directors.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F4",
+   "claim": "donuts is a member of the Tor Project's Board of Directors.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F5",
+   "claim": "Esra'a Al Shafei is a member of the Tor Project's Board of Directors.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F6",
+   "claim": "Alissa Cooper, Christian Kaufmann, Dees Chinniah, donuts, Esra'a Al Shafei, Kendra Albert, Matt Traudt, Nathan Freitas, Nick Mathewson, and Sarah Gran are members of the Tor Project's Board of Directors.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F7",
+   "claim": "The Tor Project's Board of Directors includes Alissa Cooper, Christian Kaufmann, Dees Chinniah, donuts, Esra'a Al Shafei, Kendra Albert, Matt Traudt, Nathan Freitas, Nick Mathewson, and Sarah Gran.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F8",
+   "claim": "Isabela (isabela) is the Executive Director of the Tor Project.",
+   "evidence_bundle_refs": [
+    "D2-E1"
+   ]
+  },
+  {
+   "id": "D2-F9",
+   "claim": "As of July 2016, the Tor Project board included Matt Blaze, Cindy Cohn, Gabriella Coleman, Linus Nordberg, Megan Price, and Bruce Schneier.",
+   "evidence_bundle_refs": [
+    "D2-E2"
+   ]
+  },
+  {
+   "id": "D2-F10",
+   "claim": "The Tor Project's board of directors was replaced in July 2016 with Matt Blaze, Cindy Cohn, Gabriella Coleman, Linus Nordberg, Megan Price, and Bruce Schneier.",
+   "evidence_bundle_refs": [
+    "D2-E2"
+   ]
+  },
+  {
+   "id": "D2-F11",
+   "claim": "The Tor Project was founded on December 22, 2006 by Roger Dingledine, Nick Mathewson, and five others.",
+   "evidence_bundle_refs": [
+    "D2-E2"
+   ]
+  },
+  {
+   "id": "D2-F12",
+   "claim": "The Tor Project's funding has historically included significant contributions from the United States government (80% of budget in 2012), with a decline to 35% by June 2024.",
+   "evidence_bundle_refs": [
+    "D2-E2"
+   ]
+  },
+  {
+   "id": "D2-F13",
+   "claim": "The Tor Project has received funding from various U.S. government agencies, including the U.S. State Department, the National Science Foundation, and the U.S. Department of Defense (via DARPA).",
+   "evidence_bundle_refs": [
+    "D2-E2"
+   ]
+  },
+  {
+   "id": "D2-F14",
+   "claim": "The Tor Project has received funding from private foundations, including the Jack Dorsey Foundation, the Craig Newmark Foundation, the Ford Foundation, and the Open Society Foundations.",
+   "evidence_bundle_refs": [
+    "D2-E2"
+   ]
+  },
+  {
+   "id": "D2-F15",
+   "claim": "The Tor Project received a significant portion of its funding from individual donors and a smaller portion from corporate contributions (3.4% of the 2021–2022 budget).",
+   "evidence_bundle_refs": [
+    "D2-E2"
+   ]
+  }
+ ],
+ "items": [
+  {
+   "id": "D1-E1",
+   "claim_links": [
+    {
+     "finding_id": "D1-F1",
+     "claim_text": "Isabela Bagueros is the Executive Director of the Tor Project.",
+     "support_type": "direct"
+    }
+   ]
+  },
+  {
+   "id": "D1-E2",
+   "claim_links": [
+    {
+     "finding_id": "D1-F2",
+     "claim_text": "Alissa Cooper is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F3",
+     "claim_text": "Christian Kaufmann is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F4",
+     "claim_text": "Dees Chinniah is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F5",
+     "claim_text": "Dennis Jackson is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F6",
+     "claim_text": "Esra'a Al Shafei is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F7",
+     "claim_text": "Gaba is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F8",
+     "claim_text": "Maria Xynou is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F9",
+     "claim_text": "mattlav is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F10",
+     "claim_text": "Nathan Freitas is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F11",
+     "claim_text": "Sarah Gran is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F12",
+     "claim_text": "The current members of the Tor Project Board of Directors include Alissa Cooper, Christian Kaufmann, Dees Chinniah, Dennis Jackson, Esra'a Al Shafei, Gaba, Maria Xynou, mattlav, Nathan Freitas, and Sarah Gran.",
+     "support_type": "direct"
+    }
+   ]
+  },
+  {
+   "id": "D1-E3",
+   "claim_links": [
+    {
+     "finding_id": "D1-F13",
+     "claim_text": "The Tor Project Board of Directors was replaced in July 2016 with Matt Blaze, Cindy Cohn, Gabriella Coleman, Linus Nordberg, Megan Price, and Bruce Schneier.",
+     "support_type": "direct"
+    }
+   ]
+  },
+  {
+   "id": "D2-E1"
+  },
+  {
+   "id": "D2-E2"
+  },
+  {
+   "id": "FC-E1",
+   "claim_links": [
+    {
+     "finding_id": "D1-F1",
+     "claim_text": "Isabela Bagueros is the Executive Director of the Tor Project.",
+     "support_type": "direct"
+    }
+   ]
+  },
+  {
+   "id": "FC-E2",
+   "claim_links": [
+    {
+     "finding_id": "D1-F2",
+     "claim_text": "Alissa Cooper is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    },
+    {
+     "finding_id": "D1-F3",
+     "claim_text": "Christian Kaufmann is a member of the Tor Project Board of Directors.",
+     "support_type": "direct"
+    }
+   ]
+  }
+ ]
+}

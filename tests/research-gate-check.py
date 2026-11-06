@@ -22,6 +22,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SEAM = ROOT / "scripts" / "spotlight-orchestration.py"
@@ -40,6 +41,8 @@ def _load(name: str, path: Path):
 
 PHASE = _load("spotlight_research_phase_fixtures", ROOT / "tests" / "research-phase-check.py")
 CONFORMANCE = PHASE.CONFORMANCE
+sys.path.insert(0, str(ROOT / "scripts"))
+from spotlight_orchestration import research as RESEARCH, resolver as RESOLVER  # noqa: E402
 write_json = PHASE.write_json
 
 
@@ -595,6 +598,52 @@ class InvestigationGateReadiness(SeamCase):
         (self.case / "brief-directions.txt").write_text("Verify the offline fixture.\n", encoding="utf-8")
         write_json(self.case / "data/methodology.json", CONFORMANCE.methodology())
         self.addCleanup(self.temp.cleanup)
+
+    def test_case_2bd8d15c_links_are_rebuilt_from_its_findings_and_nothing_else_is_touched(self) -> None:
+        record = read_json(ROOT / "tests/fixtures/claim-links-2bd8d15c.json")
+        record["findings"].append({"id": "X-F1", "claim": "No such row.", "evidence_bundle_refs": ["X-E9"]})
+        stray = {"finding_id": "GONE", "claim_text": "No such finding.", "support_type": "direct"}
+        record["items"].append({"id": "X-E1", "claim_links": [stray]})
+        write_json(self.case / "data/findings.json", {"findings": record["findings"]})
+        write_json(self.case / "data/evidence-bundle.json", {"items": record["items"]})
+        rebuilt = RESOLVER.rebuilt_claim_links(self.case.resolve())
+        items = {item["id"]: item for item in rebuilt["items"]}
+        for finding in record["findings"][:-1]:
+            for ref in finding["evidence_bundle_refs"]:
+                self.assertIn({"finding_id": finding["id"], "claim_text": finding["claim"], "support_type": "direct"},
+                              items[ref]["claim_links"])
+        self.assertEqual(items["X-E1"]["claim_links"], [stray], "a row with no matching finding stays as it is")
+        self.assertNotIn("X-E9", items)
+        write_json(self.case / "data/evidence-bundle.json", rebuilt)
+        self.assertIsNone(RESOLVER.rebuilt_claim_links(self.case.resolve()), "a repaired bundle needs nothing more")
+
+    def test_a_repair_sends_no_correction_and_keeps_the_members_note_open(self) -> None:
+        self.seam("approve", "methodology", *APPROVER)
+        CONFORMANCE.investigation_outputs(self.case)
+        bundle = read_json(self.case / "data/evidence-bundle.json")
+        bundle["items"].append({"id": "E-link"})
+        write_json(self.case / "data/evidence-bundle.json", bundle)
+        findings = read_json(self.case / "data/findings.json")
+        findings["findings"][0]["evidence_bundle_refs"] = ["E-link"]
+        write_json(self.case / "data/findings.json", findings)
+        for _ in range(2):
+            self.seam("record-attempt", "structural-correction", "--gap", "links", "--no-reopen")
+        self.assertEqual(self.status()["phase"], "blocked")
+        self.seam("request-follow-up", "--instructions", "Also check the board.", "--requested-by-role", "orchestrator")
+        self.assertTrue(self.status()["repairable_claim_links"])
+        self.seam("repair-claim-links")
+        repaired = self.status()
+        self.assertNotIn("repairable_claim_links", repaired)
+        self.assertEqual(repaired["attempts"], {})
+        self.assertEqual(repaired["follow_up"], {"instructions": "Also check the board."})
+        self.assertTrue(any("investigator update" in item for item in repaired["missing"]), "the repair is not the investigator's update")
+
+    def test_owed_verdicts_are_not_hidden_behind_the_cap(self) -> None:
+        output = "\n".join([f"FAIL  record:F{i} [investigator]: evidence bundle E has no explicit finding link" for i in range(25)]
+                           + ["FAIL  missing:F9 [fact-checker]: finding F9 has no fact-check verdict"])
+        done = subprocess.CompletedProcess([], 1, output, "")
+        with mock.patch.object(RESEARCH.subprocess, "run", return_value=done):
+            self.assertIn("has no fact-check verdict", RESEARCH.fact_check_problems(self.case)[0])
 
     def test_the_gate_is_not_offered_while_the_fact_check_validator_fails(self) -> None:
         self.seam("approve", "methodology", *APPROVER)
