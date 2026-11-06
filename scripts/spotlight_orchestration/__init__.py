@@ -316,6 +316,10 @@ def review_view(
             "review_digest": None,
             "nonce_sha256": None,
         }
+    stopped = gate == "investigation_gate" and review.correction_stop(status)
+    if stopped:  # the failures block approval, so sending the case back is the one decision left
+        lines = [line.strip() for line in str(status["blocked"].get("gap") or "").splitlines() if line.strip()]
+        view = {**view, "blocking": lines + view["blocking"]}
     return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
-            "can_request_follow_up": gate in {"investigation_gate", "report"}
-            and status["phase"] in {"investigation_gate_approval", "investigation_gate_finalization", "report"}}
+            "can_request_follow_up": stopped or (gate in {"investigation_gate", "report"}
+            and status["phase"] in {"investigation_gate_approval", "investigation_gate_finalization", "report"})}

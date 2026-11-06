@@ -489,3 +489,9 @@ test('only code can reset the correction count', () => {
 	assert.throws(() => transitionArguments('resetCorrections', {}, active, ORCHESTRATOR), /refuses "resetCorrections"/);
 	assert.deepEqual(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true).slice(0, 1), ['reset-corrections']);
 });
+
+// Case 2bd8d15c: the blocked case's next step is the page, the route that exists.
+test('a case stopped by failed corrections is sent to the review page; another block is not', () => {
+	assert.match(nextAction({ phase: 'blocked', status: 'blocked', blocked: { phase: 'investigation', exhausted_attempt: 'structural-correction' } }) ?? '', /call open_review/);
+	assert.doesNotMatch(nextAction({ phase: 'blocked', status: 'blocked', blocked: { phase: 'research', exhausted_attempt: 'amendment-correction' } }) ?? '', /open_review/);
+});

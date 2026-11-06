@@ -245,6 +245,8 @@ export function batchDraftError(caseDir: string): string | undefined {
 		return undefined;
 	}
 }
+// Case 2bd8d15c: the stop's way out is the page, the one route from here (review.py correction_stop).
+export const NEXT_CORRECTION_STOP = 'Next: call open_review so the member can see what failed and send the case back to Investigation with a note, then end your turn.';
 export const NEXT_BLOCKED = 'Next: the case is blocked (blocked says why). Tell the member in plain words why, and what they can do, then end your turn.';
 export const NEXT_COMPLETE = 'Next: the case is complete. Tell the member, and end your turn.';
 export const NEXT_UNKNOWN = 'Next: call spotlight_resolve again; if the case does not move, tell the member what it reports and end your turn.';
@@ -328,7 +330,7 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 			return onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : NEXT_INGEST_ANALYST;
 		}
 		case 'blocked':
-			return NEXT_BLOCKED;
+			return (resolved.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt === 'structural-correction' ? NEXT_CORRECTION_STOP : NEXT_BLOCKED;
 		case 'complete':
 			return NEXT_COMPLETE;
 		case 'investigation':

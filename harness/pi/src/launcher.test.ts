@@ -3112,6 +3112,29 @@ test('a Firecrawl key fault recorded by a worker reaches the member once as a no
 	assert.equal(notices(chat).filter((text) => text.startsWith('Firecrawl rejected its key.')).length, 1);
 });
 
+// Case 2bd8d15c: asked to go on, the blocked case repeated its stop text with no page. The route runs from the message to the page.
+test('a member message at the correction stop opens the gate page, says what failed and how to send the case back, and a send-back carries on', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const path = join(caseDir, 'data', 'orchestration.json');
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	state.attempts = { 'structural-correction': 2 };
+	state.blocked = { phase: 'investigation', exhausted_attempt: 'structural-correction', gap: 'FAIL  record:F1 [investigator]: evidence bundle E1 has no explicit finding link', attempts: state.attempts };
+	await writeFile(path, JSON.stringify(state));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_REVIEW_HOLD_MS: '60000' });
+
+	const turn = settledPrompt(chat, 'Reopen the methodology please.', 40_000);
+	await waitUntil(() => chat.opened().length === 1, 20_000);
+	await waitUntil(() => notices(chat).some((text) => text.includes('send the case back to Investigation')), 20_000);
+	assert.ok(notices(chat).some((text) => text.includes('no explicit finding link')), 'the failure is named');
+	execFileSync(PYTHON, [SEAM, 'request-follow-up', '--instructions', 'Link the findings to E1.', '--requested-by-role', 'orchestrator', caseDir]);
+	await turn;
+	assert.equal(settles(chat), 1, 'the turn carries on from the page');
+	assert.equal(JSON.parse(await readFile(path, 'utf8')).blocked, undefined);
+});
+
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
 // carries a skeleton whose placeholders the builder refuses until they are filled.
 test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {

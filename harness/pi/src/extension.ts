@@ -1539,8 +1539,10 @@ function registerBlockedStop(pi: ExtensionAPI): void {
 		}
 	});
 	pi.on('message_end', (event) => {
-		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		const message = event.message as { role?: string; content?: Array<{ type: string; name?: string }> };
 		if (!blocked || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		// The page is a stopped case's way out (case 2bd8d15c: the stop swallowed this call).
+		if (message.content.every((part) => part.type !== 'toolCall' || part.name === 'open_review')) return undefined;
 		log('the case is blocked and the orchestrator went on; its turn was ended');
 		return shownStop(event, blockedStop(open));
 	});

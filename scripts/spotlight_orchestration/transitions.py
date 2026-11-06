@@ -24,6 +24,7 @@ from .contract import (
     SCRIPT_DIR,
 )
 from .dependencies import (
+    investigation_gate_dependencies,
     approval_matches,
     current_hashes,
     investigation_gate_approval_matches,
@@ -498,7 +499,9 @@ def request_follow_up(
         raise OrchestrationError("instructions must describe the requested follow-up")
     requester = _follow_up_requester(nonce, decided_by, decided_at, requested_by_role)
     state = load_state(case, data_descriptor)
-    phase = status_for(case, state, data_descriptor)["next_phase"]
+    status = status_for(case, state, data_descriptor)
+    phase = status["next_phase"]
+    stopped = review.correction_stop(status)
     # Bind the Report the member actually saw in this same locked transaction.
     if shown_gate is not None or shown_digest is not None:
         if shown_gate != "report" or nonce is None or not isinstance(shown_digest, str):
@@ -507,7 +510,7 @@ def request_follow_up(
             raise review.ReviewDigestChanged("review digest changed since the page loaded; reload and decide again")
         if phase != "report":
             raise OrchestrationError("the Report is no longer waiting for the member")
-    if phase not in {
+    if not stopped and phase not in {
         "investigation_gate_approval",
         "investigation_gate_finalization",
         "report",
@@ -520,7 +523,8 @@ def request_follow_up(
         case, data_descriptor, "investigation_gate", nonce, digest,
         ready_check=False, unpaged_channel=AGENT_CHANNEL,
     )
-    dependency_digest = require_investigation_gate_digest(case)
+    # A stopped case may lack gate inputs, such as a summary; sending it back is how it gets them.
+    dependency_digest = str(investigation_gate_dependencies(case)["dependency_digest"]) if stopped else require_investigation_gate_digest(case)
     record_decision(ledger, binding, "follow_up", dependency_digest)
     # Indicator Framework items the member sent to the next cycle, from the
     # review record this decision binds (binding["review_sha256"]).
@@ -534,6 +538,9 @@ def request_follow_up(
         "decision": "follow_up",
         "review": binding,
     }
+    if stopped:  # the member's note starts a new try
+        state.pop("blocked")
+        state["attempts"].pop("structural-correction", None)
     state["approvals"].pop("investigation_gate", None)
     state.pop("investigation_gate_finalization", None)
     state["decisions"].clear()

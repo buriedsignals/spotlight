@@ -418,3 +418,32 @@ test("a Report follow-up binds the member's displayed digest atomically", async 
   assert.equal(result.body.code, "digest-changed");
   assert.equal(readFileSync(join(caseDir, "data/orchestration.json"), "utf8"), before);
 });
+
+// Case 2bd8d15c: the stop told the member to edit the plan, and no page could open from a blocked case.
+test("a case stopped by failed corrections opens the gate page, listing them, and the member can only send it back", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const path = join(caseDir, "data", "orchestration.json");
+  const state = JSON.parse(readFileSync(path, "utf8"));
+  const gap = "FAIL  record:F1 [investigator]: evidence bundle E1 has no explicit finding link";
+  state.attempts = { "structural-correction": 2 };
+  state.blocked = { phase: "investigation", exhausted_attempt: "structural-correction", gap, attempts: state.attempts };
+  writeFileSync(path, JSON.stringify(state));
+  assert.equal(seamStatus(caseDir).phase, "blocked");
+
+  const { json } = await authed(t, caseDir);
+  let view = (await json("/api/view")).body;
+  assert.equal(view.gate, "investigation_gate");
+  assert.equal(view.pending_gate, "investigation_gate");
+  assert.ok(view.blocking.some((line) => line.includes("no explicit finding link")), JSON.stringify(view.blocking));
+  view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
+  const approved = await json("/api/decide", { decision: "approved", digest: view.digest });
+  assert.notEqual(approved.status, 200, "the failures block approval");
+
+  const requested = await json("/api/follow-up", { instructions: "Link the findings to E1.", digest: (await json("/api/view")).body.digest });
+  assert.equal(requested.status, 200, JSON.stringify(requested.body));
+  const status = seamStatus(caseDir);
+  assert.equal(status.phase, "investigation");
+  assert.deepEqual(status.resume, { instructions: "Link the findings to E1." });
+  assert.deepEqual(status.attempts, {}, "two more tries");
+});

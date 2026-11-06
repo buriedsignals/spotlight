@@ -44,6 +44,9 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 	return async () => {
 		const resolved = await resolveCase(active, runAdapter);
 		const phase = String(resolved.phase ?? '');
+		// The stop on failed corrections opens the page with its failures named (gateBlockedStop).
+		const stopped = resolved.blocked as { exhausted_attempt?: unknown; gap?: unknown } | undefined;
+		if (phase === 'blocked' && stopped?.exhausted_attempt === 'structural-correction') return `data/findings.json does not pass the correction check.\n${String(stopped.gap ?? '')}`;
 		// r3/r4 12B (A2 northwind): the page opened before the summaries were
 		// written, and the gate refused the member's approval with a 422.
 		const unwritten = phase === 'investigation_gate_approval' && Array.isArray(resolved.missing) ? resolved.missing.filter((item) => item !== GATE_APPROVAL) : [];
