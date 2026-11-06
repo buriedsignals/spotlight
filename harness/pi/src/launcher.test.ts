@@ -2176,7 +2176,8 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.deepEqual(committed.evidence, ['You may modify the software'], 'a one-cite commit keeps evidence as a list of the cited text');
 		// inv-retest-def8674f.md: the bundle the commit created carries its schema_version, the case validates and the fact-checker starts.
 		assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).schema_version, '1.0');
-		assert.ok(fake.requests.some((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker') && toolResults(request).some((text) => text.includes('[Harness checks after the investigator finished: all passed]') && text.includes('validate-case.py: PASSED'))), 'the investigator\'s case check passed');
+		// Read from the chat: since code writes the summary, the page opens with no further model request to carry this.
+		assert.ok(chat.lines.some((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"') && line.includes('[Harness checks after the investigator finished: all passed]') && line.includes('validate-case.py: PASSED')), 'the investigator\'s case check passed');
 		// The cited item links the finding (direct), so the fact-checker's judge_finding verifies it and the fact-check validates.
 		const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<{ id: string; created_by?: string; claim_links?: Array<Record<string, string>> }> };
 		const citedItem = bundle.items.find((item) => item.created_by === 'investigator' && item.claim_links?.some((link) => link.finding_id === committed.id));
@@ -2204,7 +2205,7 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.ok(!findings.findings.some((row) => row.claim === 'The licence allows redistribution.'));
 		assert.ok(worker.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('Commit step: kept the first finding; not recorded: call 2 (record_finding: one finding per commit step'))));
 		// Continuity: after each fall-through the model's own request followed, and the worker finished on its own words.
-		assert.match(toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n'), /Investigator finished\./);
+		assert.ok(chat.lines.some((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"') && line.includes('Investigator finished.')));
 	});
 });
 
