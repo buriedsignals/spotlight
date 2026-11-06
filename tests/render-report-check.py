@@ -459,6 +459,28 @@ def check_non_direct_quote_selection(root: Path) -> None:
     assert (case / "report.html").exists()
 
 
+def check_code_set_headlines(root: Path) -> None:
+    """T8 on 7656d7ba: on a local tier code sets each headline to the fact-checked claim and
+    clears the analyst's prose, which then shows nowhere. Any other headline still needs its prose."""
+    case = build_case(root / "code-headlines")
+    draft_path = case / "data" / "report-draft.json"
+    findings = {item["id"]: item["claim"] for item in json.loads((case / "data" / "findings.json").read_text())["findings"]}
+    draft = json.loads(draft_path.read_text())
+    for treatment in draft["finding_treatments"]:
+        treatment.update(headline=findings[treatment["finding_id"]], summary="", why_it_matters="")
+    write_json(draft_path, draft)
+    result = finalize(case)
+    assert result.returncode == 0, result.stdout + result.stderr
+    html, markdown = (case / "report.html").read_text(), (case / "findings-report.md").read_text()
+    assert '<p class="lede"></p>' not in html
+    assert "Why it matters" not in html and "Why it matters" not in markdown
+    draft["finding_treatments"][0]["headline"] = "Ada Lovelace leads the Library Freedom Project"
+    write_json(draft_path, draft)
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and "summary must be a non-empty string" in result.stdout, result.stdout
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -480,6 +502,9 @@ def main() -> int:
         check_set_aside_findings(Path(tmp))
         check_disposition_kept_finding(Path(tmp))
         check_non_direct_quote_selection(Path(tmp))
+        check_code_set_headlines(Path(tmp))
+        # Frontier's draft keeps every field it wrote.
+        assert '<p class="lede">' in html and "Why it matters:" in html and "Why it matters:" in markdown
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown

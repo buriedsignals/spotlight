@@ -785,10 +785,9 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
             "",
             f"### {md_safe(record['id'])}: {md_safe(treatment.get('headline'))}",
             "",
-            md_safe(treatment.get("summary")),
-            "",
+            *([md_safe(treatment.get("summary")), ""] if text(treatment.get("summary")) else []),
             f"- **Canonical fact-checked claim:** {md_safe(finding.get('claim'))}",
-            f"- **Why it matters:** {md_safe(treatment.get('why_it_matters'))}",
+            *([f"- **Why it matters:** {md_safe(treatment.get('why_it_matters'))}"] if text(treatment.get("why_it_matters")) else []),
             f"- **Verdict:** {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}",
             f"- **Report confidence:** {verdict['confidence'].title()}",
         ]
@@ -1127,13 +1126,16 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
             + '</blockquote>'
             for expression in record["quotes"]
         )
+        # A local tier's treatment holds the claim alone (validate-report-draft.py).
+        lede = f'<p class="lede">{h(treatment.get("summary"))}</p>' if text(treatment.get("summary")) else ""
+        why = f'<p><strong>Why it matters:</strong> {h(treatment.get("why_it_matters"))}</p>' if text(treatment.get("why_it_matters")) else ""
         finding_sections.append(f'''
   <section class="finding" id="{h(anchor)}">
     <div class="finding-meta"><span class="pill pill-id">{h(fid)}</span><span class="pill pill-{pill}">{h(verdict['confidence'])}</span><span class="cat">{h(label)}</span></div>
     <h2>{h(treatment.get('headline'))}</h2>
-    <p class="lede">{h(treatment.get('summary'))}</p>
+    {lede}
     <p><strong>Canonical fact-checked claim:</strong> {h(finding.get('claim'))}</p>
-    <p><strong>Why it matters:</strong> {h(treatment.get('why_it_matters'))}</p>
+    {why}
     {evidence_html}
     <p><strong>Independent fact-check:</strong> {h(assessment)}</p>
     {quotations}

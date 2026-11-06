@@ -899,6 +899,25 @@ test('code repairs only worker paperwork it can prove, on local tiers, and says 
 			assert.doesNotMatch(await write(none.call, finding('F1')), /Code set/);
 		});
 
+		// T8 on 7656d7ba: the analyst's headlines, from neighbouring lines, stood false beside the verified pill.
+		await t.test('report headlines', async (t) => {
+			const { caseDir, call } = await fixture(t, undefined, 'analyst', env);
+			const { draft, findings } = JSON.parse(await readFile(join(CHECKOUT_ROOT, 'tests', 'fixtures', 'report-draft-7656d7ba.json'), 'utf8'));
+			await writeFile(data(caseDir, 'findings.json'), JSON.stringify({ findings }));
+			const content = JSON.stringify(draft);
+			await call('write_file', { path: 'data/report-draft.json', content });
+			const written = await readFile(data(caseDir, 'report-draft.json'), 'utf8');
+			if (!local) return assert.equal(written, content, 'frontier keeps the analyst\'s report byte for byte');
+			const { finding_treatments: treatments } = JSON.parse(written);
+			assert.equal(treatments.length, findings.length);
+			for (const treatment of treatments) {
+				assert.equal(treatment.headline, findings.find((finding: { id: string }) => finding.id === treatment.finding_id).claim);
+				assert.equal(treatment.summary, '');
+				assert.equal(treatment.why_it_matters, '');
+			}
+			assert.doesNotMatch(written, /Library Freedom Project|coordinates localization|OONI partnerships/);
+		});
+
 		await t.test('report draft', async (t) => {
 			const { caseDir, call } = await fixture(t, undefined, 'analyst', env);
 			await writeFile(data(caseDir, 'source-expressions.json'), JSON.stringify({ expressions: [{ id: 'SX1' }, { id: 'SX2' }, { id: 'SX3' }] }));

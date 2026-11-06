@@ -6160,7 +6160,9 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	assert.deepEqual(completed.findings, [{ id: 'F1', claim: finding.claim, confidence: 'high', fact_check_verdict: 'verified', source_count: 1 }]);
 	assert.match(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir], { encoding: 'utf8' }), /PASS|valid/i, 'the completed file passes the check that stopped the Qwen run');
 	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /report-draft\.json/, 'the first analyst is the Report one');
-	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, caveats: [], next_steps: [] });
+	// On a local tier the headline is the fact-checked claim, set by code (claimsAsHeadlines).
+	const claimOnly = REPORT_DRAFT.finding_treatments.map((treatment) => ({ ...treatment, headline: finding.claim, summary: '', why_it_matters: '' }));
+	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, finding_treatments: claimOnly, caveats: [], next_steps: [] });
 	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)))!), /holds the report's structure/);
 	// report-direct-quote-diff.md: the Report analyst reads which passages are
 	// direct quotes, the only ones quote_selections may cite.

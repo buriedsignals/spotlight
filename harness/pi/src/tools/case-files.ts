@@ -1211,7 +1211,29 @@ function fillResearchRefs(context: Pick<ToolContext, 'caseDir' | 'env'>, written
 
 // B14, B23(c) (K2-13: rejected for one top-level "model"; K5-4: bare strings, then {id, text, source_ref}). Only that field goes, never another unknown one.
 // A selection becomes {expression_id} when it names one passage on record; the quote's text always comes from that passage, so a typed copy is dropped.
+// T8 on 7656d7ba: the analyst's headlines drew on neighbouring lines and stood false beside
+// the verified pill. Nobody checks that prose, so a local tier reports the fact-checked claim
+// and nothing else about the finding. validate-report-draft.py accepts exactly this shape.
+function claimsAsHeadlines(caseDir: string, document: Record<string, unknown>, notes: string[]): void {
+	let findings: unknown;
+	try {
+		findings = JSON.parse(readFileSync(join(caseDir, 'data', 'findings.json'), 'utf8')).findings;
+	} catch {
+		return;
+	}
+	const claims = new Map((Array.isArray(findings) ? findings : []).map((finding) => [finding?.id, finding?.claim]));
+	let set = 0;
+	for (const treatment of Array.isArray(document.finding_treatments) ? document.finding_treatments : []) {
+		const claim = claims.get(treatment?.finding_id);
+		if (typeof claim !== 'string' || (treatment.headline === claim && treatment.summary === '' && treatment.why_it_matters === '')) continue;
+		Object.assign(treatment, { headline: claim, summary: '', why_it_matters: '' });
+		set += 1;
+	}
+	if (set) notes.push(`Code set ${set} headline(s) to the fact-checked claim and cleared their summary and why_it_matters; the report shows only checked claims.`);
+}
+
 function repairDraft(caseDir: string, document: Record<string, unknown>, notes: string[]): void {
+	claimsAsHeadlines(caseDir, document, notes);
 	if (Object.hasOwn(document, 'model')) {
 		delete document.model;
 		notes.push('Code dropped the top-level model field, which a report draft does not have.');

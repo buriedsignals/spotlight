@@ -581,6 +581,11 @@ def check(case: Path) -> list[str]:
                 f"STRUCTURE: finding_treatments[{index}].finding_id has surrounding whitespace; "
                 f"use {fid!r}"
             )
+        # A local tier's shape (case-files.ts claimsAsHeadlines): the claim itself, with no prose to check.
+        claim = next((clean(row.get("claim")) for row in findings if clean(row.get("id")) == fid), "")
+        if claim and clean(item.get("headline")) == claim and not clean(item.get("summary")) and not clean(item.get("why_it_matters")):
+            validate_quote_selections(item, index, fid, activated, expressions, failures)
+            continue
         for field in ("headline", "summary", "why_it_matters"):
             validate_text(
                 f"finding_treatments[{fid or index}].{field}",
