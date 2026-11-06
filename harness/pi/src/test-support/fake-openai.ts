@@ -22,7 +22,7 @@ export type Usage = { prompt_tokens?: number; completion_tokens?: number; total_
 // server does for tokens it strips; `stall` then holds the stream open with
 // nothing more, as a server that sends nothing for stripped tokens. On a
 // tool-call reply `stall` holds the stream open after the complete calls.
-export type Reply = ({ text: string; finish?: 'stop' | 'length'; invisible?: number; stall?: boolean } | { toolCalls: ToolCall[]; stall?: boolean }) & { usage?: Usage; reasoning?: string; keepAlives?: { count: number; everyMs: number } } | { status: number } | 'hang';
+export type Reply = ({ text: string; finish?: 'stop' | 'length'; invisible?: number; stall?: boolean } | { toolCalls: ToolCall[]; stall?: boolean }) & { usage?: Usage; reasoning?: string; keepAlives?: { count: number; everyMs: number }; quietMs?: number } | { status: number } | 'hang';
 export type Responder = (request: ChatRequest, index: number) => Reply;
 
 export type FakeOpenAI = {
@@ -92,6 +92,11 @@ async function keepAlive(response: ServerResponse, { count, everyMs }: { count: 
 async function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
 	response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
 	if (reply.keepAlives) await keepAlive(response, reply.keepAlives);
+	// Osaurus cold (t9gaps.py, 38k chars): one early chunk, then no data until the answer. Its SSE comments do not reach Pi.
+	if (reply.quietMs) {
+		chunk(response, { content: '' }, null);
+		await new Promise((done) => setTimeout(done, reply.quietMs));
+	}
 	if (reply.reasoning) chunk(response, { role: 'assistant', reasoning_content: reply.reasoning }, null);
 	if ('text' in reply) {
 		for (let i = 0; i < (reply.invisible ?? 0); i += 1) chunk(response, { content: '' }, null);

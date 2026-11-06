@@ -1114,10 +1114,11 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 		const fake = await startFakeOpenAI((_request, index) => (index === 0 ? first : { text: 'Done.' }));
 		t.after(() => fake.close());
 		const space = await workspace(t);
-		const chat = launch(t, baseEnv(space, fake.baseURL));
+		// A dead stream before any visible output waits out the prefill limit, shortened here.
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PREFILL_MS: '3000' });
 
 		if (name === 'stalled' || name === 'stalled after calls') {
-			// The clock stops a turn after 60 s with nothing visible.
+			// The clock stops a turn after 60 s with nothing visible, once it has shown output.
 			chat.send({ id: 'p-stalled', type: 'prompt', message: 'Start.' });
 			await chat.waitFor((record) => record.type === 'agent_settled', 0, 90_000);
 		} else {
@@ -3012,12 +3013,25 @@ test('keep-alives through a long prefill are not silence; the turn gets its answ
 	assert.doesNotMatch(settled, /Spotlight stopped this turn/);
 });
 
+// T9 on a4869840: 6 of 10 analyst calls aborted. A cold prefill sent no data for 85 s.
+test('85 s with no chunk before the first visible output is a prefill, and the turn gets its answer', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: 'The answer after a cold prefill.', quietMs: 85_000 }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	chat.send({ id: 'p-cold', type: 'prompt', message: 'Start.' });
+	await chat.waitFor((record) => record.type === 'agent_settled', 0, 110_000);
+	const settled = chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n');
+	assert.match(settled, /The answer after a cold prefill\./);
+	assert.doesNotMatch(settled, /Spotlight stopped this turn/);
+});
+
 // Case 96f45e2d: the stream goes quiet after its keep-alives, as with a closed laptop.
 test('a stream that goes silent after its keep-alives is stopped as a stall', async (t) => {
 	const fake = await startFakeOpenAI(() => ({ text: '', stall: true, keepAlives: { count: 3, everyMs: 1_000 } }));
 	t.after(() => fake.close());
 	const space = await workspace(t);
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PREFILL_MS: '3000' });
 	chat.send({ id: 'p-silent', type: 'prompt', message: 'Start.' });
 	await chat.waitFor((record) => record.type === 'agent_settled', 0, 90_000);
 	assert.match(chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n'), /the model stopped responding/);

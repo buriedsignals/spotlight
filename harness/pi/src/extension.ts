@@ -782,6 +782,13 @@ const INVISIBLE_CHUNKS = 1024;
 // at the first chunk after the role chunk, so a server silent through prompt
 // processing never counts.
 const INVISIBLE_MS = 60_000;
+// Until a turn's first visible output the silence is prompt processing. T9 on
+// a4869840: a cold 38k-character request sent no data for 85 s, and Osaurus's SSE
+// comments never reach Pi. 137 s was seen, and a 65,536-token prompt on a slower
+// Mac can take minutes. A dead server costs up to this much per turn. Below
+// piSettings' 900 s transport limit, so that limit does not undercut it.
+export const PREFILL_MS = 600_000;
+const prefillMs = () => { const ms = Number(process.env.SPOTLIGHT_PREFILL_MS ?? PREFILL_MS); return Number.isFinite(ms) && ms > 0 ? ms : PREFILL_MS; };
 // A turn cut at the cap after this few tokens is a full context slot, not a
 // ramble: a nudge would only overflow again.
 const MIN_CUT_TOKENS = 10;
@@ -815,6 +822,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let silent = false;
 	let invisible = 0;
 	let lastChunk = 0;
+	let visible = false;
 	let clock: ReturnType<typeof setInterval> | undefined;
 	const stopClock = () => {
 		if (clock) clearInterval(clock);
@@ -836,6 +844,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		stopped = false;
 		stalled = false;
 		silent = false;
+		visible = false;
 		stopClock();
 	});
 	pi.on('provider_stream_event', (event, ctx) => {
@@ -843,10 +852,11 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		const delta = (event.data as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined)?.choices?.[0]?.delta;
 		if (delta && 'role' in delta && !visibleChunk(event.data)) return;
 		lastChunk = Date.now();
+		visible ||= visibleChunk(event.data);
 		invisible = visibleChunk(event.data) ? 0 : invisible + 1;
 		if (!clock) {
 			clock = setInterval(() => {
-				if (!stopped && Date.now() - lastChunk >= INVISIBLE_MS) {
+				if (!stopped && Date.now() - lastChunk >= (visible ? INVISIBLE_MS : prefillMs())) {
 					silent = true;
 					stopInvisible(() => ctx.abort());
 				}
