@@ -131,7 +131,7 @@ export async function withProgress<T>(say: ((text: string) => void) | undefined,
 	}
 }
 
-export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }, progress: { say?: (text: string) => void } = {}): ToolDefinition {
+export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }, progress: { say?: (text: string) => void; after?: () => void } = {}): ToolDefinition {
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',
@@ -201,6 +201,7 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 				}
 				return { content: [{ type: 'text', text: result.text || '(no output)' }], details: undefined };
 			} finally {
+				progress.after?.();
 				signal?.removeEventListener('abort', onAbort);
 			}
 		},

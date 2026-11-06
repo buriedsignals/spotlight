@@ -33,7 +33,7 @@ import { applyFixedRequestBody } from './provider-policy.ts';
 import { LANES_DIRECTORY } from './resume.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
 import { FileRefused, readTarget, writeConfined } from './tools/case-files.ts';
-import { SEAM_ENV, fetchTool, webURL } from './tools/fetch.ts';
+import { SEAM_ENV, fetchTool, firecrawlMode, webURL } from './tools/fetch.ts';
 import { httpGetTool } from './tools/http-get.ts';
 import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
@@ -1066,6 +1066,11 @@ function laneEnv(options: RoundOptions, topic: TopicBrief, laneType: LaneType): 
 	if (options.config.searchURL) out.SPOTLIGHT_SEARCH_URL = options.config.searchURL;
 	const granted = new Set(options.plan.keys.filter((key) => key.topics.includes(topic.topic_id)).map((key) => key.name));
 	for (const key of laneType.keys) if (granted.has(key) && options.env[key]) out[key] = options.env[key];
+	// `always` means every page goes through Firecrawl, so a lane needs the key with no plan
+	// grant. A sensitive case or `off` never gets it here, and the seam refuses them as well.
+	if (!options.config.sensitive && firecrawlMode(options.config.spotlightConfig) === 'always' && options.env.FIRECRAWL_API_KEY) out.FIRECRAWL_API_KEY = options.env.FIRECRAWL_API_KEY;
+	// The rejected-key stop lives with the case's fetch failures.
+	if (options.env.SPOTLIGHT_HARNESS_DATA) out.SPOTLIGHT_HARNESS_DATA = options.env.SPOTLIGHT_HARNESS_DATA;
 	return out;
 }
 

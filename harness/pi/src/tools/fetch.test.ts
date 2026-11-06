@@ -16,7 +16,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { fetchFailure, fetchTool } from './fetch.ts';
+import { fetchFailure, fetchTool, takeFirecrawlNotice } from './fetch.ts';
 import { searchTool } from './search.ts';
 
 const PAGE_URL = 'https://registry.example.org/company/42';
@@ -532,4 +532,36 @@ test('a fetch failure names the cause, not the banner after it', () => {
 		'╚════════════════════════════════════════════════════════════╝',
 	].join('\n');
 	assert.match(fetchFailure(detail), /Executable doesn't exist at/);
+});
+
+// Case 3f58f43b: a rejected key failed every URL. One failure stops the case's fetches, and a new key or mode lifts it.
+test('a rejected Firecrawl key stops further fetches at once, the member hears it once, and a new key or Backup lifts it', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-fc-key-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	const runs = join(root, 'runs.txt');
+	const refusal = 'scrape failed: Firecrawl rejected its key. Replace the Firecrawl key in Indicator Lab, or set Firecrawl to Backup only. https://a.example.com/1 was not read directly, so your IP stayed away from it.';
+	const seam = join(root, 'python');
+	await writeFile(seam, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(runs)}, 'x');\nprocess.stderr.write(${JSON.stringify(refusal)});\nprocess.exit(1);\n`);
+	await chmod(seam, 0o755);
+	const configPath = join(root, 'config.json');
+	await writeFile(configPath, JSON.stringify({ firecrawl_mode: 'always' }));
+	const env = { PATH: process.env.PATH, HOME: root, SPOTLIGHT_ANONYMIZE_FETCH: 'true', SPOTLIGHT_HARNESS_DATA: join(root, 'data'), FIRECRAWL_API_KEY: 'old-key' };
+	const fetchWith = (key: string, url: string) => (fetchTool({ caseDir, writeRoot: caseDir, python: seam, configPath, env: { ...env, FIRECRAWL_API_KEY: key } }) as ToolDefinition).execute('call', { url, save_as: 'page.md' }, undefined, undefined, undefined as never);
+
+	await assert.rejects(fetchWith('old-key', 'https://a.example.com/1'), /^Error: fetch failed: Firecrawl rejected its key\. Replace the Firecrawl key in Indicator Lab/);
+	await assert.rejects(fetchWith('old-key', 'https://b.example.com/2'), /Firecrawl rejected its key/);
+	await assert.rejects(fetchWith('old-key', 'https://c.example.com/3'), /Firecrawl rejected its key/);
+	assert.equal(await readFile(runs, 'utf8'), 'x', 'one seam run, not one per URL');
+
+	const notice = takeFirecrawlNotice({ caseDir, env });
+	assert.match(notice!, /^Firecrawl rejected its key\. Replace the Firecrawl key in Indicator Lab, or set Firecrawl to Backup only\. No page was read directly/);
+	assert.equal(takeFirecrawlNotice({ caseDir, env }), undefined, 'once');
+
+	await assert.rejects(fetchWith('new-key', 'https://b.example.com/2'), /Firecrawl rejected its key/);
+	assert.equal(await readFile(runs, 'utf8'), 'xx', 'a new key is tried');
+	await writeFile(configPath, JSON.stringify({ firecrawl_mode: 'backup' }));
+	await assert.rejects(fetchWith('new-key', 'https://d.example.com/4'), /Firecrawl rejected its key/);
+	assert.equal(await readFile(runs, 'utf8'), 'xxx', 'Backup is tried too');
 });

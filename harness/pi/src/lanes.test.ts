@@ -541,6 +541,20 @@ test('a lane\'s fetch gets the scraping seam\'s settings, and a key only when th
 	assert.equal(seen.FIRECRAWL_API_KEY, undefined, 'no key without a grant');
 });
 
+// `always` means every page goes through Firecrawl, so a lane needs the key without a plan grant.
+test('on Firecrawl always a lane gets the key with no grant; backup and off still need one or get none', async (t) => {
+	for (const [mode, gets] of [['always', true], ['backup', false], ['off', false]] as const) {
+		const space = await setup(t);
+		Object.assign(space.env, { FIRECRAWL_API_KEY: 'fc-secret' });
+		const config = join(space.root, 'install-config.json');
+		await writeFile(config, JSON.stringify({ firecrawl_mode: mode }));
+		const fakes = await servers(t, scripted({ 'a-web': [call('fetch', { url: PAGE_URL }), lead('s1', VERBATIM)] }));
+		await round(space, fakes, plan([topic('a-web')]), { SPOTLIGHT_CONFIG: config });
+		const seen = JSON.parse(await readFile(join(space.root, 'scrape-env.json'), 'utf8')) as Record<string, string>;
+		assert.equal(seen.FIRECRAWL_API_KEY, gets ? 'fc-secret' : undefined, mode);
+	}
+});
+
 test('a lane cannot write outside its folder', async (t) => {
 	const space = await setup(t);
 	await mkdir(join(space.caseDir, 'research/swarm'), { recursive: true });

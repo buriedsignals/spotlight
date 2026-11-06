@@ -35,6 +35,7 @@ class Box:
 
     def __init__(self, config=None, *, key="fc-test-key", hits=(), down=False, blocked=True):
         self.config, self.key, self.hits, self.down, self.blocked = config, key, list(hits), down, blocked
+        self.direct = []
 
     def __enter__(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -60,6 +61,7 @@ class Box:
             return list(self.hits)
 
         def fetched(url, timeout_ms=45_000, proxy=None):
+            self.direct.append(url)
             return ScrapeResult(markdown="" if self.blocked else "# page", requested_url=url, source_url=url, fetched_at="2026-11-05T00:00:00Z", provider="crawl4ai", status_code=200)
 
         searxng.search, c4a.fetch = stand_in, fetched
@@ -176,17 +178,29 @@ def test_off_never_uses_firecrawl_on_either_seam_even_when_asked_for():
         assert box.calls() == []
 
 
-def test_always_reads_pages_with_firecrawl_and_a_failure_keeps_crawl4ai():
+def refused(url="https://example.org/page"):
+    try:
+        scrape(url)
+    except ScrapeError as exc:
+        return str(exc)
+    raise AssertionError("the page was read")
+
+
+# Case 3f58f43b: a rejected key fell through to a direct Crawl4AI read, against the member's `always`.
+def test_always_means_firecrawl_and_a_failure_is_named_and_never_read_directly():
     with Box({"firecrawl_mode": "always"}, blocked=False) as box:
         assert scrape("https://example.org/page").provider == "firecrawl"
         assert box.calls() == ["scrape https://example.org/page"], box.calls()
         binary = pathlib.Path(box.tmp.name) / "firecrawl"
-        binary.write_text('#!/bin/sh\necho "$@" >> "$FIRECRAWL_LOG"\nexit 3\n')
-        assert scrape("https://example.org/page").provider == "crawl4ai"
-        box.blocked = True
-        assert scrape("https://example.org/page").provider == "crawl4ai"
-        assert len(box.calls()) == 3, "a failed Firecrawl read is not tried twice for one page"
-        box.blocked = False
+        binary.write_text('#!/bin/sh\necho "$@" >> "$FIRECRAWL_LOG"\necho "Error: Unauthorized: Invalid token" >&2\nexit 3\n')
+        rejected = refused()
+        assert rejected.startswith("Firecrawl rejected its key.") and "Indicator Lab" in rejected and "Backup" in rejected, rejected
+        binary.write_text('#!/bin/sh\necho "$@" >> "$FIRECRAWL_LOG"\necho "Error: page timed out" >&2\nexit 3\n')
+        failed = refused()
+        assert "rejected" not in failed and "Backup" in failed, failed
+        binary.write_text('#!/bin/sh\necho "$@" >> "$FIRECRAWL_LOG"\n')
+        assert "Backup" in refused(), "an empty answer is a failure too"
+        assert box.direct == [], "nothing was read directly"
         binary.write_text(FAKE)
         # The operator's explicit provider and a Tor fetch keep their route.
         assert scrape("https://example.org/page", provider="crawl4ai").provider == "crawl4ai"
@@ -194,16 +208,17 @@ def test_always_reads_pages_with_firecrawl_and_a_failure_keeps_crawl4ai():
         assert scrape("https://example.org/page").provider == "crawl4ai"
         os.environ.pop("SCRAPE_PROVIDER")
         assert scrape("https://example.org/page", anonymize=True).provider == "crawl4ai"
-        assert len(box.calls()) == 3, box.calls()
+        assert len(box.calls()) == 4, box.calls()
 
 
-def test_always_stays_on_crawl4ai_for_a_sensitive_case_or_a_withheld_key():
+def test_always_with_no_key_is_refused_and_a_sensitive_case_stays_on_crawl4ai():
     with Box({"firecrawl_mode": "always", "sensitive": True}, blocked=False) as box:
         assert scrape("https://example.org/page").provider == "crawl4ai"
         assert box.calls() == []
     with Box({"firecrawl_mode": "always"}, key=None, blocked=False) as box:
-        assert scrape("https://example.org/page").provider == "crawl4ai"
-        assert box.calls() == []
+        message = refused()
+        assert "no key" in message and "Indicator Lab" in message, message
+        assert box.calls() == [] and box.direct == []
 
 
 def test_backup_reads_pages_with_crawl4ai_and_falls_back_on_a_block():

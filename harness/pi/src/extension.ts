@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
+import { takeFirecrawlNotice } from './tools/fetch.ts';
 import { DECISION_RECORDED, MEMBER_DECIDED, ROUTER_CALL_PREFIX, decisionHelperNotice, memberHasTheMove, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
@@ -88,7 +89,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
-		const progress: { say?: (text: string) => void } = {};
+		const progress: { say?: (text: string) => void; after?: () => void } = {};
 		let memberMessages = 0;
 		memberNotice = (text) => progress.say?.(text);
 		// What a member's message resets. A decision on a held review page counts too:
@@ -124,8 +125,13 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			// A worker that started and failed is not a refusal.
 			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
 		});
+		// A worker's or lane's fetch found the Firecrawl key unusable: the member hears it once.
+		progress.after = () => {
+			const notice = takeFirecrawlNotice({ caseDir: active.caseDir, env: process.env });
+			if (notice) progress.say?.(notice);
+		};
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle, progress);
-		tools.push(...spotlightTools(active, runAdapter, role, (retry, signal) => withProgress(progress.say, 'research round', requestResearchRound(retry, signal)), () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall, memberTurns: () => memberMessages }));
+		tools.push(...spotlightTools(active, runAdapter, role, (retry, signal) => withProgress(progress.say, 'research round', requestResearchRound(retry, signal)).finally(() => progress.after?.()), () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall, memberTurns: () => memberMessages }));
 		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir)), localTier(process.env) ? { ms: reviewHoldMs(process.env), say: (text) => progress.say?.(text), resolved: () => resolveCase(active, runAdapter), decided: () => { log('the decision on the page counts as the member\'s turn'); memberTurn(); } } : undefined));
 		casePhase = async () => String((await resolveCase(active, runAdapter)).phase ?? '');

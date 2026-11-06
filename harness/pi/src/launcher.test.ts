@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { chmod, copyFile, mkdir, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, readdir, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { cpSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } from './test-support/fake-openai.ts';
@@ -3021,6 +3021,21 @@ test('unjudged findings go to the fact-checker past investigator faults, and the
 	assert.equal(file.claims.length, 14, 'every finding was judged, past the fact-checker cap of three spawns');
 	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
 	assert.equal(state.blocked?.exhausted_attempt, 'structural-correction', 'then the shared bound ends the loop');
+});
+
+// Case 3f58f43b: only the worker saw the rejected key. The member hears it once, in the chat.
+test('a Firecrawl key fault recorded by a worker reaches the member once as a notice', async (t) => {
+	const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Stopped.' })));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const env = baseEnv(space, fake.baseURL);
+	const file = join(env.SPOTLIGHT_HARNESS_DATA, 'work', 'fetch-failures', `${createHash('sha256').update(await realpath(caseDir)).digest('hex').slice(0, 16)}.json`);
+	await mkdir(dirname(file), { recursive: true });
+	await writeFile(file, JSON.stringify({ 'firecrawl:key': { count: 1, cause: 'Firecrawl rejected its key. Replace the Firecrawl key in Indicator Lab, or set Firecrawl to Backup only. https://a.example.com/1 was not read directly, so your IP stayed away from it.', key: 'x' } }));
+	const chat = launch(t, { ...env, SPOTLIGHT_MODEL_TIER: '12b' });
+	await settledPrompt(chat, 'Continue.', 30_000);
+	assert.equal(notices(chat).filter((text) => text.startsWith('Firecrawl rejected its key.')).length, 1);
 });
 
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task

@@ -201,10 +201,10 @@ export function fetchFailure(detail: string): string {
 }
 
 const blocked = (cause: string) => /bot-blocked|anti-bot|captcha|\b403\b|access denied/i.test(cause);
-type Failures = Record<string, { count: number; cause: string }>;
+type Failures = Record<string, { count: number; cause: string; key?: string; told?: boolean }>;
 
 // One file per case, so two cases' workers never write the same file.
-function failuresPath(context: ToolContext): string | undefined {
+function failuresPath(context: Pick<ToolContext, 'caseDir' | 'env'>): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
 	return dataDir ? resolve(dataDir, 'work', 'fetch-failures', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
 }
@@ -218,6 +218,34 @@ function readFailures(path: string | undefined): Failures {
 	}
 }
 
+// `always` with a key Firecrawl refuses (case 3f58f43b): every page would fail the same way,
+// so one failure stops the case's fetches until the key or the mode changes, and the member
+// is told once (takeFirecrawlNotice). Only the key's hash is kept.
+const FIRECRAWL_STOP = 'firecrawl:key';
+const FIRECRAWL_KEY_FAULT = /^Firecrawl (?:rejected its key|is set to Always available and has no key)/;
+const keyHash = (context: Pick<ToolContext, 'env'>) => createHash('sha256').update(context.env?.FIRECRAWL_API_KEY ?? '').digest('hex').slice(0, 16);
+export function firecrawlMode(configPath: string | undefined): string {
+	try {
+		const mode = (JSON.parse(readFileSync(configPath ?? '', 'utf8')) as { firecrawl_mode?: unknown }).firecrawl_mode;
+		return typeof mode === 'string' ? mode : 'backup';
+	} catch {
+		return 'backup';
+	}
+}
+function firecrawlStop(context: ToolContext): string | undefined {
+	const stop = readFailures(failuresPath(context))[FIRECRAWL_STOP];
+	return stop && stop.key === keyHash(context) && firecrawlMode(context.configPath) === 'always' ? stop.cause : undefined;
+}
+export function takeFirecrawlNotice(context: Pick<ToolContext, 'caseDir' | 'env'>): string | undefined {
+	const path = failuresPath(context);
+	const all = readFailures(path);
+	const stop = all[FIRECRAWL_STOP];
+	if (!path || !stop || stop.told) return undefined;
+	all[FIRECRAWL_STOP] = { ...stop, told: true };
+	writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
+	return stop.cause.replace(/ \S+ was not read directly, so your IP stayed away from it\./, ' No page was read directly, so your IP stayed away from them.');
+}
+
 export function priorFailure(context: ToolContext, url: string): string | undefined {
 	const seen = readFailures(failuresPath(context))[url];
 	if (!seen || (seen.count < 2 && !blocked(seen.cause))) return undefined;
@@ -229,6 +257,7 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 	if (!path) return;
 	const all = readFailures(path);
 	all[url] = { count: (all[url]?.count ?? 0) + 1, cause };
+	if (FIRECRAWL_KEY_FAULT.test(cause)) all[FIRECRAWL_STOP] = { count: 1, cause, key: keyHash(context) };
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
@@ -375,6 +404,8 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			if (rlm && !input.save_as) throw new Error('fetch: on this tier fetch needs save_as, so the raw page is kept beside its leads.');
 			const reused = rlm ? reusedCapture(context, input.url) : undefined;
 			if (reused) return jsonResult(reused);
+			const stopped = firecrawlStop(context);
+			if (stopped) throw new Error(`fetch failed: ${stopped}`);
 			const prior = priorFailure(context, input.url);
 			if (prior) throw new Error(prior);
 			const viaTor = anonymizedFetch(context.env);
