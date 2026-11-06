@@ -165,6 +165,15 @@ test('a worker that ends empty or with only a control token is a failed task', a
 	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', tokenOnly]), 'task', new AbortController().signal), /worker ended without an answer/);
 });
 
+// Case 96f45e2d: a closed laptop cut a worker; its earlier text read as an answer, and the correction counted.
+test('a worker whose last turn ended in a model error is a failed task, even with earlier text; a retry that lands is not', async (t) => {
+	const root = await scratch(t);
+	const after = (...reasons: string[]) => NOISY_WORKER.replace("'worker answer'", "(" + JSON.stringify(reasons) + ".forEach((reason) => console.log(JSON.stringify({ type: 'message_end', message: { role: 'assistant', stopReason: reason } }))), 'earlier text')");
+
+	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', after('stop', 'error')]), 'task', new AbortController().signal), /worker was cut off/);
+	assert.equal(await runWorker(worker(root, process.execPath, ['-e', after('error', 'stop')]), 'task', new AbortController().signal), 'earlier text');
+});
+
 test('a task cancelled while queued never starts its worker', async (t) => {
 	const root = await scratch(t);
 	const queue = new WorkerQueue();

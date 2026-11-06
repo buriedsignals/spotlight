@@ -104,6 +104,20 @@ test("a solo gate asks for no name and its follow-up needs only the note", async
   assert.equal(page.getElementById("request-follow-up").attributes["aria-disabled"], "false");
 });
 
+test("at a stop the failures name the send-back, not the agent", async (t) => {
+  const caseDir = buildCase(tempRoot(t), "case", "investigation_gate");
+  const path = join(caseDir, "data/orchestration.json");
+  const state = JSON.parse(readFileSync(path, "utf8"));
+  state.attempts = { "structural-correction": 2 };
+  state.blocked = { phase: "investigation", exhausted_attempt: "structural-correction", gap: "FAIL  record:F1 [investigator]: no link", attempts: state.attempts };
+  writeFileSync(path, JSON.stringify(state));
+  const page = await renderClient(await createCaseBridge({ caseDir }).view("investigation_gate"));
+  const said = JSON.stringify(page.getElementById("app"), (key, value) => (key === "listeners" ? undefined : value));
+  assert.match(said, /Request follow-up below to send it back to Investigation/);
+  assert.doesNotMatch(said, /Ask the agent to fix them/);
+  assert.ok(page.getElementById("request-follow-up"));
+});
+
 // Tom, 2026-11-05: a page with nothing to approve holds no turn, so a decline there
 // carries nothing on. The member is told where to go next.
 test("a decline with nothing offered sends the member back to the chat; any other decision keeps the usual line", async (t) => {

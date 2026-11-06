@@ -261,10 +261,16 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 	// line is its answer.
 	let stopped = '';
 	let refolded = false;
+	// Case 96f45e2d: a closed laptop cut a worker, whose last text then read as its answer.
+	let cut = false;
 	const factCheckWrites = new Map<string, { path: string; proposal: string }>();
 	const transcript = openTranscript();
 	onJsonlRecords(child.stdout, (record) => {
 		transcript?.(record);
+		if (record.type === 'message_end') {
+			const message = record.message as { role?: string; stopReason?: string } | undefined;
+			if (message?.role === 'assistant') cut = message.stopReason === 'error'; // not 'aborted': a watchdog's stop is a finished run with a receipt
+		}
 		if (launch.onFactCheckWrite && record.type === 'tool_execution_start' && (record.toolName === 'write_file' || record.toolName === 'record_assessment')) {
 			const args = canonicalWriteCall(String(record.toolName), record.args);
 			if (typeof args?.path === 'string' && typeof args.content === 'string' && typeof record.toolCallId === 'string') factCheckWrites.set(record.toolCallId, { path: args.path, proposal: args.content });
@@ -303,6 +309,7 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 			// A worker that ended with nothing, or only a chat-template control
 			// token such as <|tool_response>, failed; it did not answer.
 			if (stopped) answer.resolve(stopped);
+			else if (cut) answer.reject(new Error('worker was cut off: its model request failed'));
 			else if (text.replace(CONTROL_TOKENS, '').trim() === '') answer.reject(new Error('worker ended without an answer'));
 			else answer.resolve(text);
 		}

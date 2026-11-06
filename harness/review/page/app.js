@@ -1409,7 +1409,9 @@ function render(next) {
           "section",
           { "aria-labelledby": "blocking-heading" },
           fold("blocking", el("h2", { id: "blocking-heading", text: `Blocking failures (${view.blocking.length})` }), [
-            el("p", { text: "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
+            el("p", { text: view.phase === "blocked"
+              ? "Spotlight stopped on these, so the case cannot be approved. To go on, use Request follow-up below to send it back to Investigation, with a note on what to fix."
+              : "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
             list(view.blocking, ""),
           ], { className: "fold blocking" }),
         ),

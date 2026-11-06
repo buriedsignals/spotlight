@@ -600,13 +600,21 @@ async function structuralTask(harness: Harness, status: Record<string, unknown>,
 // correction mode shares this one count, and fewer validate-fact-check failures, a new
 // verdict or a repaired link, is progress and costs nothing.
 const defectLines = (report: string) => report.split('\n').filter((line) => /^\s*FAIL\b/.test(line));
+// Case 96f45e2d: the fact-checker's own next step is no fault of a correction. It still counts as
+// a failure line above, so a new verdict stays progress, but it is never what a correction failed at.
+const correctable = (line: string) => !/has no fact-check verdict/.test(line) && !/^\s*FAIL\s+-:\s+missing .*fact-check\.json/.test(line);
 async function countCorrection(harness: Harness, before: number, signal: AbortSignal): Promise<string> {
 	try {
 		const checked = await validateInvestigationInputs(checkContext(harness), signal);
 		const left = defectLines(await factCheckDefects(checkContext(harness), signal));
-		if (checked.passed && left.length === 0) return '[Harness: the errors are fixed.]';
 		const { config, active } = harness;
 		const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
+		const faults = left.filter(correctable);
+		if (checked.passed && faults.length === 0) {
+			harness.defectsAtLastCount = undefined;
+			await runAdapter(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true));
+			return '[Harness: the errors are fixed.]';
+		}
 		// The count is of corrections in a row with no progress (Tom): progress starts it again,
 		// whether this correction made it or a fact-checker's verdicts did since the last count.
 		const lowest = Math.min(before, harness.defectsAtLastCount ?? before);
@@ -617,7 +625,7 @@ async function countCorrection(harness: Harness, before: number, signal: AbortSi
 		}
 		if (checked.passed && harness.defectsAtLastCount !== undefined && before < harness.defectsAtLastCount) await runAdapter(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true));
 		harness.defectsAtLastCount = left.length;
-		await runAdapter(transitionArguments('countCorrection', { gap: harness.redact(checked.passed ? left.join('\n') : checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
+		await runAdapter(transitionArguments('countCorrection', { gap: harness.redact(checked.passed ? faults.join('\n') : checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
 		const after = await caseStatus(harness);
 		return after.status === 'blocked'
 			? '[Harness: the errors remain after the second correction with no progress, so the case is blocked. Call spotlight_resolve and present it.]'

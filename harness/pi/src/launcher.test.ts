@@ -2989,6 +2989,30 @@ test('corrections of any mode, from code or the model, share one bound when noth
 	assert.equal(state.blocked.exhausted_attempt, 'structural-correction');
 });
 
+// Case 96f45e2d, 09:20: the first correction was cut by a closed laptop, the second repaired the
+// bundle, no fact-checker had run, and the missing fact-check.json read as a failed correction.
+test('a correction that leaves only the fact-checker\'s next step is not counted, clears the count and reaches the fact-checker', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Repaired.' };
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: STRUCTURAL CORRECTION\nFix the bundle.' } }] } : fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator') && !isWorkerRequest(seen, 'fact-checker')).length <= 3 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const path = join(caseDir, 'data', 'orchestration.json');
+	await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, 'utf8')), attempts: { 'structural-correction': 1 } }));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	assert.equal(state.blocked, undefined, 'no stop');
+	assert.deepEqual(state.attempts, {}, 'a repair clears the count');
+	assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), 'the fact-checker runs');
+});
+
 // Tom: two no-progress corrections with real progress between them must not end a long case.
 test('a correction that reduces the failures resets the count, and two in a row with no progress still stop', async (t) => {
 	let links: { finding_id: string }[] = [];
