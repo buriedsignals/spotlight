@@ -842,7 +842,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	const tally = (name: string, content: string, ran: boolean) => {
 		const entry = (callTally[name] ??= { run: 0, failed: 0, not_run: 0 });
 		if (!ran) entry.not_run += 1;
-		else if (content.startsWith('error:')) {
+		else if (content.startsWith('error:') || content.startsWith('refused:')) {
 			entry.failed += 1;
 			entry.last_error = content.slice(0, 300);
 		} else entry.run += 1;
