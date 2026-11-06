@@ -442,3 +442,34 @@ test('a dispatch chain that reaches the gate runs code\'s summary step, and the 
 		assert.deepEqual(result.fixed_steps.find((receipt: { step: string }) => receipt.step === 'summary').ok, !failing, name);
 	}
 });
+
+// Case 938c2a6a on 0aab5a5a: investigator, fact-checker (refused), repair, fact-checker spent all four spawns, so the
+// summary step never ran, and the refused spawn's receipt read as a failed summary: the model told the member and stopped.
+test('a resolve that spends its spawns on the way to the gate still runs code\'s summary, and the case reaches the page', async (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	const root = await mkdtemp(join(tmpdir(), 'summary-spent-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	let spawns = 0;
+	let written = false;
+	const adapter = async () => JSON.stringify(spawns < 4
+		? { phase: 'investigation', status: 'active', missing: [`fresh data/fact-check.json after the investigator's update ${spawns}`] }
+		: { phase: 'investigation_gate_approval', status: 'pending', missing: written ? ['Investigation gate approval'] : ['summary.md', 'data/summary.json', 'Investigation gate approval'] });
+	const step = async () => { written = true; return 'code wrote it'; };
+	const runner = { spawn: async () => { spawns += 1; if (spawns === 2) throw new Error(`${INPUTS_REFUSED}\n  • [investigator] findings.json: F1 has no source`); return 'Done.'; }, methodologyCheck: async () => undefined };
+	const [resolveTool] = spotlightTools(bindActiveCase(root, caseDir), adapter, ORCHESTRATOR, undefined, undefined, undefined, step, runner);
+	const result = JSON.parse(((await resolveTool.execute('call', {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text);
+	assert.equal(spawns, 4);
+	assert.equal(result.fixed_steps.find((receipt: { step: string }) => receipt.step === 'summary')?.ok, true);
+	assert.match(result.next_action, /call open_review/, 'continuity: the next move is the gate');
+});
+
+test('at the gate only the summary step\'s own failure reads as one', (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	assert.equal(nextAction({ phase: 'investigation_gate_approval', missing: ['summary.md'], fixed_steps: [{ step: 'spawn fact-checker', ok: false, output: 'refused' }, { step: 'spawn fact-checker', ok: true, output: 'done' }] }), NEXT_GATE_OWED);
+});

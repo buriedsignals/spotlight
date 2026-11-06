@@ -271,6 +271,8 @@ export function draftWritten(caseDir: string): boolean {
 export function nextAction(resolved: Record<string, unknown>, onDisk: (relative: string) => boolean, caseDir?: string): string | undefined {
 	const missing = Array.isArray(resolved.missing) ? resolved.missing.map(String) : [];
 	const stepFailed = Array.isArray(resolved.fixed_steps) && (resolved.fixed_steps as Array<{ ok?: unknown }>).some((receipt) => receipt?.ok === false);
+	// A refused worker on the way to the gate is no failed summary (case 938c2a6a).
+	const summaryFailed = Array.isArray(resolved.fixed_steps) && (resolved.fixed_steps as Array<{ step?: unknown; ok?: unknown }>).some((receipt) => receipt?.step === 'summary' && receipt.ok === false);
 	if (resolved.worker_stalled && typeof resolved.worker_stalled === 'object') return nextWorkerStalled(resolved.worker_stalled as { step?: unknown; attempts?: unknown });
 	switch (resolved.phase) {
 		case 'brief':
@@ -292,7 +294,7 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		case 'research_approval':
 			return NEXT_RESEARCH_APPROVAL;
 		case 'investigation_gate_approval':
-			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : stepFailed && localTier(process.env) ? nextFixedStep('summary', true) : NEXT_GATE_OWED;
+			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : summaryFailed && localTier(process.env) ? nextFixedStep('summary', true) : NEXT_GATE_OWED;
 		case 'investigation_gate_finalization':
 			return nextFixedStep(String((resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at ?? missing[0] ?? ''), stepFailed);
 		case 'report':
@@ -578,19 +580,23 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 	const repaired = runner.stall ? (runner.stall.repaired ??= new Set<string>()) : new Set<string>();
 	let stalled: { step: string; attempts: number } | undefined;
 	const stall = runner.stall;
+	// Lab OptiQ leg on d3b8305f: a dispatch chain reached the gate after the fixed
+	// steps had run, so the analyst wrote the summary. Code's step comes first here too,
+	// and after the last spawn as well: it is no spawn, and case 938c2a6a reached the
+	// gate on the fourth.
 	let summaryTried = false;
-	for (let spawned = 0; spawned < AUTO_SPAWNS_PER_RESOLVE; spawned++) {
-		// Lab OptiQ leg on d3b8305f: a dispatch chain reached the gate after the fixed
-		// steps had run, so the analyst wrote the summary. Code's step comes first here too.
-		if (runStep && !summaryTried && fixedStepAt(state) === 'summary') {
-			summaryTried = true;
-			try {
-				receipts.push({ step: 'summary', ok: true, output: (await runStep('summary', signal) ?? '').slice(0, 600) });
-				state = await resolveCase(active, runAdapter, signal);
-			} catch (error) {
-				receipts.push({ step: 'summary', ok: false, output: (error as Error).message.slice(0, 2000) });
-			}
+	const codeSummary = async () => {
+		if (!runStep || summaryTried || fixedStepAt(state) !== 'summary') return;
+		summaryTried = true;
+		try {
+			receipts.push({ step: 'summary', ok: true, output: (await runStep('summary', signal) ?? '').slice(0, 600) });
+			state = await resolveCase(active, runAdapter, signal);
+		} catch (error) {
+			receipts.push({ step: 'summary', ok: false, output: (error as Error).message.slice(0, 2000) });
 		}
+	};
+	for (let spawned = 0; spawned < AUTO_SPAWNS_PER_RESOLVE; spawned++) {
+		await codeSummary();
 		const failure = state.phase === 'methodology_approval' ? await runner.methodologyCheck() : undefined;
 		const dispatch = repair ?? dispatchAt(state, failure);
 		repair = undefined;
@@ -623,6 +629,7 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 		}
 		state = await resolveCase(active, runAdapter, signal);
 	}
+	await codeSummary();
 	const skill = typeof state.owner === 'string' && runner.phaseSkill ? await runner.phaseSkill(state.owner) : undefined;
 	return { ...state, ...(receipts.length ? { fixed_steps: receipts } : {}), ...(stalled ? { worker_stalled: stalled } : {}), ...(skill ? { phase_skill: { name: state.owner, text: skill } } : {}) };
 }
