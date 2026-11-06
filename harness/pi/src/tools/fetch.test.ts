@@ -16,7 +16,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { fetchTool } from './fetch.ts';
+import { fetchFailure, fetchTool } from './fetch.ts';
 import { searchTool } from './search.ts';
 
 const PAGE_URL = 'https://registry.example.org/company/42';
@@ -519,4 +519,17 @@ test('the search and fetch seams are told a run is sensitive', async (t) => {
 	await searchTool(context).execute('s', { query: 'Acme filing' }, undefined, undefined, undefined as never);
 	await fetchTool(context).execute('f', { url: PAGE_URL }, undefined, undefined, undefined as never).catch(() => undefined);
 	assert.deepEqual((await readFile(seen, 'utf8')).trim().split('\n'), ['true', 'true']);
+});
+
+// Case 7656d7ba: 13 lanes recorded 'fetch failed: ╚═══╝', the last line of Playwright's install banner.
+test('a fetch failure names the cause, not the banner after it', () => {
+	const detail = [
+		'    raise rewrite_error(error, f"{parsed_st[\'apiName\']}: {error}") from None',
+		"playwright._impl._errors.Error: BrowserType.launch: Executable doesn't exist at /Users/x/Library/Caches/ms-playwright/chromium-1228/chrome",
+		'╔════════════════════════════════════════════════════════════╗',
+		'║ Looks like Playwright was just installed or updated.       ║',
+		'║     playwright install                                     ║',
+		'╚════════════════════════════════════════════════════════════╝',
+	].join('\n');
+	assert.match(fetchFailure(detail), /Executable doesn't exist at/);
 });

@@ -195,7 +195,7 @@ type ScrapeResult = { markdown?: string; source_url?: string; provider?: string;
 // cause comes first and short, and a URL that failed in this case is not
 // fetched again: once if a site blocked it, twice otherwise.
 export function fetchFailure(detail: string): string {
-	const lines = detail.split('\n').map((line) => line.trim()).filter((line) => line && !/Warning\b|warnings\.warn\(|^\[(?:FETCH|SCRAPE|COMPLETE|INIT)\]/.test(line));
+	const lines = detail.split('\n').map((line) => line.trim()).filter((line) => line && !/Warning\b|warnings\.warn\(|^\[(?:FETCH|SCRAPE|COMPLETE|INIT)\]|^[╔║╚]/.test(line));
 	const cause = lines.find((line) => line.startsWith('scrape failed:')) ?? lines.find((line) => line.startsWith('[ERROR]')) ?? lines.at(-1) ?? 'no output';
 	return cause.replace(/^scrape failed:\s*/, '').slice(0, 400);
 }

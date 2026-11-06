@@ -33,7 +33,7 @@ import { applyFixedRequestBody } from './provider-policy.ts';
 import { LANES_DIRECTORY } from './resume.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
 import { FileRefused, readTarget, writeConfined } from './tools/case-files.ts';
-import { fetchTool, webURL } from './tools/fetch.ts';
+import { SEAM_ENV, fetchTool, webURL } from './tools/fetch.ts';
 import { httpGetTool } from './tools/http-get.ts';
 import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
@@ -1053,7 +1053,9 @@ async function runTriage(options: RoundOptions): Promise<TriageOutcome> {
 	return { ok: true, message: result.stdout.trim().slice(-500) };
 }
 
-const BACKING = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER'];
+// Case 7656d7ba: without the seam's settings a lane's Playwright looked in the default
+// browser cache and every fetch failed. Its one key stays grant-only (laneEnv).
+const BACKING = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT', ...SEAM_ENV.filter((name) => name !== 'FIRECRAWL_API_KEY')];
 
 // What a lane's typed tools see: system basics, the search service, Tor
 // posture, and only the keys both its lane type declares and the approved plan
