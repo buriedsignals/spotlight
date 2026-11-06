@@ -21,6 +21,11 @@ type Row = Record<string, unknown>;
 type Lane = { route: string; keys: string[]; egress: string[] };
 
 export const DEFAULT_TOKEN_BUDGET = 800_000; // lanes.ts, research_checks.py
+// Case b75e83cb: the model wrote this number, the frozen role text's example, on both
+// topics, so the raised default never reached its lanes. On a local tier code lifts
+// exactly this value until the Methodology approval, so the page shows the real
+// number. Any other value is the plan's, and an approved number stands.
+const OLD_DEFAULT_TOKEN_BUDGET = 200_000;
 export const DEFAULT_BUDGET_USD = 1;
 // Where the pre-planning Navigator step leaves its outcome when no lookup ran.
 export const NAVIGATOR_PRE_STEP = 'research/navigator/pre-planning.json';
@@ -89,7 +94,7 @@ export function fillMethodology(caseDir: string, env: Record<string, string | un
 		if (topics.length) document.research_plan = { code_default: true, topics };
 	}
 	const research = object(document.research_plan);
-	if (research) fillResearchPlan(research, env);
+	if (research) fillResearchPlan(research, env, localTier(env) && !object(readJson(caseDir, 'data/orchestration.json')?.approvals)?.methodology);
 }
 
 // Case 2026-11-05-938c2a6a: with Research on, r3's methodology had no plan and
@@ -104,12 +109,12 @@ function researchOwed(caseDir: string, env: Record<string, string | undefined>):
 	return object(object(readJson(caseDir, 'data/methodology-review.json')?.items)?.['selection:research_plan'])?.final !== false;
 }
 
-function fillResearchPlan(plan: Row, env: Record<string, string | undefined>): void {
+function fillResearchPlan(plan: Row, env: Record<string, string | undefined>, liftOld: boolean): void {
 	const catalogue = lanes();
 	const topics = rows(plan.topics);
 	const used = new Set(topics.map((topic) => topic.topic_id).filter((id): id is string => typeof id === 'string'));
 	for (const topic of topics) {
-		if (topic.token_budget === undefined) topic.token_budget = DEFAULT_TOKEN_BUDGET;
+		if (topic.token_budget === undefined || (liftOld && topic.token_budget === OLD_DEFAULT_TOKEN_BUDGET)) topic.token_budget = DEFAULT_TOKEN_BUDGET;
 		if (topic.topic_id !== undefined || typeof topic.direction_id !== 'string' || typeof topic.lane_type !== 'string') continue;
 		const base = `${topic.direction_id}-${topic.lane_type}`;
 		let id = base;
