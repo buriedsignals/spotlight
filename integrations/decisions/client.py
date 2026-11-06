@@ -48,6 +48,9 @@ RETRYABLE = {429, 500, 502, 503, 529}
 OPENROUTER_HOST = "openrouter.ai"
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 ADAPTERS = ("openrouter-decisions",)
+# Engine loads the local decision model on demand, so its first answer can take a while.
+LOCAL_TIMEOUT_S = 90.0
+CLOUD_TIMEOUT_S = 30.0
 
 
 def is_openrouter(host: str) -> bool:
@@ -112,7 +115,7 @@ class JevOpenRouterProvider:
         *,
         model: str = DEFAULT_MODEL,
         sensitive: bool = False,
-        timeout: float = 30.0,
+        timeout: float | None = None,
         retries: int = 2,
         opener: Callable[..., Any] | None = None,
         url: str = DECISIONS_URL,
@@ -125,7 +128,7 @@ class JevOpenRouterProvider:
         self._openrouter = is_openrouter((urlparse(url).hostname or "").lower())
         self._key = api_key
         self.model = model
-        self._timeout = timeout
+        self._timeout = timeout if timeout is not None else (LOCAL_TIMEOUT_S if is_local(url) else CLOUD_TIMEOUT_S)
         self._retries = retries
         # A local request never goes through an ambient proxy.
         self._open = opener or (build_opener(ProxyHandler({})).open if is_local(url) else urlopen)

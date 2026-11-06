@@ -79,8 +79,27 @@ def require_gate(gate: str) -> None:
         raise OrchestrationError(f"unknown review gate: {gate}")
 
 
+# Tom, 2026-11-06: the journalist verifies, Spotlight does the work. A local tier's Investigation
+# page and report say so; render-report.py holds the same words.
+LOCAL_MODEL_WARNING = ("Spotlight's local model can get facts wrong, even on findings marked verified. "
+                       "Check every finding against its source before you use it.")
+
+
+def local_model_warning() -> str | None:
+    return None if (os.environ.get("SPOTLIGHT_MODEL_TIER", "").strip() or "12b") == "frontier" else LOCAL_MODEL_WARNING
+
+
+def investigation_stop(status: dict[str, Any]) -> bool:
+    """The case stopped during Investigation, whichever attempt ran out (case 2bd8d15c). The
+    Investigation page is its way out: it lists the failures and can send the case back."""
+    blocked = status.get("blocked")
+    return status.get("next_phase") == "blocked" and isinstance(blocked, dict) and blocked.get("phase") == "investigation"
+
+
 def pending_gate(status: dict[str, Any]) -> str | None:
     """The gate a member can decide now, from a resolver status."""
+    if investigation_stop(status):
+        return "investigation_gate"
     phase = status.get("next_phase")
     if phase == "methodology_approval":
         return "methodology"
@@ -574,6 +593,7 @@ def _research_plan_content(plan: object) -> tuple[dict[str, Any] | None, list[st
         )
     content = {
         "mode": _text(plan.get("mode"), 50),
+        "code_default": plan.get("code_default") is True,
         "round_budget_usd": _number(plan.get("round_budget_usd")),
         "case_budget_usd": _number(plan.get("case_budget_usd")),
         # The consent the approval records. A decided_by/decided_at in the
@@ -586,6 +606,32 @@ def _research_plan_content(plan: object) -> tuple[dict[str, Any] | None, list[st
         "topics": topics,
     }
     return content, left_out
+
+
+RESEARCH_PLAN_ITEM = "selection:research_plan"
+
+
+def _research_plan_items(case: Path) -> list[dict[str, Any]]:
+    """The drop for a research plan code added; the member's own route to any
+    other plan is a correction. Keeping it needs no mark: Research on means
+    Research runs."""
+    methodology = _read_case_json(case, "data/methodology.json")
+    plan = methodology.get("research_plan") if isinstance(methodology, dict) else None
+    if not (isinstance(plan, dict) and plan.get("code_default") is True):
+        return []
+    return [{"key": RESEARCH_PLAN_ITEM, "kind": "selection", "target": "research_plan", "suggested": True,
+             "suggestion_source": "Research switch", "suggestion_reason": "Research is on, so code added this plan.",
+             "required": False}]
+
+
+def _drop_research_plan(case: Path, data_descriptor: int) -> None:
+    """The member dropped the plan code added. The methodology changes, so the
+    page approves it without research; the saved mark keeps it dropped
+    (methodology-paperwork.ts)."""
+    methodology = _read_case_json(case, "data/methodology.json")
+    methodology.pop("research_plan", None)
+    content = (json.dumps(methodology, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    atomic_write_files(case, {"data/methodology.json": content}, data_descriptor=data_descriptor)
 
 
 def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
@@ -1201,7 +1247,10 @@ def _gate_parts(
 ) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
     if gate == "methodology":
         content, blocking = _methodology_content(case)
-        return content, blocking, []
+        saved = (review or {}).get("items", {}).get(RESEARCH_PLAN_ITEM)
+        if "research_plan" not in content and isinstance(saved, dict) and saved.get("final") is False:
+            content["research_dropped"] = True
+        return content, blocking, _research_plan_items(case)
     if gate == "research":
         return research_view.content(case, (review or {}).get("items", {}))
     if gate == "investigation_gate":
@@ -1356,6 +1405,8 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
         current[edit["key"]]["note"] = edit["value"]
     else:
         current[edit["key"]]["final"] = edit["value"]
+        if edit["key"] == RESEARCH_PLAN_ITEM and edit["value"] is False:
+            _drop_research_plan(case, data_descriptor)
     # Items the gate does not show right now (a flag of a deselected claim)
     # keep their saved decision for when they come back.
     stored = {key: value for key, value in review["items"].items() if key not in current}

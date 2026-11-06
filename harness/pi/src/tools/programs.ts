@@ -15,7 +15,7 @@ import { engineEnv } from '../case-search.ts';
 import { redactor } from '../log.ts';
 import { recordNavigatorLookup } from './navigator-receipts.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { FileRefused, oneMergeAtATime, readTarget, writeConfined, writeTarget } from './case-files.ts';
+import { FileRefused, oneMergeAtATime, readTarget, writeConfined, writeGateSummary, writeTarget } from './case-files.ts';
 import { NAVIGATOR_ENV } from './hosted-skill.ts';
 import { HARNESS_PROPOSALS, ToolArgumentError, RETURNED_CHARS, capped, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
@@ -473,6 +473,7 @@ export function fixedStepRunner(context: ToolContext, edition: string): FixedSte
 		return result.content.map((part) => ('text' in part ? part.text : '')).join('\n');
 	};
 	return async (step, signal) => {
+		if (step === 'summary') return writeGateSummary(context.caseDir);
 		if (step === 'provenance') {
 			if (!context.env.NOOSPHERE_C2PA_URL || !context.env.NOOSPHERE_C2PA_CREDENTIAL_ID) return run('provenance_manifest', { action: 'build' }, signal);
 			try {

@@ -97,6 +97,19 @@ class ResearchPage(unittest.TestCase):
     def items(self, view: dict) -> dict:
         return {item["key"]: item for item in view["items"]}
 
+    # Case 275a35b6: different claims of one source reach the page, and the page says they are one source.
+    def test_claims_of_one_source_all_reach_the_page_as_one_source(self) -> None:
+        case = self.build()
+        path = case / "data" / "leads.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        first = doc["leads"][0]
+        doc["leads"].append({**first, "lead": {**first["lead"], "lead_id": "same-page-2", "summary": "A second fact."}, "copies": []})
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        leads = {lead["lead_id"]: lead for lead in self.view(case)["content"]["leads"]}
+        self.assertEqual(leads["same-page-2"]["summary"], "A second fact.")
+        self.assertEqual((leads["same-page-2"]["same_source"], leads[first["lead"]["lead_id"]]["same_source"]), (1, 1))
+        self.assertEqual({lead["same_source"] for lead_id, lead in leads.items() if lead_id not in ("same-page-2", first["lead"]["lead_id"])} - {0}, set())
+
     def test_clues_come_first_in_rank_order_and_no_lead_is_buried(self) -> None:
         case = self.build()
         view = self.view(case)

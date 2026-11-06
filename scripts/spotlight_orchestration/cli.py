@@ -10,11 +10,14 @@ from . import (
     OrchestrationError,
     approve,
     continue_without_research,
+    resume_stopped_research,
+    repair_claim_links,
     decide_ingest,
     decide_report,
     issue_review_nonce,
     record_amendment,
     record_attempt,
+    reset_corrections,
     request_follow_up,
     resolve,
     review_edit,
@@ -65,7 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
     attempt = commands.add_parser("record-attempt")
     attempt.add_argument("kind", choices=RECORDABLE_ATTEMPTS)
     attempt.add_argument("--gap", required=True)
+    # Code's count of a failed correction: the resolver keeps reporting the real failures.
+    attempt.add_argument("--no-reopen", dest="reopen", action="store_false")
     add_case_boundary(attempt)
+    add_case_boundary(commands.add_parser("reset-corrections"))
+    add_case_boundary(commands.add_parser("resume-research"))
+    add_case_boundary(commands.add_parser("repair-claim-links"))
     research_round = commands.add_parser("start-research-round")
     add_case_boundary(research_round)
     amendment = commands.add_parser("record-amendment")
@@ -150,11 +158,17 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
             **boundary,
         )
     elif args.command == "record-attempt":
-        record_attempt(args.case_dir, args.kind, args.gap, **boundary)
+        record_attempt(args.case_dir, args.kind, args.gap, args.reopen, **boundary)
+    elif args.command == "reset-corrections":
+        reset_corrections(args.case_dir, **boundary)
     elif args.command == "start-research-round":
         start_research_round(args.case_dir, **boundary)
     elif args.command == "record-amendment":
         record_amendment(args.case_dir, build=args.build, **boundary)
+    elif args.command == "repair-claim-links":
+        repair_claim_links(args.case_dir, **boundary)
+    elif args.command == "resume-research":
+        resume_stopped_research(args.case_dir, **boundary)
     elif args.command == "continue-without-research":
         continue_without_research(args.case_dir, **boundary)
     elif args.command == "request-follow-up":

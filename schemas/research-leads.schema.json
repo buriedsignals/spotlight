@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Spotlight merged research leads",
-  "description": "data/leads.json: the leads of every approved lane, merged (D4) and keyed by canonical URL and content hash. Syndicated copies collapse into one entry; the same source twice is not corroboration. Each entry's lead is a copy of a lane's leads.jsonl line and validates against research-lead.schema.json. The Research gate receipt binds this file's hash.",
+  "description": "data/leads.json: the leads of every approved lane, merged (D4) and keyed by canonical URL and content hash. The same claim from one source collapses into one entry, different claims from it are separate entries sharing one merge_key, and the same source twice is not corroboration. Each entry's lead is a copy of a lane's leads.jsonl line and validates against research-lead.schema.json. The Research gate receipt binds this file's hash.",
   "schema_version": "1.0",
   "type": "object",
   "additionalProperties": false,
@@ -57,7 +57,7 @@
           },
           "copies": {
             "type": "array",
-            "description": "The other lane leads that collapsed into this one.",
+            "description": "The other lane leads with this same claim from this source. Different claims from one source are separate entries with one merge_key.",
             "items": {
               "type": "object",
               "additionalProperties": false,

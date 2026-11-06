@@ -49,6 +49,7 @@ async function setup(t: TestContext): Promise<Case> {
 		`#!${process.execPath}
 const args = process.argv.slice(2);
 if (args.includes('integrations.scraping')) {
+	require('node:fs').writeFileSync(${JSON.stringify(join(root, 'scrape-env.json'))}, JSON.stringify(process.env));
 	// A URL under /long/ is a full-length page, as most real pages are.
 	const markdown = ${JSON.stringify(PAGE)} + (String(args.at(-1)).includes('/long/') ? 'Filler text of a long page. '.repeat(800) : '') + (String(args.at(-1)).includes('/cjk/') ? '登记册中的公司记录。'.repeat(2500) : '');
 	process.stdout.write(JSON.stringify({ markdown, source_url: args.at(-1), provider: 'crawl4ai', status_code: 200, title: 'Company 42' }));
@@ -368,6 +369,18 @@ test('the round budget holds: no topic starts once it is spent, running ones fin
 	assert.deepEqual(JSON.parse(await readFile(join(space.caseDir, 'data/leads.json'), 'utf8')).left_out, ['b-web', 'c-web']);
 });
 
+// Case 96f45e2d, lane d2-web: 11 refused record_lead calls read as run, so nothing showed why it had no lead.
+test('a refused record_lead counts as failed, with its reason in lane.json', async (t) => {
+	const space = await setup(t);
+	const fakes = await servers(t, (request) => (turnOf(request) === 0 ? lead('s99', VERBATIM) : done));
+	await round(space, fakes, plan([topic('a-web', 'web')]));
+
+	const lane = await laneOf(space, 'a-web');
+	assert.equal(lane.calls.record_lead.run, 0, JSON.stringify(lane.calls));
+	assert.equal(lane.calls.record_lead.failed, 1);
+	assert.match(lane.calls.record_lead.last_error, /unknown source_id "s99"/);
+});
+
 // The e2e failure: each request re-sends the whole conversation, and a model
 // that reads several long pages per turn records nothing until it is told to.
 test('a 60,000-token lane reading long pages records its lead in a lead-only last turn and ends within its budget plus one answer', async (t) => {
@@ -523,6 +536,35 @@ test('an excerpt not in the captured source is returned to the lane once, then s
 	assert.match(results[1], /a-web-l1 returned/);
 	assert.match(results[2], /set aside/);
 	assert.match(results.at(-1)!, /refused: a-web-l3 is not a lead returned/, 'a lead is returned only once');
+});
+
+// Case 7656d7ba: all 13 lane fetches failed. A lane's fetch had no PLAYWRIGHT_BROWSERS_PATH, so the pack's
+// Playwright looked in the default cache, and lanes ended on search snippets with 0 clues.
+test('a lane\'s fetch gets the scraping seam\'s settings, and a key only when the plan grants it', async (t) => {
+	const space = await setup(t);
+	Object.assign(space.env, { PLAYWRIGHT_BROWSERS_PATH: '/pack/browsers', CRAWL4_AI_BASE_DIRECTORY: '/pack/crawl4ai', FIRECRAWL_API_KEY: 'fc-secret' });
+	const fakes = await servers(t, scripted({ 'a-web': [call('fetch', { url: PAGE_URL }), lead('s1', VERBATIM)] }));
+	const summary = await round(space, fakes, plan([topic('a-web')]));
+
+	assert.deepEqual(summary.failed, []);
+	const seen = JSON.parse(await readFile(join(space.root, 'scrape-env.json'), 'utf8')) as Record<string, string>;
+	assert.equal(seen.PLAYWRIGHT_BROWSERS_PATH, '/pack/browsers');
+	assert.equal(seen.CRAWL4_AI_BASE_DIRECTORY, '/pack/crawl4ai');
+	assert.equal(seen.FIRECRAWL_API_KEY, undefined, 'no key without a grant');
+});
+
+// `always` means every page goes through Firecrawl, so a lane needs the key without a plan grant.
+test('on Firecrawl always a lane gets the key with no grant; backup and off still need one or get none', async (t) => {
+	for (const [mode, gets] of [['always', true], ['backup', false], ['off', false]] as const) {
+		const space = await setup(t);
+		Object.assign(space.env, { FIRECRAWL_API_KEY: 'fc-secret' });
+		const config = join(space.root, 'install-config.json');
+		await writeFile(config, JSON.stringify({ firecrawl_mode: mode }));
+		const fakes = await servers(t, scripted({ 'a-web': [call('fetch', { url: PAGE_URL }), lead('s1', VERBATIM)] }));
+		await round(space, fakes, plan([topic('a-web')]), { SPOTLIGHT_CONFIG: config });
+		const seen = JSON.parse(await readFile(join(space.root, 'scrape-env.json'), 'utf8')) as Record<string, string>;
+		assert.equal(seen.FIRECRAWL_API_KEY, gets ? 'fc-secret' : undefined, mode);
+	}
 });
 
 test('a lane cannot write outside its folder', async (t) => {

@@ -8,8 +8,8 @@ A config that cannot be read counts as sensitive, because a wrong "no" would
 send a query out.
 
 ``firecrawl_mode`` in the install config: ``backup`` (default) uses Firecrawl
-when SearXNG finds nothing, ``always`` joins both on every search, ``off`` never
-uses it.
+when SearXNG finds nothing or Crawl4AI is blocked, ``always`` joins both on every
+search and reads pages with Firecrawl first, ``off`` never uses it.
 """
 from __future__ import annotations
 

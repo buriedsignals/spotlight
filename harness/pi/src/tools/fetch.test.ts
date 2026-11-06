@@ -16,7 +16,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { fetchTool } from './fetch.ts';
+import { fetchFailure, fetchTool, takeFirecrawlNotice } from './fetch.ts';
 import { searchTool } from './search.ts';
 
 const PAGE_URL = 'https://registry.example.org/company/42';
@@ -118,11 +118,11 @@ test('on the local tier fetch returns RLM leads, keeps the raw page beside them,
 	assert.equal(result.saved_to, 'research/company-42.md');
 	assert.equal(result.raw_path, 'research/company-42.md.raw');
 	assert.match(String(result.leads), /Ada Lovelace is President of Analytical Engines SA since 2019\./);
-	assert.match(String(result.leads), /lines 5-5/);
+	assert.match(String(result.leads), /lines 2-7/, 'the pick keeps three lines either side, up to the end of the inspected page');
 	assert.deepEqual(result.inspected_lines, { start: 1, end: 7, total: 7 });
 	assert.equal(result.coverage_complete, true);
-	assert.deepEqual(result.selections, [{ path: 'research/company-42.md.raw', line_start: 5, line_end: 5 }]);
-	assert.equal(JSON.stringify(result).includes('Footer boilerplate'), false, 'the raw page must not reach the agent');
+	assert.deepEqual(result.selections, [{ path: 'research/company-42.md.raw', line_start: 2, line_end: 7 }]);
+	assert.equal(String(result.leads).includes('# Company 42'), false, 'the raw page must not reach the agent: line 1 is outside the widened pick');
 
 	const leadsBytes = await readFile(join(caseDir, 'research/company-42.md'));
 	const rawBytes = await readFile(join(caseDir, 'research/company-42.md.raw'));
@@ -201,9 +201,89 @@ test('a later chunk cannot select lines of an earlier chunk, and overlapping ran
 	}
 });
 
+// qwen real launch (ab7e6c04): the helper picked the title line and not the name two lines above it, so the page was refetched seven times.
+test('a picked line keeps three lines either side, so a role and its holder arrive together, within the inspected range', async (t) => {
+	const page = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n');
+	const back = await standInRLM(t, 200, () => JSON.stringify({ ranges: [{ start: 10, end: 10 }, { start: 2, end: 2 }] }));
+	const { caseDir, call } = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: back.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own' }, page);
+	const result = await call({ url: PAGE_URL, save_as: 'research/people.md' });
+	assert.equal(result.distilled, true, String(result.rlm_error));
+	assert.deepEqual(result.selections, [{ path: 'research/people.md.raw', line_start: 1, line_end: 5 }, { path: 'research/people.md.raw', line_start: 7, line_end: 13 }]);
+	assert.match(String(result.leads), /\[raw lines 7-13\]\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13/);
+	assert.ok(existsSync(join(caseDir, 'research/people.md.raw')));
+});
+
+// gate9 case-ab7e6c04 and u9mac-s856: the helper never picked the line holding the role, so no lead held it.
+test('an investigator\'s leads add the raw lines that match its direction, with their context, on the local tiers only', async (t) => {
+	const page = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`);
+	page[19] = '##### isabela';
+	page[21] = 'Executive Director of the Tor Project.';
+	page[34] = 'Director of nothing.';
+	const plan = JSON.stringify({ investigation_plan: [
+		{ direction: 'Identify current Executive Director', questions: ['Who is the current Executive Director of the Tor Project?'], direction_id: 'd1' },
+		{ direction: 'Map the funding', questions: ['Which grants paid for relays?'], direction_id: 'd2' },
+	] });
+	const run = async (env: Record<string, string>, ranges: unknown[] = [{ start: 2, end: 2 }]) => {
+		const back = await standInRLM(t, 200, () => JSON.stringify({ ranges }));
+		const { caseDir, call } = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: back.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own', SPOTLIGHT_ROLE: 'investigator', SPOTLIGHT_DIRECTION: 'D1', ...env }, page.join('\n'));
+		await mkdir(join(caseDir, 'data'));
+		await writeFile(join(caseDir, 'data', 'methodology.json'), plan);
+		return call({ url: PAGE_URL, save_as: 'research/people.md' });
+	};
+	const added = await run({});
+	assert.equal(added.distilled, true, String(added.rlm_error));
+	assert.deepEqual(added.selections, [{ path: 'research/people.md.raw', line_start: 1, line_end: 5 }, { path: 'research/people.md.raw', line_start: 19, line_end: 25 }]);
+	assert.match(String(added.leads), /##### isabela\nline 21\nExecutive Director of the Tor Project\./);
+	assert.doesNotMatch(String(added.leads), /Director of nothing/, 'one term alone is not a match');
+	// The helper answered with nothing: the matching lines still make a lead.
+	const rescued = await run({}, []);
+	assert.deepEqual(rescued.selections, [{ path: 'research/people.md.raw', line_start: 19, line_end: 25 }]);
+	// Another direction's terms, the fact-checker and frontier add nothing.
+	assert.deepEqual((await run({ SPOTLIGHT_DIRECTION: 'D2' })).selections, [{ path: 'research/people.md.raw', line_start: 1, line_end: 5 }]);
+	assert.deepEqual((await run({ SPOTLIGHT_ROLE: 'fact-checker' })).selections, [{ path: 'research/fc-people.md.raw', line_start: 1, line_end: 5 }]);
+	assert.deepEqual((await run({ SPOTLIGHT_MODEL_TIER: 'frontier' })).selections, [{ path: 'research/people.md.raw', line_start: 2, line_end: 2 }]);
+});
+
+// gate9 case-ab7e6c04: an investigator fetched the people page 7 and 6 times under different names.
+test('an investigator\'s second fetch of a URL returns the capture it already has, on the local tiers only', async (t) => {
+	const dataDir = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-reuse-')));
+	t.after(() => rm(dataDir, { recursive: true, force: true }));
+	const setup = async (env: Record<string, string> = {}) => {
+		const back = await standInRLM(t);
+		return { back, ...(await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: back.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own', SPOTLIGHT_ROLE: 'investigator', SPOTLIGHT_HARNESS_DATA: join(dataDir, String(Math.random())), ...env })) };
+	};
+	const { back, caseDir, call } = await setup();
+	const first = await call({ url: PAGE_URL, save_as: 'research/a.md' });
+	const again = await call({ url: `${PAGE_URL}#board`, save_as: 'research/b.md' });
+	assert.equal(back.requests.length, 1, 'the helper is not asked again');
+	assert.equal(again.reused, true);
+	assert.equal(again.saved_to, 'research/a.md');
+	assert.equal(again.raw_path, first.raw_path);
+	assert.deepEqual(again.selections, first.selections);
+	assert.equal(again.leads, first.leads);
+	assert.equal(again.fetched_at, first.fetched_at);
+	assert.match(String(again.note), /already fetched.*research\/a\.md/i);
+	assert.ok(!existsSync(join(caseDir, 'research/b.md')) && !existsSync(join(caseDir, 'research/b.md.raw')));
+	// A capture changed since it was fetched is no capture: the page is fetched afresh.
+	await writeFile(join(caseDir, 'research/a.md.raw'), 'edited');
+	const fresh = await call({ url: PAGE_URL, save_as: 'research/c.md' });
+	assert.equal(fresh.reused, undefined);
+	assert.equal(fresh.saved_to, 'research/c.md');
+	assert.equal(back.requests.length, 2);
+	// The fact-checker's capture stays its own acquisition, and frontier fetches as before.
+	for (const env of [{ SPOTLIGHT_ROLE: 'fact-checker' }, { SPOTLIGHT_MODEL_TIER: 'frontier' }]) {
+		const other = await setup(env);
+		await other.call({ url: PAGE_URL, save_as: 'research/a.md' });
+		assert.equal((await other.call({ url: PAGE_URL, save_as: 'research/b.md' })).reused, undefined);
+		assert.equal(other.back.requests.length, 2);
+	}
+});
+
 test('bounded chunks expose late exact passages and disclose uninspected tail', async (t) => {
 	for (const rangeCount of [1, 14]) await t.test(`${rangeCount} exact ranges per selected chunk`, async (t) => {
+		// Each pick keeps three lines below it (the chunk's end bounds it above); picks that touch merge into one range.
 		const width = rangeCount === 1 ? 36 : 1;
+		const widened = rangeCount * width + 3;
 		const page = Array.from({length: 900}, (_, i) => `line ${i + 1} ${'x'.repeat(150)}`).join('\n');
 		const rlm = await standInRLM(t, 200, request => {
 			const numbers = [...request.messages[0].content.matchAll(/^(\d+): /gm)].map(m => Number(m[1]));
@@ -219,11 +299,11 @@ test('bounded chunks expose late exact passages and disclose uninspected tail', 
 		assert.equal(result.coverage_complete, false);
 		assert.match(String(result.coverage_note), /not inspected/);
 		const selections = result.selections as Array<{line_start:number;line_end:number;path:string}>;
-		assert.equal(selections.length,2*rangeCount);
+		assert.equal(selections.length,2,'one merged range per selected chunk');
 		assert.ok(String(result.leads).length < 30_000);
 		const rawLines = (await readFile(join(caseDir,'research/long.md.raw'),'utf8')).split('\n');
 		for (const selection of selections) {
-			assert.equal(selection.line_end - selection.line_start + 1, width);
+			assert.equal(selection.line_end - selection.line_start + 1, widened);
 			assert.ok(String(result.leads).includes(rawLines.slice(selection.line_start-1,selection.line_end).join('\n')));
 		}
 		assert.ok(selections[0].line_start > 160,'selection after an empty first chunk reaches beyond the old input prefix');
@@ -251,7 +331,7 @@ test('CRLF source selections use the same line numbers as source anchors', async
 	const result = await call({url:PAGE_URL,save_as:'research/crlf.md'});
 	assert.equal(result.distilled,true);
 	assert.deepEqual(result.inspected_lines,{start:1,end:3,total:3});
-	assert.deepEqual(result.selections,[{path:'research/crlf.md.raw',line_start:3,line_end:3}]);
+	assert.deepEqual(result.selections,[{path:'research/crlf.md.raw',line_start:1,line_end:3}]);
 	assert.match(String(result.leads), /Café filed the report\./);
 	assert.deepEqual(validatorErrors(caseDir,'research/crlf.md.raw',3,3,'Café filed the report.'),[]);
 	assert.equal(await readFile(join(caseDir,'research/crlf.md.raw'),'utf8'),page);
@@ -439,4 +519,49 @@ test('the search and fetch seams are told a run is sensitive', async (t) => {
 	await searchTool(context).execute('s', { query: 'Acme filing' }, undefined, undefined, undefined as never);
 	await fetchTool(context).execute('f', { url: PAGE_URL }, undefined, undefined, undefined as never).catch(() => undefined);
 	assert.deepEqual((await readFile(seen, 'utf8')).trim().split('\n'), ['true', 'true']);
+});
+
+// Case 7656d7ba: 13 lanes recorded 'fetch failed: ╚═══╝', the last line of Playwright's install banner.
+test('a fetch failure names the cause, not the banner after it', () => {
+	const detail = [
+		'    raise rewrite_error(error, f"{parsed_st[\'apiName\']}: {error}") from None',
+		"playwright._impl._errors.Error: BrowserType.launch: Executable doesn't exist at /Users/x/Library/Caches/ms-playwright/chromium-1228/chrome",
+		'╔════════════════════════════════════════════════════════════╗',
+		'║ Looks like Playwright was just installed or updated.       ║',
+		'║     playwright install                                     ║',
+		'╚════════════════════════════════════════════════════════════╝',
+	].join('\n');
+	assert.match(fetchFailure(detail), /Executable doesn't exist at/);
+});
+
+// Case 3f58f43b: a rejected key failed every URL. One failure stops the case's fetches, and a new key or mode lifts it.
+test('a rejected Firecrawl key stops further fetches at once, the member hears it once, and a new key or Backup lifts it', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-fc-key-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	const runs = join(root, 'runs.txt');
+	const refusal = 'scrape failed: Firecrawl rejected its key. Replace the Firecrawl key in Indicator Lab, or set Firecrawl to Backup only. https://a.example.com/1 was not read directly, so your IP stayed away from it.';
+	const seam = join(root, 'python');
+	await writeFile(seam, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(runs)}, 'x');\nprocess.stderr.write(${JSON.stringify(refusal)});\nprocess.exit(1);\n`);
+	await chmod(seam, 0o755);
+	const configPath = join(root, 'config.json');
+	await writeFile(configPath, JSON.stringify({ firecrawl_mode: 'always' }));
+	const env = { PATH: process.env.PATH, HOME: root, SPOTLIGHT_ANONYMIZE_FETCH: 'true', SPOTLIGHT_HARNESS_DATA: join(root, 'data'), FIRECRAWL_API_KEY: 'old-key' };
+	const fetchWith = (key: string, url: string) => (fetchTool({ caseDir, writeRoot: caseDir, python: seam, configPath, env: { ...env, FIRECRAWL_API_KEY: key } }) as ToolDefinition).execute('call', { url, save_as: 'page.md' }, undefined, undefined, undefined as never);
+
+	await assert.rejects(fetchWith('old-key', 'https://a.example.com/1'), /^Error: fetch failed: Firecrawl rejected its key\. Replace the Firecrawl key in Indicator Lab/);
+	await assert.rejects(fetchWith('old-key', 'https://b.example.com/2'), /Firecrawl rejected its key/);
+	await assert.rejects(fetchWith('old-key', 'https://c.example.com/3'), /Firecrawl rejected its key/);
+	assert.equal(await readFile(runs, 'utf8'), 'x', 'one seam run, not one per URL');
+
+	const notice = takeFirecrawlNotice({ caseDir, env });
+	assert.match(notice!, /^Firecrawl rejected its key\. Replace the Firecrawl key in Indicator Lab, or set Firecrawl to Backup only\. No page was read directly/);
+	assert.equal(takeFirecrawlNotice({ caseDir, env }), undefined, 'once');
+
+	await assert.rejects(fetchWith('new-key', 'https://b.example.com/2'), /Firecrawl rejected its key/);
+	assert.equal(await readFile(runs, 'utf8'), 'xx', 'a new key is tried');
+	await writeFile(configPath, JSON.stringify({ firecrawl_mode: 'backup' }));
+	await assert.rejects(fetchWith('new-key', 'https://d.example.com/4'), /Firecrawl rejected its key/);
+	assert.equal(await readFile(runs, 'utf8'), 'xxx', 'Backup is tried too');
 });

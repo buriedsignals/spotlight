@@ -1,0 +1,211 @@
+{
+ "draft": {
+  "schema_version": "1.0",
+  "title": "Tor Project Leadership and Transparency",
+  "deck": "An examination of the Tor Project's board of directors and organizational transparency.",
+  "framing_finding_ids": [
+   "D2-F1",
+   "D2-F2"
+  ],
+  "finding_order": [
+   "D1-F1",
+   "D1-F2",
+   "D1-F3",
+   "D1-F4",
+   "D1-F5",
+   "D1-F6",
+   "D1-F7",
+   "D1-F8",
+   "D1-F9",
+   "D2-F1",
+   "D2-F2",
+   "D2-F4"
+  ],
+  "finding_treatments": [
+   {
+    "finding_id": "D1-F1",
+    "headline": "Isabela leads the Tor Project",
+    "summary": "Isabela serves as the Executive Director of the Tor Project.",
+    "why_it_matters": "Establishes the current executive leadership.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q1"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F2",
+    "headline": "Alissa Cooper leads the Library Freedom Project",
+    "summary": "Alissa Cooper is on the board of directors for the Tor Project and leads the Library Freedom Project.",
+    "why_it_matters": "Highlights the project's board-level oversight.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q2"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F3",
+    "headline": "Christian Kaufmann is a developer and board member",
+    "summary": "Christian Kaufmann is a developer on the anti-censorship team, working on pluggable transport and BridgeDB, and is on the board of directors.",
+    "why_it_matters": "Shows technical leadership within the board.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q3"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F4",
+    "headline": "Dees Chinniah focuses on Tor development",
+    "summary": "Dees Chinniah is a member of the Network Team and the Tor Project board of directors.",
+    "why_it_matters": "Demonstrates board involvement in core development.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q4"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F5",
+    "headline": "Esra'a Al Shafei coordinates localization",
+    "summary": "Esra'a Al Shafei coordinates the localization of Tor software and is on the board of directors.",
+    "why_it_matters": "Identifies a key board role in community outreach.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q5"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F6",
+    "headline": "Kendra Albert is a lawyer and board member",
+    "summary": "Kendra Albert is a public interest technology lawyer on the Tor Project board of directors.",
+    "why_it_matters": "Brings legal expertise to the board.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q6"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F7",
+    "headline": "Maria leads OONI partnerships",
+    "summary": "Maria is on the Board of Directors for the Tor Project and manages OONI's Partnership Program.",
+    "why_it_matters": "Illustrates board involvement in research and partnerships.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q7"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F8",
+    "headline": "Matt Lav handles financial coordination",
+    "summary": "Matt Lav serves as the Tor Project's Financial Coordinator and is on the board.",
+    "why_it_matters": "Confirms board oversight of financial operations.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q8"
+     }
+    ]
+   },
+   {
+    "finding_id": "D1-F9",
+    "headline": "Nathan Freitas is a Guardian Project founder and Tor director",
+    "summary": "Nathan Freitas is the Founder of the Guardian Project and a director at the Tor Project.",
+    "why_it_matters": "Links external security initiatives to Tor leadership.",
+    "quote_selections": [
+     {
+      "expression_id": "D1-Q9"
+     }
+    ]
+   },
+   {
+    "finding_id": "D2-F1",
+    "headline": "Board commits to best leadership",
+    "summary": "The Tor Project's board of directors states it is their duty to ensure the organization has the best possible leadership.",
+    "why_it_matters": "Provides the board's stated mission regarding leadership quality.",
+    "quote_selections": [
+     {
+      "expression_id": "D2-Q1"
+     }
+    ]
+   },
+   {
+    "finding_id": "D2-F2",
+    "headline": "Tor Project is a 501(c)(3) nonprofit",
+    "summary": "The Tor Project, Inc. is a US 501(c)(3) nonprofit organization committed to transparency.",
+    "why_it_matters": "Defines the legal and operational status of the organization.",
+    "quote_selections": [
+     {
+      "expression_id": "D2-Q2"
+     }
+    ]
+   },
+   {
+    "finding_id": "D2-F4",
+    "headline": "Financial records show specific liabilities and compensation",
+    "summary": "Tor Project records show total liabilities of $178,409 and net assets of $2,227,515, with specific compensation listed for key officers.",
+    "why_it_matters": "Provides concrete financial transparency data.",
+    "quote_selections": [
+     {
+      "expression_id": "D2-Q4"
+     }
+    ]
+   }
+  ],
+  "caveats": [],
+  "next_steps": []
+ },
+ "findings": [
+  {
+   "id": "D1-F1",
+   "claim": "isabela is the Executive Director of the Tor Project."
+  },
+  {
+   "id": "D1-F2",
+   "claim": "Alissa Cooper is on the board of directors for the Tor Project."
+  },
+  {
+   "id": "D1-F3",
+   "claim": "Christian Kaufmann is on the board of directors for the Tor Project."
+  },
+  {
+   "id": "D1-F4",
+   "claim": "Dees Chinniah is on the board of directors for the Tor Project."
+  },
+  {
+   "id": "D1-F5",
+   "claim": "Esra'a Al Shafei is on the board of directors for the Tor Project."
+  },
+  {
+   "id": "D1-F6",
+   "claim": "Kendra Albert is on the board of directors for the Tor Project."
+  },
+  {
+   "id": "D1-F7",
+   "claim": "Maria is on the Board of Directors for the Tor Project."
+  },
+  {
+   "id": "D1-F8",
+   "claim": "mattlav is the Financial Coordinator of the Tor Project."
+  },
+  {
+   "id": "D1-F9",
+   "claim": "Nathan Freitas is the Founder of the Guardian Project and Director of Technology at Tibet Action Institute."
+  },
+  {
+   "id": "D2-F1",
+   "claim": "The Tor Project's board of directors has included prominent figures in privacy, security, and human rights, such as Matt Blaze, Cindy Cohn, Bruce Schneier, and Roger Dingledine."
+  },
+  {
+   "id": "D2-F2",
+   "claim": "The Tor Project, Inc. is a US 501(c)(3) nonprofit organization that provides official documentation for its governance, including policies and legal filings."
+  },
+  {
+   "id": "D2-F4",
+   "claim": "IRS Form 990 filings (e.g., for 2018) identify key Tor Project officers and board members, including Roger Dingledine (President), Nick Mathewson (Vice President), and board directors such as Matt Blaze, Cindy Cohn, and Bruce Schneier."
+  }
+ ]
+}

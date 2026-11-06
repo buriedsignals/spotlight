@@ -18,7 +18,7 @@ const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 // decision and the ingest request or decline come from the review page.
 export const MODEL_OPERATIONS = ['recordAttempt', 'startResearchRound', 'recordAmendment', 'continueWithoutResearch'] as const;
 // The seals are mechanical: spotlight_resolve applies them at their fixed points.
-const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest'] as const;
+const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest', 'resetCorrections', 'countCorrection', 'resumeResearch', 'repairClaimLinks'] as const;
 type ModelOperation = (typeof MODEL_OPERATIONS)[number] | (typeof CODE_OPERATIONS)[number];
 type Payload = Record<string, unknown>;
 
@@ -115,6 +115,16 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 			return ['record-attempt', stringField(payload, 'kind'), '--gap', stringField(payload, 'gap'), ...boundary];
 		case 'sealInvestigationGate':
 			return ['seal-investigation-gate', ...boundary];
+		case 'resetCorrections':
+			return ['reset-corrections', ...boundary];
+		case 'repairClaimLinks':
+			return ['repair-claim-links', ...boundary];
+		case 'resumeResearch':
+			return ['resume-research', ...boundary];
+		// No open cycle: it would replace the resolver's real failures with "investigator update", and
+		// the fact-checker would never run (case 2bd8d15c's order: correction, verdicts, correction).
+		case 'countCorrection':
+			return ['record-attempt', 'structural-correction', '--gap', stringField(payload, 'gap'), '--no-reopen', ...boundary];
 		// Both read case files the model wrote and are checked in code: the
 		// round against D1, the amendment against the member's marks (D8).
 		case 'startResearchRound':
@@ -169,6 +179,11 @@ export const NEXT_INVESTIGATOR = 'Next: spawn the investigator in EXECUTION mode
 // invoke_skill), then brief-directions.txt written without asking the member.
 export const NEXT_BRIEF =
 	"Next: restate the lead in one sentence, propose the direction in plain words, ask the member to approve it (with up to three clarifying questions if scope, angle or priority is unclear), and end your turn (phase-methodology, Brief steps 2 to 5). Write brief-directions.txt with write_file only after the member has answered and approved (step 6). You need not read case or skill files first, and no investigator runs before the brief.";
+// Case 7656d7ba: the member answered and approved in one message, resolve repeated the
+// step above, and the model asked its questions again. Once the member has replied, the
+// next move depends on what they said, so the step says so. Local tiers only.
+export const NEXT_BRIEF_ANSWERED =
+	"Next: the member has replied to your proposal. If they approved in any words, even alongside answers: Write brief-directions.txt now with write_file, with their answers folded into the direction (step 6). If they answered without approving, restate the direction with their answers in it, do not repeat a question they answered, tell them to reply 'approve', and end your turn.";
 export const NEXT_PLANNING = 'Next: spawn the investigator with MODE: PLANNING to write data/methodology.json (phase-methodology, Methodology).';
 // While the plan fails its own check (fix6 b).
 export const NEXT_METHODOLOGY_FAILING =
@@ -234,7 +249,11 @@ export function batchDraftError(caseDir: string): string | undefined {
 		return undefined;
 	}
 }
-export const NEXT_BLOCKED = 'Next: the case is blocked (blocked says why). Tell the member in plain words why, and what they can do, then end your turn.';
+// Case 2bd8d15c: every stop has one way out, open_review (review.ts stopExit).
+export const NEXT_INVESTIGATION_STOP = 'Next: call open_review so the member can see what failed and send the case back to Investigation with a note, then end your turn.';
+export const NEXT_AMENDMENT_STOP = 'Next: call open_review so the member can change their marks on the Research page, then end your turn.';
+// Not a page, and only on the member's word: a round run unasked would just fail again.
+export const NEXT_RESEARCH_LANE_STOP = 'Next: tell the member what failed (blocked.gap) and end your turn. Once the member says it is fixed or asks to try again, call open_review: it runs the research again.';
 export const NEXT_COMPLETE = 'Next: the case is complete. Tell the member, and end your turn.';
 export const NEXT_UNKNOWN = 'Next: call spotlight_resolve again; if the case does not move, tell the member what it reports and end your turn.';
 export const NEXT_METHODOLOGY_APPROVAL =
@@ -271,6 +290,8 @@ export function draftWritten(caseDir: string): boolean {
 export function nextAction(resolved: Record<string, unknown>, onDisk: (relative: string) => boolean, caseDir?: string): string | undefined {
 	const missing = Array.isArray(resolved.missing) ? resolved.missing.map(String) : [];
 	const stepFailed = Array.isArray(resolved.fixed_steps) && (resolved.fixed_steps as Array<{ ok?: unknown }>).some((receipt) => receipt?.ok === false);
+	// A refused worker on the way to the gate is no failed summary (case 938c2a6a).
+	const summaryFailed = Array.isArray(resolved.fixed_steps) && (resolved.fixed_steps as Array<{ step?: unknown; ok?: unknown }>).some((receipt) => receipt?.step === 'summary' && receipt.ok === false);
 	if (resolved.worker_stalled && typeof resolved.worker_stalled === 'object') return nextWorkerStalled(resolved.worker_stalled as { step?: unknown; attempts?: unknown });
 	switch (resolved.phase) {
 		case 'brief':
@@ -292,7 +313,7 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		case 'research_approval':
 			return NEXT_RESEARCH_APPROVAL;
 		case 'investigation_gate_approval':
-			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : NEXT_GATE_OWED;
+			return missing.length === 0 || (missing.length === 1 && missing[0] === 'Investigation gate approval') ? NEXT_GATE_APPROVAL : summaryFailed && localTier(process.env) ? nextFixedStep('summary', true) : NEXT_GATE_OWED;
 		case 'investigation_gate_finalization':
 			return nextFixedStep(String((resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at ?? missing[0] ?? ''), stepFailed);
 		case 'report':
@@ -315,7 +336,11 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 			return onDisk('data/knowledge-batch-draft.json') ? NEXT_INGEST_APPROVAL : NEXT_INGEST_ANALYST;
 		}
 		case 'blocked':
-			return NEXT_BLOCKED;
+			switch ((resolved.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt) {
+				case 'research-lane': return NEXT_RESEARCH_LANE_STOP;
+				case 'amendment-correction': return NEXT_AMENDMENT_STOP;
+				default: return NEXT_INVESTIGATION_STOP;
+			}
 		case 'complete':
 			return NEXT_COMPLETE;
 		case 'investigation':
@@ -375,14 +400,19 @@ function jsonResult(value: unknown) {
 // and both seals only when the resolver's resume point named them. Code now
 // runs each at that point. A step that fails stops the run with its output;
 // nothing is retried here.
-export type FixedStep = 'provenance' | 'review' | 'wiki' | 'seal_gate' | 'seal_ingest';
+export type FixedStep = 'claim_links' | 'summary' | 'provenance' | 'review' | 'wiki' | 'seal_gate' | 'seal_ingest';
 // Runs one program step; undefined when the step does not apply here (the
 // newsroom edition has no wiki write).
 export type FixedStepRunner = (step: FixedStep, signal?: AbortSignal) => Promise<string | undefined>;
 
 export function fixedStepAt(resolved: Record<string, unknown>): FixedStep | undefined {
 	const gate = (resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at;
+	// Case 2bd8d15c: code has every part of these links, so no correction is sent for them.
+	if (resolved.repairable_claim_links && localTier(process.env)) return 'claim_links';
 	const ingest = resolved.ingest as { resume_at?: unknown; state?: unknown } | undefined;
+	// A local tier's gate summaries are code's (case-files.ts writeGateSummary); when
+	// the step fails the analyst dispatch below still runs, as on frontier.
+	if (resolved.phase === 'investigation_gate_approval' && localTier(process.env) && Array.isArray(resolved.missing) && resolved.missing.some((item) => /summary/.test(String(item)))) return 'summary';
 	if (resolved.phase === 'investigation_gate_finalization') return ({ provenance: 'provenance', review: 'review', seal: 'seal_gate' } as Record<string, FixedStep>)[String(gate)];
 	if (resolved.phase === 'ingest' && ingest?.resume_at === 'ingest' && ingest.state === 'requested') return 'wiki';
 	if (resolved.phase === 'ingest' && ingest?.resume_at === 'seal' && ingest.state === 'completed') return 'seal_ingest';
@@ -397,7 +427,9 @@ async function runFixedSteps(resolved: Record<string, unknown>, active: ActiveCa
 	for (let step = fixedStepAt(state); step && receipts.length < 6; step = fixedStepAt(state)) {
 		let output: string | undefined;
 		try {
-			if (step === 'seal_gate' || step === 'seal_ingest') {
+			if (step === 'claim_links') {
+				output = await runAdapter(transitionArguments('repairClaimLinks', {}, active, role, true));
+			} else if (step === 'seal_gate' || step === 'seal_ingest') {
 				output = await runAdapter(step === 'seal_gate' ? transitionArguments('sealInvestigationGate', {}, active, role, true) : transitionArguments('decideIngest', { decision: 'completed' }, active, role, true));
 			} else {
 				output = await runStep(step, signal);
@@ -433,6 +465,8 @@ export type DispatchRunner = {
 	// Consecutive watchdog-stopped dispatches of one task (STALLED_DISPATCHES);
 	// the orchestrator's extension owns it and clears it on a member turn.
 	stall?: DispatchStall;
+	// Member messages in this chat so far (the extension's memberTurn).
+	memberTurns?: () => number;
 };
 export type DispatchStall = { key: string; count: number; digest: string; repaired?: Set<string> };
 
@@ -512,6 +546,11 @@ export function dispatchAt(resolved: Record<string, unknown>, methodologyFailure
 		default:
 			return undefined;
 	}
+	// Case 2bd8d15c: 25 findings waited on a link fault while correctors looped. A verdict
+	// needs only the finding's evidence refs, so the fact-checker goes first on a local tier,
+	// a send-back included: its task is code's, and the follow-up stays open after it.
+	const unverdicted = [...missing, ...(Array.isArray(resolved.unverdicted) ? resolved.unverdicted.map(String) : [])];
+	if (localTier(process.env) && unverdicted.some((item) => /\[fact-checker\]: finding \S+ has no fact-check verdict/.test(item))) return { agent: 'fact-checker', task: '', step: 'fact-checker' };
 	// A member's follow-up or a recorded cycle gap carries instructions code
 	// does not route: that cycle stays the model's (review-fix4 A1, A2).
 	if (resolved.follow_up || resolved.open_cycle) return undefined;
@@ -565,7 +604,7 @@ export function receiptOutput(answer: string): string {
 // Runs the dispatches the resolved state reaches, resolving after each. A
 // spawn the launcher refuses or a worker that fails stops the loop with its
 // receipt; the model then sees it and the state.
-async function runDispatches(resolved: Record<string, unknown>, active: ActiveCase, runAdapter: AdapterRunner, runner: DispatchRunner, signal?: AbortSignal): Promise<Record<string, unknown>> {
+async function runDispatches(resolved: Record<string, unknown>, active: ActiveCase, runAdapter: AdapterRunner, runner: DispatchRunner, signal?: AbortSignal, runStep?: FixedStepRunner): Promise<Record<string, unknown>> {
 	const receipts: Array<{ step: string; ok: boolean; output: string }> = Array.isArray(resolved.fixed_steps) ? [...(resolved.fixed_steps as never[])] : [];
 	let state = resolved;
 	let previous = '';
@@ -575,7 +614,23 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 	const repaired = runner.stall ? (runner.stall.repaired ??= new Set<string>()) : new Set<string>();
 	let stalled: { step: string; attempts: number } | undefined;
 	const stall = runner.stall;
+	// Lab OptiQ leg on d3b8305f: a dispatch chain reached the gate after the fixed
+	// steps had run, so the analyst wrote the summary. Code's step comes first here too,
+	// and after the last spawn as well: it is no spawn, and case 938c2a6a reached the
+	// gate on the fourth.
+	let summaryTried = false;
+	const codeSummary = async () => {
+		if (!runStep || summaryTried || fixedStepAt(state) !== 'summary') return;
+		summaryTried = true;
+		try {
+			receipts.push({ step: 'summary', ok: true, output: (await runStep('summary', signal) ?? '').slice(0, 600) });
+			state = await resolveCase(active, runAdapter, signal);
+		} catch (error) {
+			receipts.push({ step: 'summary', ok: false, output: (error as Error).message.slice(0, 2000) });
+		}
+	};
 	for (let spawned = 0; spawned < AUTO_SPAWNS_PER_RESOLVE; spawned++) {
+		await codeSummary();
 		const failure = state.phase === 'methodology_approval' ? await runner.methodologyCheck() : undefined;
 		const dispatch = repair ?? dispatchAt(state, failure);
 		repair = undefined;
@@ -608,6 +663,7 @@ async function runDispatches(resolved: Record<string, unknown>, active: ActiveCa
 		}
 		state = await resolveCase(active, runAdapter, signal);
 	}
+	await codeSummary();
 	const skill = typeof state.owner === 'string' && runner.phaseSkill ? await runner.phaseSkill(state.owner) : undefined;
 	return { ...state, ...(receipts.length ? { fixed_steps: receipts } : {}), ...(stalled ? { worker_stalled: stalled } : {}), ...(skill ? { phase_skill: { name: state.owner, text: skill } } : {}) };
 }
@@ -646,16 +702,20 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		async execute(_id, params, signal) {
 			const first = await resolveCase(active, runAdapter, signal);
 			const fixed = runStep ? await runFixedSteps(first, active, runAdapter, role, runStep, signal) : first;
-			const resolved = dispatch ? await withPlanCheck(await runDispatches(fixed, active, runAdapter, dispatch, signal), dispatch.methodologyCheck) : fixed;
+			const resolved = dispatch ? await withPlanCheck(await runDispatches(fixed, active, runAdapter, dispatch, signal, runStep), dispatch.methodologyCheck) : fixed;
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.
-			if (!research || !runsResearchRound(resolved)) return jsonResult(withNextAction(resolved, active.caseDir));
+			const answered = (state: Record<string, unknown>) => {
+				const next = withNextAction(state, active.caseDir);
+				return next.next_action === NEXT_BRIEF && localTier(process.env) && (dispatch?.memberTurns?.() ?? 0) > 1 ? { ...next, next_action: NEXT_BRIEF_ANSWERED } : next;
+			};
+			if (!research || !runsResearchRound(resolved)) return jsonResult(answered(resolved));
 			const round = await research((params as { retry_research?: boolean }).retry_research === true, signal);
 			// A round that ends at the suggested marks gets their investigator in
 			// the same resolve (Codex review of simp-1b).
 			const after = await resolveCase(active, runAdapter, signal);
-			const post = dispatch ? await runDispatches(after, active, runAdapter, dispatch, signal) : after;
+			const post = dispatch ? await runDispatches(after, active, runAdapter, dispatch, signal, runStep) : after;
 			// The steps code took before the round stay in the result (r2-k1.md: a
 			// ROUND worker's receipt was lost when its round ran in the same resolve).
 			const steps = [...((resolved.fixed_steps as unknown[] | undefined) ?? []), ...((post.fixed_steps as unknown[] | undefined) ?? [])];

@@ -22,7 +22,7 @@ export type Usage = { prompt_tokens?: number; completion_tokens?: number; total_
 // server does for tokens it strips; `stall` then holds the stream open with
 // nothing more, as a server that sends nothing for stripped tokens. On a
 // tool-call reply `stall` holds the stream open after the complete calls.
-export type Reply = ({ text: string; finish?: 'stop' | 'length'; invisible?: number; stall?: boolean } | { toolCalls: ToolCall[]; stall?: boolean }) & { usage?: Usage; reasoning?: string } | { status: number } | 'hang';
+export type Reply = ({ text: string; finish?: 'stop' | 'length'; invisible?: number; stall?: boolean } | { toolCalls: ToolCall[]; stall?: boolean }) & { usage?: Usage; reasoning?: string; keepAlives?: { count: number; everyMs: number }; quietMs?: number } | { status: number } | 'hang';
 export type Responder = (request: ChatRequest, index: number) => Reply;
 
 export type FakeOpenAI = {
@@ -80,8 +80,23 @@ function answerJSON(response: ServerResponse, reply: Exclude<Reply, 'hang' | { s
 	response.end(JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion', model: 'fake', choices: [{ index: 0, message, finish_reason: 'text' in reply ? (reply.finish ?? 'stop') : 'tool_calls' }], usage: reply.usage ?? {} }));
 }
 
-function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
+// Osaurus through prompt processing (t9replay.py): a role chunk, then empty chunks.
+async function keepAlive(response: ServerResponse, { count, everyMs }: { count: number; everyMs: number }) {
+	chunk(response, { role: 'assistant' }, null);
+	for (let i = 0; i < count; i += 1) {
+		await new Promise((done) => setTimeout(done, everyMs));
+		chunk(response, { content: '' }, null);
+	}
+}
+
+async function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
 	response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+	if (reply.keepAlives) await keepAlive(response, reply.keepAlives);
+	// Osaurus cold (t9gaps.py, 38k chars): one early chunk with choices: [], then no data until the answer. Its SSE comments do not reach Pi.
+	if (reply.quietMs) {
+		response.write(`data: ${JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion.chunk', created: 0, model: 'fake', choices: [] })}\n\n`);
+		await new Promise((done) => setTimeout(done, reply.quietMs));
+	}
 	if (reply.reasoning) chunk(response, { role: 'assistant', reasoning_content: reply.reasoning }, null);
 	if ('text' in reply) {
 		for (let i = 0; i < (reply.invisible ?? 0); i += 1) chunk(response, { content: '' }, null);
@@ -132,7 +147,7 @@ export async function startFakeOpenAI(responder: Responder): Promise<FakeOpenAI>
 			return;
 		}
 		if (body.stream === false) answerJSON(response, reply);
-		else answer(response, reply);
+		else await answer(response, reply);
 		if ('text' in reply && reply.stall) hanging.add(response);
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

@@ -1,5 +1,6 @@
 // The launcher side of delegation: runWorker and the worker queue, driven
 // with small stand-in worker processes instead of pi.
+import { REPEAT_STOP, STALL_STOP } from './tools/run.ts';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
@@ -7,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { MAX_CONCURRENT_WORKERS, WorkerQueue, runWorker, spawnAgentTool, FACT_CHECKERS_SPENT } from './subagents.ts';
+import { MAX_CONCURRENT_WORKERS, PROGRESS_EVERY_MS, WorkerQueue, runWorker, spawnAgentTool, withProgress, FACT_CHECKERS_SPENT } from './subagents.ts';
 import * as subagents from './subagents.ts';
 import type { WorkerLaunch } from './subagents.ts';
 
@@ -143,12 +144,39 @@ test('a non-JSON stdout line is skipped and the transcript folder is created', a
 	assert.equal((await readdir(transcripts)).length, 1);
 });
 
+test('a local install keeps worker transcripts in its harness data folder unless told otherwise', async (t) => {
+	const root = await scratch(t);
+	const saved = { dir: process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR, data: process.env.SPOTLIGHT_HARNESS_DATA, tier: process.env.SPOTLIGHT_MODEL_TIER };
+	t.after(() => { for (const [key, value] of [['SPOTLIGHT_WORKER_TRANSCRIPT_DIR', saved.dir], ['SPOTLIGHT_HARNESS_DATA', saved.data], ['SPOTLIGHT_MODEL_TIER', saved.tier]]) { if (value === undefined) delete process.env[key!]; else process.env[key!] = value; } });
+	delete process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
+	process.env.SPOTLIGHT_HARNESS_DATA = join(root, 'data');
+	delete process.env.SPOTLIGHT_MODEL_TIER;
+	await runWorker(worker(root, process.execPath, ['-e', NOISY_WORKER]), 'task', new AbortController().signal);
+	assert.equal((await readdir(join(root, 'data', 'transcripts'))).length, 1);
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	await runWorker(worker(root, process.execPath, ['-e', NOISY_WORKER]), 'task', new AbortController().signal);
+	assert.equal((await readdir(join(root, 'data', 'transcripts'))).length, 1, 'frontier writes none');
+});
+
 // Gold run 1 on 99c6567e: a worker's whole answer was "<|tool_response>", and the orchestrator took it as the result.
 test('a worker that ends empty or with only a control token is a failed task', async (t) => {
 	const root = await scratch(t);
 	const tokenOnly = NOISY_WORKER.replace("'worker answer'", "'<|tool_response>'");
 
 	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', tokenOnly]), 'task', new AbortController().signal), /worker ended without an answer/);
+});
+
+// Case 96f45e2d: a closed laptop cut a worker; its earlier text read as an answer, and the correction counted.
+test('a worker whose last turn ended in a model error is a failed task, even with earlier text; a retry that lands is not', async (t) => {
+	const root = await scratch(t);
+	const after = (...reasons: string[]) => NOISY_WORKER.replace("'worker answer'", "(" + JSON.stringify(reasons) + ".forEach((reason) => console.log(JSON.stringify({ type: 'message_end', message: { role: 'assistant', stopReason: reason } }))), 'earlier text')");
+
+	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', after('stop', 'error')]), 'task', new AbortController().signal), /worker was cut off/);
+	const silenced = NOISY_WORKER.replace("'worker answer'", JSON.stringify(STALL_STOP));
+	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', silenced]), 'task', new AbortController().signal), /worker was cut off/);
+	const ranOn = NOISY_WORKER.replace("'worker answer'", JSON.stringify(REPEAT_STOP));
+	assert.equal(await runWorker(worker(root, process.execPath, ['-e', ranOn]), 'task', new AbortController().signal), REPEAT_STOP, 'a real run-on stays an answer, so it counts');
+	assert.equal(await runWorker(worker(root, process.execPath, ['-e', after('error', 'stop')]), 'task', new AbortController().signal), 'earlier text');
 });
 
 test('a task cancelled while queued never starts its worker', async (t) => {
@@ -172,4 +200,23 @@ test('a task cancelled while queued never starts its worker', async (t) => {
 
 	await assert.rejects(queued, { name: 'AbortError' });
 	assert.equal(existsSync(marker), false);
+});
+
+// P6: silence during long phases. The beat stops with the worker, success or failure.
+test('a running worker reports start, a beat a minute and its end, and a failed worker stops the beat', async (t) => {
+	t.mock.timers.enable({ apis: ['setInterval'] });
+	const said: string[] = [];
+	const { promise, resolve } = Promise.withResolvers<string>();
+	const running = withProgress((text) => said.push(text), 'investigator', promise);
+	t.mock.timers.tick(PROGRESS_EVERY_MS * 2);
+	resolve('done');
+	assert.equal(await running, 'done');
+	t.mock.timers.tick(PROGRESS_EVERY_MS * 3);
+	assert.deepEqual(said, ['The investigator started.', 'The investigator is still working (1 min).', 'The investigator is still working (2 min).', 'The investigator finished.']);
+
+	said.length = 0;
+	await assert.rejects(withProgress((text) => said.push(text), 'analyst', Promise.reject(new Error('stopped'))), /stopped/);
+	t.mock.timers.tick(PROGRESS_EVERY_MS);
+	assert.deepEqual(said, ['The analyst started.', 'The analyst finished.']);
+	assert.equal(await withProgress(undefined, 'analyst', Promise.resolve(1)), 1, 'frontier says nothing');
 });

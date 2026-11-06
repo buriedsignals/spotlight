@@ -68,6 +68,56 @@ class Merge(MergeTestCase):
         groups = {entry["lead"]["lead_id"]: sorted(c["lead_id"] for c in entry["copies"]) for entry in leads["leads"]}
         self.assertEqual(groups, {"lead-a": ["lead-b", "lead-c"], "lead-d": []})
 
+    # Case 2026-11-06-275a35b6: six facts from one Eurostat page were kept as one lead, with five summaries lost.
+    EUROSTAT = "https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Unemployment_statistics"
+    EUROSTAT_FACTS = (
+        "An unemployed person is defined by Eurostat, according to the guidelines of the International Labour Organization.",
+        "Monthly unemployment and employment series are calculated first at the level of 4 categories for each Member State.",
+        "These estimates are based on the globally used International Labour Organisation (ILO) standard definition of unemployment.",
+        "In addition to the unemployment measures covered here, Eurostat also publishes statistics for people who fulfil only part of it.",
+        "As for most Member States the results from the EU-LFS for a full quarter are available 75 days after the end of the quarter.",
+        "The following EU-LFS data are used in the calculations of the monthly unemployment rates published in this article.",
+    )
+
+    def eurostat_leads(self) -> None:
+        page = " ".join(self.EUROSTAT_FACTS)
+        for n, fact in enumerate(self.EUROSTAT_FACTS, 1):
+            self.case.page_lead("ownership-web", f"l{n}", page_text=page, excerpt=fact, summary=f"Summary {n}.", url=self.EUROSTAT,
+                                subjects=["Eurostat"])
+
+    def test_d4_different_claims_from_one_source_all_stay_and_share_its_key(self) -> None:
+        self.eurostat_leads()
+        leads, _ = self.merged()
+        self.assertEqual([e["lead"]["summary"] for e in leads["leads"]], [f"Summary {n}." for n in range(1, 7)])
+        self.assertEqual([e["copies"] for e in leads["leads"]], [[]] * 6)
+        self.assertEqual(len({json.dumps(e["merge_key"], sort_keys=True) for e in leads["leads"]}), 1, "one source")
+        self.assertEqual(schema_check.load(SCHEMAS / "research-leads.schema.json").errors(leads), [])
+
+    def test_d4_the_same_claim_from_one_source_is_still_a_copy(self) -> None:
+        text = "The harbour contract went to Northwind Holdings."
+        self.case.page_lead("ownership-web", "a", page_text=text, excerpt=text, summary="One way to say it.", url="https://wire.example.org/story")
+        self.case.page_lead("contracts-news-courts", "b", page_text=text, excerpt=text, summary="Another way.", url="https://wire.example.org/story")
+        leads, _ = self.merged()
+        self.assertEqual([(e["lead"]["lead_id"], [c["lead_id"] for c in e["copies"]]) for e in leads["leads"]], [("b", ["a"])])
+
+    def test_d4_claims_of_one_source_are_no_corroboration(self) -> None:
+        page = "Ada Lovelace chairs it. Ada Lovelace founded it."
+        # One text on two sites: two lanes and two domains, but one source.
+        self.case.page_lead("ownership-web", "a", page_text=page, excerpt="Ada Lovelace chairs it.", url="https://wire.example.org/story", subjects=["Ada Lovelace"])
+        self.case.page_lead("contracts-news-courts", "b", page_text=page, excerpt="Ada Lovelace founded it.", url="https://mirror.example.net/copy", subjects=["Ada Lovelace"])
+        leads, clues = self.merged()
+        self.assertEqual(len(leads["leads"]), 2)
+        self.assertEqual([c for c in clues["clues"] if c["source"] == "K1"], [], "K1 needs two sources")
+        ranked = merge.rank(leads, clues)
+        self.assertEqual({r["source_families"] for r in ranked}, {1})
+
+    def test_k2_two_claims_of_one_source_are_no_conflict(self) -> None:
+        page = "Capital: 100 EUR in 2023. Capital: 200 EUR in 2024."
+        for lead_id, excerpt, value in (("a", "Capital: 100 EUR in 2023.", "100 EUR"), ("b", "Capital: 200 EUR in 2024.", "200 EUR")):
+            self.case.page_lead("ownership-web", lead_id, page_text=page, excerpt=excerpt, url="https://wire.example.org/story",
+                                facts=[{"subject": "Northwind Holdings", "attribute": "share capital", "value": value}])
+        self.assertEqual(self.clues("K2"), [])
+
     def test_d4_a_rerun_is_byte_identical_and_lead_order_does_not_matter(self) -> None:
         for n in range(4):
             self.case.page_lead("ownership-web", f"lead-{n}", page_text=f"Fact {n} about Northwind.", excerpt=f"Fact {n} about Northwind.")

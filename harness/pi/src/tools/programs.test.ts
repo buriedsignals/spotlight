@@ -22,6 +22,7 @@ import { typedTools } from './index.ts';
 import { validateAfterWorker } from '../validators.ts';
 import { allowedTools, loadComposition } from '../roles.ts';
 import { fixedStepAt } from './spotlight.ts';
+import { fixedStepRunner } from './programs.ts';
 
 const RECORDER = `#!/usr/bin/env node
 const { appendFileSync, existsSync, readFileSync } = require('node:fs');
@@ -555,4 +556,51 @@ test('the Pi harness registers, grants and runs no decision checks', async (t) =
 	}
 	assert.equal(fixedStepAt({ phase: 'investigation_gate_approval', status: 'pending', missing: ['Investigation gate approval'] }), undefined);
 	assert.deepEqual(['provenance', 'review', 'seal'].map((resume_at) => fixedStepAt({ phase: 'investigation_gate_finalization', investigation_gate: { state: 'approved', resume_at } })), ['provenance', 'review', 'seal_gate']);
+});
+
+// P4 (qwen-u9-mac.md): the gate summaries are code's on a local tier, from the records alone.
+test('the summary step writes both gate files from the records, can be regenerated, and writes nothing without verdicts', async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), 'gate-summary-'));
+	t.after(() => rm(dir, { recursive: true, force: true }));
+	await mkdir(join(dir, 'data'));
+	const put = (name: string, doc: unknown) => writeFile(join(dir, 'data', name), JSON.stringify(doc));
+	await put('methodology.json', { lead: 'Who runs the Tor Project?', limitations: ['Public sources only.'] });
+	await put('investigation-log.json', { cycles: [{ gaps_remaining: ['old gap'] }, { gaps_remaining: ['The board is not named.'] }] });
+	await put('findings.json', { project: 'p', findings: [{ id: 'F1', claim: 'Isabela | Bagueros leads it.', confidence: 'high', sources: ['a'] }, { id: 'F2', claim: 'A board exists.', confidence: 'low', sources: [] }] });
+	await put('fact-check.json', { claims: [{ finding_id: 'F1', verdict: 'verified' }, { finding_id: 'F2', verdict: 'unverified' }] });
+	const step = fixedStepRunner({ caseDir: dir, writeRoot: dir, python: 'python3', configPath: '', env: {} }, 'solo');
+
+	const owed = { phase: 'investigation_gate_approval', missing: ['summary.md'] };
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	assert.equal(fixedStepAt(owed), 'summary');
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	assert.equal(fixedStepAt(owed), undefined, 'frontier keeps its analyst');
+
+	assert.match((await step('summary'))!, /2 findings: 1 verified, 1 unverified/);
+	const summary = JSON.parse(await readFile(join(dir, 'data/summary.json'), 'utf8'));
+	assert.equal(summary.title, 'Who runs the Tor Project?');
+	assert.deepEqual(summary.key_conclusions, ['Isabela | Bagueros leads it.'], 'only verified claims conclude, word for word');
+	assert.deepEqual(summary.limitations, ['The board is not named.', 'Public sources only.'], 'the last cycle\'s gaps');
+	const markdown = await readFile(join(dir, 'summary.md'), 'utf8');
+	const [main, doubtful] = markdown.split('## Not verified, check before use');
+	assert.match(main, /\| F1 \| Isabela \\\| Bagueros leads it\. \| high \| verified \| 1 \|/);
+	assert.doesNotMatch(main, /A board exists/, 'an unverified claim stays out of the overview and the main list');
+	assert.match(doubtful, /\| F2 \| A board exists\. \| low \| unverified \| 0 \|/);
+
+	await new Promise((done) => setTimeout(done, 2));
+	await step('summary');
+	assert.notEqual(await readFile(join(dir, 'summary.md'), 'utf8'), markdown, 'a regenerated summary is not stale by hash');
+
+	// Codex R2: a later verified row must not hide a dispute.
+	await put('fact-check.json', { claims: [{ finding_id: 'F1', verdict: 'disputed' }, { finding_id: 'F1', verdict: 'verified' }, { finding_id: 'F2', verdict: 'unverified' }] });
+	await step('summary');
+	const conflicted = JSON.parse(await readFile(join(dir, 'data/summary.json'), 'utf8'));
+	assert.deepEqual([conflicted.key_conclusions, conflicted.verified_findings, conflicted.findings[0].fact_check_verdict], [[], 0, 'disputed']);
+
+	await rm(join(dir, 'summary.md'));
+	await put('fact-check.json', { claims: [{ finding_id: 'F1', verdict: 'verified' }] });
+	await assert.rejects(step('summary')!, /fact-check verdict for every finding/);
+	assert.equal(existsSync(join(dir, 'summary.md')), false);
 });

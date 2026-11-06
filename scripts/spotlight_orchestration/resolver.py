@@ -120,6 +120,7 @@ def stale_summaries(case: Path, *records: object) -> list[str]:
     return stale
 
 
+SUPPORT_TYPES = ("direct", "indirect", "inferred", "contradicted", "insufficient")
 RESEARCH_PAUSED = ("Research is off. Turn Research on in the app to continue this case, or go back to the "
                    "Methodology gate and approve the plan without research.")
 RESEARCH_PAUSED_STEP = "research_off"
@@ -199,7 +200,8 @@ def status_for(
     dependency_digest = str(dependencies["dependency_digest"])
     follow_up = state.get("follow_up")
     if not dependencies["investigation_ready"]:
-        return investigation_status(status, list(dependencies["investigation_missing"]))
+        # A case sent back from a stop can lack a file; the member's note still goes with it.
+        return investigation_status(status, list(dependencies["investigation_missing"]), follow_up)
     if isinstance(follow_up, dict) and isinstance(follow_up.get("instructions"), str):
         pending = rework_pending(case, follow_up, dependency_digest)
         if pending:
@@ -337,9 +339,48 @@ def _missing_for(status: dict[str, Any]) -> list[str]:
     return []
 
 
+def rebuilt_claim_links(case: Path) -> dict[str, Any] | None:
+    """The evidence bundle with the links its findings already name, or None when none is
+    missing. A link is a finding's own ref and claim, so no model needs to write it
+    (case 2bd8d15c). It takes the finding's grounding, else direct, as record_finding does.
+    A ref to no bundle row and a link to no finding are left for the validators to refuse."""
+    findings = research.read_case_json(case, "data/findings.json")
+    bundle = research.read_case_json(case, "data/evidence-bundle.json")
+    if not isinstance(findings, dict) or not isinstance(bundle, dict) or not isinstance(bundle.get("items"), list):
+        return None
+    items = {item.get("id"): item for item in bundle["items"] if isinstance(item, dict)}
+    changed = False
+    for finding in findings.get("findings") or []:
+        claim = finding.get("claim") if isinstance(finding, dict) else None
+        if not isinstance(claim, str) or not isinstance(finding.get("evidence_bundle_refs"), list):
+            continue
+        grounding = finding.get("grounding")
+        support = grounding.get("support_type") if isinstance(grounding, dict) else None
+        for ref in finding["evidence_bundle_refs"]:
+            item = items.get(ref) if isinstance(ref, str) else None
+            if item is None:
+                continue
+            links = item["claim_links"] = item["claim_links"] if isinstance(item.get("claim_links"), list) else []
+            own = [link for link in links if isinstance(link, dict) and link.get("finding_id") == finding.get("id")]
+            for link in own:
+                changed = changed or link.get("claim_text") != claim
+                link["claim_text"] = claim
+            if not own:
+                changed = True
+                links.append({"finding_id": finding.get("id"), "claim_text": claim,
+                              "support_type": support if support in SUPPORT_TYPES else "direct"})
+    return bundle if changed else None
+
+
 def normalized_resolution(case: Path, state: dict[str, Any]) -> dict[str, Any]:
     status = status_for(case, state)
     phase = status["next_phase"]
+    if phase == "investigation" and case_path(case, "data/evidence-bundle.json").is_file():
+        if rebuilt_claim_links(case) is not None:
+            status = {**status, "repairable_claim_links": True}
+        unverdicted = [item for item in research.fact_check_problems(case) if research.NO_VERDICT in item]
+        if unverdicted:
+            status = {**status, "unverdicted": unverdicted}
     resume = (
         status.get("investigation_gate")
         or status.get("ingest")

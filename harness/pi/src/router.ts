@@ -19,11 +19,16 @@ export type Intent = 'change_request' | 'question' | 'approval_talk' | 'other';
 export type RouterMove = { kind: 'call'; tool: 'spotlight_resolve' | 'open_review'; reason: string } | { kind: 'call'; tool: 'spawn_agent'; arguments: CodeSpawn; reason: string } | { kind: 'stop'; text: string; reason: string } | { kind: 'model'; reason: string };
 export type CodeSpawn = { agent: string; task: string };
 export type RouterState = {
+	// The latest turn is the member's and nothing but a resolve has run since.
+	asked?: boolean;
 	resolved?: Record<string, unknown>;
 	// Tool calls since the last spotlight_resolve result (all calls when there is none).
 	callsSince: number;
 	member?: string;
 	lastTool?: string;
+	// The last open_review held the turn and the member decided; resumed once the fresh run began.
+	decided?: boolean;
+	resumed?: boolean;
 	// The last assistant message was the router's own call of this tool.
 	lastRouted?: string;
 };
@@ -35,6 +40,19 @@ import { resolve } from 'node:path';
 type Msg = { role?: string; content?: unknown; toolName?: string; responseModel?: string };
 
 // Turns the harness writes into the chat, not the member (step1 intents_build HARNESS).
+// The tool result of a held open_review (tools/review.ts); the context the router reads carries no details.
+export const REVIEW_DECIDED = 'The member decided on the review page.';
+// A member message still goes to the model when D1 fails: the member keeps the case (No-D1 check), and this notice says why routing is plainer.
+export const decisionHelperNotice = (reason: string) => `Spotlight's decision helper on this computer did not answer (${reason.slice(0, 200)}). The assistant is taking your message directly.`;
+const TRIAGE_HELD = 'Spotlight paused before the Research page because its decision helper could not triage the leads';
+const RESEARCH_LANE_STOPPED = 'Spotlight stopped at Research: the research failed three times';
+const researchLaneStop = (gap: string) => `${RESEARCH_LANE_STOPPED}${gap ? ` (${gap})` : ''}. Your case is saved. Fix what failed, then send a message here and Spotlight runs the research again.`;
+const laneStopped = (resolved: Record<string, unknown> | undefined) => (resolved?.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt === 'research-lane';
+const triageHeldStop = (error: string) => `${TRIAGE_HELD}${error ? ` (${error})` : ''}. Your research is saved. Send a message here to try again, or turn Research off in the app and continue without research.`;
+// A stop no nudge may turn into another run: the member has the next move.
+export const memberHasTheMove = (text: string | undefined) => !!text && (text.startsWith(TRIAGE_HELD) || text.startsWith(RESEARCH_LANE_STOPPED));
+export const DECISION_RECORDED = 'Your decision is recorded. Spotlight is carrying on.';
+export const MEMBER_DECIDED = 'I decided on the review page.';
 const HARNESS_TURN = /^(The conversation history before this point was compacted|Your turn ended with text)/;
 // review-simp.md #4: the empty-turn and runaway-turn nudges (extension.ts), matched
 // whole so a member message that merely starts the same way stays the member's.
@@ -63,21 +81,16 @@ export function routerState(messages: readonly unknown[]): RouterState {
 	const callsSince = list.slice(resolvedAt + 1).filter((message) => message.role === 'assistant').flatMap((message) => parts(message.content).filter((part) => part.type === 'toolCall')).length;
 	const last = [...list].reverse().find((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult');
 	const said = last?.role === 'user' ? text(last.content).trim() : '';
-	const member = said && !HARNESS_TURN.test(said) && !HARNESS_NUDGES.includes(said) ? said : undefined;
+	const member = said && said !== MEMBER_DECIDED && !HARNESS_TURN.test(said) && !HARNESS_NUDGES.includes(said) ? said : undefined;
 	const lastTool = [...list].reverse().find((message) => message.role === 'toolResult')?.toolName;
 	const lastAssistant = [...list].reverse().find((message) => message.role === 'assistant');
 	const lastRouted = lastAssistant?.responseModel === ROUTER_MODEL ? parts(lastAssistant.content).find((part) => part.type === 'toolCall')?.name : undefined;
-	return { resolved, callsSince, member: member || undefined, lastTool, lastRouted };
+	const toolResult = [...list].reverse().find((message) => message.role === 'toolResult');
+	const decided = toolResult?.toolName === 'open_review' && text(toolResult.content).trim() === REVIEW_DECIDED;
+	const userAt = list.findLastIndex((message) => message.role === 'user');
+	const asked = userAt >= 0 && !harnessTurn(text(list[userAt].content).trim()) && text(list[userAt].content).trim() !== MEMBER_DECIDED && list.slice(userAt + 1).every((message) => message.role !== 'toolResult' || message.toolName === 'spotlight_resolve');
+	return { resolved, callsSince, member: member || undefined, asked, lastTool, lastRouted, decided, resumed: said === MEMBER_DECIDED };
 }
-
-// What a blocked case says, by the attempt that ran out (transitions.py
-// ATTEMPT_LIMITS). The only way on is a changed methodology approved again:
-// that approval clears the block (transitions.py approve). Written by code so
-// no model blames a file (r3 blamed brief-directions.txt).
-export const BLOCKED_STOPS: Record<string, string> = {
-	'structural-correction': "Spotlight stopped the investigation. The investigator's files still fail the format check after two corrections, so Spotlight cannot go on by itself. This stop deleted nothing. The fault is in how the files are written, not in your plan, but the only way back is to approve the methodology again: make any small edit to it (reword a question, for example), approve it, and the investigator gets two more tries.",
-	'amendment-correction': "Spotlight stopped at Research. The changes you marked could not be written into the plan, and the plan is unchanged. To continue, change the methodology (for example keep a direction you marked to drop) and approve it again; Research will run again.",
-};
 
 // The member's closing words at a complete case, from the records alone: the
 // findings and the fact-check's own verdicts, counted. Undefined when either
@@ -106,14 +119,22 @@ export function closingMessage(caseDir: string): string | undefined {
 // The move when no member message is waiting.
 export function routeWithoutMember(state: RouterState, closing?: string): RouterMove {
 	// The page is open: the turn ends with the model's words (registerEndTurnOnOpen).
-	if (state.lastTool === 'open_review') return { kind: 'model', reason: 'the review page was just opened' };
+	if (state.lastTool === 'open_review' && !state.decided && !laneStopped(state.resolved)) return { kind: 'model', reason: 'the review page was just opened' };
+	// A held page was decided: this run ends on code's line, and the fresh run
+	// the extension queues (the decision as a member turn) resolves the case.
+	if (state.lastTool === 'open_review' && !state.resumed && !laneStopped(state.resolved)) return { kind: 'stop', text: DECISION_RECORDED, reason: 'the member decided on the page' };
 	let move: RouterMove;
 	if (!state.resolved || state.callsSince > 0) move = { kind: 'call', tool: 'spotlight_resolve', reason: state.resolved ? `${state.callsSince} call(s) since the last resolve` : 'no resolve yet' };
-	else if (typeof state.resolved.next_action === 'string' && state.resolved.next_action.includes('open_review')) move = { kind: 'call', tool: 'open_review', reason: 'the resolver names open_review' };
-	else if (state.resolved.status === 'blocked' && BLOCKED_STOPS[String((state.resolved.blocked as { exhausted_attempt?: unknown } | undefined)?.exhausted_attempt)]) {
-		const kind = String((state.resolved.blocked as { exhausted_attempt?: unknown }).exhausted_attempt);
-		return { kind: 'stop', text: BLOCKED_STOPS[kind], reason: `the case is blocked (${kind}); code says why` };
-	} else if (state.resolved.phase === 'complete' && closing) return { kind: 'stop', text: closing, reason: 'the case is complete; code states the counts' };
+	else if ((state.resolved.research as { resume_at?: unknown } | undefined)?.resume_at === 'triage' && (state.resolved.research_round as { triage?: { ok?: unknown } } | undefined)?.triage?.ok === false) {
+		const error = String((state.resolved.research_round as { triage: { error?: unknown } }).triage.error ?? '').trim().split('\n').at(-1)?.replace(/^research-triage: /, '').slice(0, 200) ?? '';
+		return { kind: 'stop', text: triageHeldStop(error), reason: 'the round is held at triage' };
+	}
+	else if (laneStopped(state.resolved)) {
+		// The member's word starts a new round; without it the round would only fail again.
+		if (state.asked) move = { kind: 'call', tool: 'open_review', reason: 'the member answered the stop at Research' };
+		else return { kind: 'stop', text: researchLaneStop(String((state.resolved.blocked as { gap?: unknown }).gap ?? '').trim().split('\n')[0].slice(0, 200)), reason: 'the case is blocked (research-lane); the member has the move' };
+	} else if (typeof state.resolved.next_action === 'string' && state.resolved.next_action.includes('open_review')) move = { kind: 'call', tool: 'open_review', reason: 'the resolver names open_review' };
+	else if (state.resolved.phase === 'complete' && closing) return { kind: 'stop', text: closing, reason: 'the case is complete; code states the counts' };
 	else move = { kind: 'model', reason: 'the resolver names no code move' };
 	return noLoop(state, move);
 }
@@ -130,7 +151,7 @@ export function routeMember(state: RouterState, intent: Intent | undefined): Rou
 	// the investigator in the member's own words (phase-methodology step 5);
 	// the model still answers questions.
 	if (intent === 'change_request' && state.resolved?.phase === 'methodology_approval' && state.member) return { kind: 'call', tool: 'spawn_agent', arguments: { agent: 'investigator', task: methodologyRelay(state.member) }, reason: 'member change_request at the methodology review' };
-	if (intent === 'question' || intent === 'change_request') return { kind: 'model', reason: `member ${intent}` };
+	if (intent === 'question' || (intent === 'change_request' && !laneStopped(state.resolved))) return { kind: 'model', reason: `member ${intent}` };
 	if (intent === 'approval_talk' && state.resolved?.phase === 'brief' && state.callsSince === 0) return { kind: 'model', reason: 'member approves the brief' };
 	return noLoop(state, { kind: 'call', tool: 'spotlight_resolve', reason: `member ${intent}` });
 }

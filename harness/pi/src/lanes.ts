@@ -33,7 +33,7 @@ import { applyFixedRequestBody } from './provider-policy.ts';
 import { LANES_DIRECTORY } from './resume.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
 import { FileRefused, readTarget, writeConfined } from './tools/case-files.ts';
-import { fetchTool, webURL } from './tools/fetch.ts';
+import { SEAM_ENV, fetchTool, firecrawlMode, webURL } from './tools/fetch.ts';
 import { httpGetTool } from './tools/http-get.ts';
 import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
@@ -45,7 +45,7 @@ import { searchTool } from './tools/search.ts';
 export const ROUND_LEDGER = 'research/rounds.json';
 // The most any case may spend on research, whatever its plan says.
 export const CASE_CEILING_USD = 5;
-const DEFAULT_TOKEN_BUDGET = 200_000;
+const DEFAULT_TOKEN_BUDGET = 800_000;
 const MAX_TURNS = 40;
 const MAX_TOOL_CALLS = 60;
 const MAX_TOKENS_PER_ANSWER = 4096;
@@ -842,7 +842,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	const tally = (name: string, content: string, ran: boolean) => {
 		const entry = (callTally[name] ??= { run: 0, failed: 0, not_run: 0 });
 		if (!ran) entry.not_run += 1;
-		else if (content.startsWith('error:')) {
+		else if (content.startsWith('error:') || content.startsWith('refused:')) {
 			entry.failed += 1;
 			entry.last_error = content.slice(0, 300);
 		} else entry.run += 1;
@@ -1053,7 +1053,9 @@ async function runTriage(options: RoundOptions): Promise<TriageOutcome> {
 	return { ok: true, message: result.stdout.trim().slice(-500) };
 }
 
-const BACKING = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER'];
+// Case 7656d7ba: without the seam's settings a lane's Playwright looked in the default
+// browser cache and every fetch failed. Its one key stays grant-only (laneEnv).
+const BACKING = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT', ...SEAM_ENV.filter((name) => name !== 'FIRECRAWL_API_KEY')];
 
 // What a lane's typed tools see: system basics, the search service, Tor
 // posture, and only the keys both its lane type declares and the approved plan
@@ -1064,6 +1066,11 @@ function laneEnv(options: RoundOptions, topic: TopicBrief, laneType: LaneType): 
 	if (options.config.searchURL) out.SPOTLIGHT_SEARCH_URL = options.config.searchURL;
 	const granted = new Set(options.plan.keys.filter((key) => key.topics.includes(topic.topic_id)).map((key) => key.name));
 	for (const key of laneType.keys) if (granted.has(key) && options.env[key]) out[key] = options.env[key];
+	// `always` means every page goes through Firecrawl, so a lane needs the key with no plan
+	// grant. A sensitive case or `off` never gets it here, and the seam refuses them as well.
+	if (!options.config.sensitive && firecrawlMode(options.config.spotlightConfig) === 'always' && options.env.FIRECRAWL_API_KEY) out.FIRECRAWL_API_KEY = options.env.FIRECRAWL_API_KEY;
+	// The rejected-key stop lives with the case's fetch failures.
+	if (options.env.SPOTLIGHT_HARNESS_DATA) out.SPOTLIGHT_HARNESS_DATA = options.env.SPOTLIGHT_HARNESS_DATA;
 	return out;
 }
 

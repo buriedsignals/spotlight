@@ -13,7 +13,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { taskMode } from './roles.ts';
 import { canonicalWriteCall, localTier } from './tools/case-files.ts';
 import { onJsonlRecords } from './pi-process.ts';
-import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
+import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP, STALL_STOP } from './tools/run.ts';
 
 export type SpawnRequest = { kind: 'spotlight-spawn'; id: string; agent: string; task: string };
 export type CancelRequest = { kind: 'spotlight-cancel'; id: string };
@@ -113,7 +113,25 @@ export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no inves
 
 export const INVESTIGATOR_TASK_NEEDED = 'spawn_agent needs a task for the investigator that says what to do (for example MODE: EXECUTION and the approved scope). Call spotlight_resolve for the next step.';
 
-export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
+// P6: a worker or research round can run for many minutes with nothing in the chat. On a local tier
+// code says so about once a minute. ctx.ui.notify reaches Osaurus as an inline
+// notice (PiRPCCodec, 0.25.31) and stays out of the transcript; it drops
+// tool_execution_update, so Pi's onUpdate would show nothing there.
+export const PROGRESS_EVERY_MS = 60_000;
+export async function withProgress<T>(say: ((text: string) => void) | undefined, agent: string, work: Promise<T>): Promise<T> {
+	if (!say) return work;
+	let minutes = 0;
+	say(`The ${agent} started.`);
+	const beat = setInterval(() => say(`The ${agent} is still working (${++minutes} min).`), PROGRESS_EVERY_MS);
+	try {
+		return await work;
+	} finally {
+		clearInterval(beat);
+		say(`The ${agent} finished.`);
+	}
+}
+
+export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }, progress: { say?: (text: string) => void; after?: () => void } = {}): ToolDefinition {
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',
@@ -159,7 +177,7 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			signal?.addEventListener('abort', onAbort, { once: true });
 			process.send({ kind: 'spotlight-spawn', id, agent, task } satisfies SpawnRequest);
 			try {
-				const result = await promise;
+				const result = await withProgress(progress.say, agent, promise);
 				if (!result.ok) {
 					// U9 held-kde: refused spawns spent the cap with no fact-checker run,
 					// which closed the repair path. Only a started worker is an attempt,
@@ -183,6 +201,7 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 				}
 				return { content: [{ type: 'text', text: result.text || '(no output)' }], details: undefined };
 			} finally {
+				progress.after?.();
 				signal?.removeEventListener('abort', onAbort);
 			}
 		},
@@ -242,10 +261,16 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 	// line is its answer.
 	let stopped = '';
 	let refolded = false;
+	// Case 96f45e2d: a closed laptop cut a worker, whose last text then read as its answer.
+	let cut = false;
 	const factCheckWrites = new Map<string, { path: string; proposal: string }>();
 	const transcript = openTranscript();
 	onJsonlRecords(child.stdout, (record) => {
 		transcript?.(record);
+		if (record.type === 'message_end') {
+			const message = record.message as { role?: string; stopReason?: string } | undefined;
+			if (message?.role === 'assistant') cut = message.stopReason === 'error'; // not 'aborted': a watchdog's stop is a finished run with a receipt
+		}
 		if (launch.onFactCheckWrite && record.type === 'tool_execution_start' && (record.toolName === 'write_file' || record.toolName === 'record_assessment')) {
 			const args = canonicalWriteCall(String(record.toolName), record.args);
 			if (typeof args?.path === 'string' && typeof args.content === 'string' && typeof record.toolCallId === 'string') factCheckWrites.set(record.toolCallId, { path: args.path, proposal: args.content });
@@ -284,6 +309,7 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 			// A worker that ended with nothing, or only a chat-template control
 			// token such as <|tool_response>, failed; it did not answer.
 			if (stopped) answer.resolve(stopped);
+			else if (cut || text.includes(STALL_STOP)) answer.reject(new Error('worker was cut off: its model stopped responding'));
 			else if (text.replace(CONTROL_TOKENS, '').trim() === '') answer.reject(new Error('worker ended without an answer'));
 			else answer.resolve(text);
 		}
@@ -308,8 +334,12 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 // folder the operator names, never to stderr or the chat. A transcript that
 // cannot be written stops being written; it never fails the task.
 function openTranscript(): ((record: Record<string, unknown>) => void) | undefined {
-	const dir = process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
-	if (!dir) return undefined;
+	// Local installs keep them by default (qwen real launch: nothing explained a silent empty pass); 'off' turns that off. They hold case text,
+	// so they sit in the harness data folder, owner-only.
+	const set = process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
+	const data = process.env.SPOTLIGHT_HARNESS_DATA;
+	const dir = set ?? (localTier(process.env) && data ? join(data, 'transcripts') : undefined);
+	if (!dir || dir === 'off') return undefined;
 	const file = join(dir, `worker-${Date.now()}-${randomUUID()}.jsonl`);
 	let failed = false;
 	const attempt = (write: () => void) => {

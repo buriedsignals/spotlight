@@ -3,9 +3,11 @@
 // copies the member's approved brief into brief_directions, and fills, only
 // where the plan leaves them out, the direction and topic IDs, the research
 // plan's settings (mode from the edition and the Research switch, keys and
-// egress from the lane catalogue, consent, the $1/$1 budgets, the 200,000
+// egress from the lane catalogue, consent, the $1/$1 budgets, the 800,000
 // token budget), tools_required, and Navigator's skip reason from the
-// pre-planning lookup. The model writes the methodology itself; D1 and the
+// pre-planning lookup. With Research on, on the local tiers, a plan with no
+// research_plan gets a default one until the Methodology approval, unless the
+// member dropped it. The model writes the methodology itself; D1 and the
 // methodology validators are unchanged and still decide. An AMENDMENT may
 // send only the directions it changes; code completes it from the approved
 // methodology and the member's marks, and D8 checks the result.
@@ -13,11 +15,17 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { localTier } from './case-files.ts';
 
 type Row = Record<string, unknown>;
 type Lane = { route: string; keys: string[]; egress: string[] };
 
-export const DEFAULT_TOKEN_BUDGET = 200_000; // lanes.ts
+export const DEFAULT_TOKEN_BUDGET = 800_000; // lanes.ts, research_checks.py
+// Case b75e83cb: the model wrote this number, the frozen role text's example, on both
+// topics, so the raised default never reached its lanes. On a local tier code lifts
+// exactly this value until the Methodology approval, so the page shows the real
+// number. Any other value is the plan's, and an approved number stands.
+const OLD_DEFAULT_TOKEN_BUDGET = 200_000;
 export const DEFAULT_BUDGET_USD = 1;
 // Where the pre-planning Navigator step leaves its outcome when no lookup ran.
 export const NAVIGATOR_PRE_STEP = 'research/navigator/pre-planning.json';
@@ -78,16 +86,35 @@ export function fillMethodology(caseDir: string, env: Record<string, string | un
 	const tools = [...(Array.isArray(document.tools_required) ? document.tools_required : []), ...steps.map((step) => step.tool), ...selected]
 		.filter((tool): tool is string => typeof tool === 'string' && tool.trim() !== '');
 	if (tools.length) document.tools_required = [...new Set(tools)];
+	if (document.research_plan === undefined && researchOwed(caseDir, env)) {
+		const topics = plan.filter((entry) => typeof entry.direction_id === 'string' && SLUG.test(entry.direction_id)).map((entry) => {
+			const questions = Array.isArray(entry.questions) ? entry.questions.filter((item) => typeof item === 'string' && item.trim() !== '') : [];
+			return { direction_id: entry.direction_id, lane_type: 'ad-hoc', questions: questions.length ? questions : [String(entry.direction)] };
+		});
+		if (topics.length) document.research_plan = { code_default: true, topics };
+	}
 	const research = object(document.research_plan);
-	if (research) fillResearchPlan(research, env);
+	if (research) fillResearchPlan(research, env, localTier(env) && !object(readJson(caseDir, 'data/orchestration.json')?.approvals)?.methodology);
 }
 
-function fillResearchPlan(plan: Row, env: Record<string, string | undefined>): void {
+// Case 2026-11-05-938c2a6a: with Research on, r3's methodology had no plan and
+// nothing noticed, so Research was skipped in silence. Research on means
+// Research runs: writing the plan is paperwork. ad-hoc needs no keys. Newsroom
+// and sensitive cases refuse it at D1, an approved case has no plan to gain, and
+// a plan the member dropped at the review (review.py) stays dropped.
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+function researchOwed(caseDir: string, env: Record<string, string | undefined>): boolean {
+	if (env.SPOTLIGHT_RESEARCH_SWARMS !== 'on' || !localTier(env) || env.SPOTLIGHT_EDITION === 'newsroom' || env.SPOTLIGHT_SENSITIVE?.trim().toLowerCase() === 'true') return false;
+	if (object(readJson(caseDir, 'data/orchestration.json')?.approvals)?.methodology) return false;
+	return object(object(readJson(caseDir, 'data/methodology-review.json')?.items)?.['selection:research_plan'])?.final !== false;
+}
+
+function fillResearchPlan(plan: Row, env: Record<string, string | undefined>, liftOld: boolean): void {
 	const catalogue = lanes();
 	const topics = rows(plan.topics);
 	const used = new Set(topics.map((topic) => topic.topic_id).filter((id): id is string => typeof id === 'string'));
 	for (const topic of topics) {
-		if (topic.token_budget === undefined) topic.token_budget = DEFAULT_TOKEN_BUDGET;
+		if (topic.token_budget === undefined || (liftOld && topic.token_budget === OLD_DEFAULT_TOKEN_BUDGET)) topic.token_budget = DEFAULT_TOKEN_BUDGET;
 		if (topic.topic_id !== undefined || typeof topic.direction_id !== 'string' || typeof topic.lane_type !== 'string') continue;
 		const base = `${topic.direction_id}-${topic.lane_type}`;
 		let id = base;

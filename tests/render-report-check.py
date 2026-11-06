@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -459,6 +460,48 @@ def check_non_direct_quote_selection(root: Path) -> None:
     assert (case / "report.html").exists()
 
 
+def check_code_set_headlines(root: Path) -> None:
+    """T8 on 7656d7ba: on a local tier code sets each headline to the fact-checked claim and
+    clears the analyst's prose, which then shows nowhere. Any other headline still needs its prose."""
+    case = build_case(root / "code-headlines")
+    draft_path = case / "data" / "report-draft.json"
+    findings = {item["id"]: item["claim"] for item in json.loads((case / "data" / "findings.json").read_text())["findings"]}
+    draft = json.loads(draft_path.read_text())
+    for treatment in draft["finding_treatments"]:
+        treatment.update(headline=findings[treatment["finding_id"]], summary="", why_it_matters="")
+    write_json(draft_path, draft)
+    result = finalize(case)
+    assert result.returncode == 0, result.stdout + result.stderr
+    html, markdown = (case / "report.html").read_text(), (case / "findings-report.md").read_text()
+    assert '<p class="lede"></p>' not in html
+    assert "Why it matters" not in html and "Why it matters" not in markdown
+    draft["finding_treatments"][0]["headline"] = "Ada Lovelace leads the Library Freedom Project"
+    write_json(draft_path, draft)
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and "summary must be a non-empty string" in result.stdout, result.stdout
+
+
+LOCAL_WARNING = ("Spotlight's local model can get facts wrong, even on findings marked verified. "
+                 "Check every finding against its source before you use it.")
+
+
+def check_local_model_warning(root: Path) -> None:
+    """Tom, 2026-11-06: the journalist verifies, and a local tier's report says so at the top."""
+    for tier, shown in (("12b", True), ("frontier", False)):
+        case = build_case(root / f"warning-{tier}")
+        result = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True,
+                                env={**os.environ, "SPOTLIGHT_MODEL_TIER": tier})
+        assert result.returncode == 0, result.stdout + result.stderr
+        html_text = (case / "report.html").read_text()
+        markdown = (case / "findings-report.md").read_text()
+        escaped = LOCAL_WARNING.replace("'", "&#x27;")
+        assert (escaped in html_text) is shown, tier
+        assert (LOCAL_WARNING.replace("'", "\\'") in markdown or LOCAL_WARNING in markdown) is shown, tier
+        if shown:
+            assert html_text.index(escaped) < html_text.index('class="finding"'), "at the top"
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -480,6 +523,10 @@ def main() -> int:
         check_set_aside_findings(Path(tmp))
         check_disposition_kept_finding(Path(tmp))
         check_non_direct_quote_selection(Path(tmp))
+        check_code_set_headlines(Path(tmp))
+        check_local_model_warning(Path(tmp))
+        # Frontier's draft keeps every field it wrote.
+        assert '<p class="lede">' in html and "Why it matters:" in html and "Why it matters:" in markdown
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown

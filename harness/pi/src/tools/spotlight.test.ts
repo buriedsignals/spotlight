@@ -7,7 +7,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
 import { FACT_CHECKERS_SPENT } from '../subagents.ts';
-import { INPUTS_REFUSED, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { INPUTS_REFUSED, fixedStepAt, transitionArguments, NEXT_GATE_OWED, nextFixedStep, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 import { batchBlockedFile, factCheckHash, missingForApproval } from './review.ts';
 
@@ -360,7 +360,7 @@ test('every state the resolver can return names a next step, and only member dec
 		['ingest requested', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other'],
 		['ingest requested, newsroom', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other', undefined, 'newsroom'],
 		['ingest seal', { phase: 'ingest', ingest: { resume_at: 'seal' } }, [], 'other'],
-		['blocked', { phase: 'blocked', status: 'blocked' }, [], 'other'],
+		['blocked', { phase: 'blocked', status: 'blocked' }, [], 'member'],
 		['complete', { phase: 'complete', status: 'completed' }, [], 'other'],
 		['worker stalled', { phase: 'methodology', worker_stalled: { step: 'investigator (investigator PLANNING)', attempts: 2 } }, [], 'other'],
 	];
@@ -401,4 +401,110 @@ test('every state the resolver can return names a next step, and only member dec
 	process.env.SPOTLIGHT_EDITION = 'newsroom';
 	assert.equal(await missingForApproval(dir, { phase: 'ingest', ingest: { resume_at: 'decision' } }), undefined);
 	delete process.env.SPOTLIGHT_EDITION;
+});
+
+// Codex R2: at the gate a failed summary step stops with the member, not another resolve.
+test('a failed summary step on a local tier ends the turn honestly; frontier keeps its next step', (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	const failed = { phase: 'investigation_gate_approval', missing: ['summary.md'], fixed_steps: [{ step: 'summary', ok: false, output: 'no verdict' }] };
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	assert.equal(nextAction(failed), nextFixedStep('summary', true));
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	assert.equal(nextAction(failed), NEXT_GATE_OWED);
+});
+
+// Lab OptiQ leg on d3b8305f: a fact-checker dispatched in this resolve brought the case to the gate, and the analyst wrote a template.
+test('a dispatch chain that reaches the gate runs code\'s summary step, and the analyst only when that step fails', async (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	const root = await mkdtemp(join(tmpdir(), 'summary-chain-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	for (const [name, failing] of [['writes', false], ['fails', true]] as const) {
+		let written = false;
+		let checked = false;
+		const spawned: string[] = [];
+		const adapter = async () => JSON.stringify(!checked
+			? { phase: 'investigation', status: 'active', missing: ["fresh data/fact-check.json after the investigator's update"] }
+			: { phase: 'investigation_gate_approval', status: 'pending', missing: written ? ['Investigation gate approval'] : ['summary.md', 'data/summary.json', 'Investigation gate approval'] });
+		const step = async () => {
+			if (failing) throw new Error('no verdict');
+			written = true;
+			return 'code wrote it';
+		};
+		const runner = { spawn: async (agent: string) => { spawned.push(agent); if (agent === 'fact-checker') checked = true; else written = true; return 'Done.'; }, methodologyCheck: async () => undefined };
+		const [resolveTool] = spotlightTools(bindActiveCase(root, caseDir), adapter, ORCHESTRATOR, undefined, undefined, undefined, step, runner);
+		const result = JSON.parse(((await resolveTool.execute('call', {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text);
+		assert.deepEqual(spawned, failing ? ['fact-checker', 'analyst'] : ['fact-checker'], name);
+		assert.deepEqual(result.fixed_steps.find((receipt: { step: string }) => receipt.step === 'summary').ok, !failing, name);
+	}
+});
+
+// Case 938c2a6a on 0aab5a5a: investigator, fact-checker (refused), repair, fact-checker spent all four spawns, so the
+// summary step never ran, and the refused spawn's receipt read as a failed summary: the model told the member and stopped.
+test('a resolve that spends its spawns on the way to the gate still runs code\'s summary, and the case reaches the page', async (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	const root = await mkdtemp(join(tmpdir(), 'summary-spent-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	let spawns = 0;
+	let written = false;
+	const adapter = async () => JSON.stringify(spawns < 4
+		? { phase: 'investigation', status: 'active', missing: [`fresh data/fact-check.json after the investigator's update ${spawns}`] }
+		: { phase: 'investigation_gate_approval', status: 'pending', missing: written ? ['Investigation gate approval'] : ['summary.md', 'data/summary.json', 'Investigation gate approval'] });
+	const step = async () => { written = true; return 'code wrote it'; };
+	const runner = { spawn: async () => { spawns += 1; if (spawns === 2) throw new Error(`${INPUTS_REFUSED}\n  • [investigator] findings.json: F1 has no source`); return 'Done.'; }, methodologyCheck: async () => undefined };
+	const [resolveTool] = spotlightTools(bindActiveCase(root, caseDir), adapter, ORCHESTRATOR, undefined, undefined, undefined, step, runner);
+	const result = JSON.parse(((await resolveTool.execute('call', {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text);
+	assert.equal(spawns, 4);
+	assert.equal(result.fixed_steps.find((receipt: { step: string }) => receipt.step === 'summary')?.ok, true);
+	assert.match(result.next_action, /call open_review/, 'continuity: the next move is the gate');
+});
+
+test('at the gate only the summary step\'s own failure reads as one', (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	assert.equal(nextAction({ phase: 'investigation_gate_approval', missing: ['summary.md'], fixed_steps: [{ step: 'spawn fact-checker', ok: false, output: 'refused' }, { step: 'spawn fact-checker', ok: true, output: 'done' }] }), NEXT_GATE_OWED);
+});
+
+test('at Investigation a finding with no verdict goes to the fact-checker before an investigator fault, on a local tier', (t) => {
+	const tier = process.env.SPOTLIGHT_MODEL_TIER;
+	t.after(() => { if (tier === undefined) delete process.env.SPOTLIGHT_MODEL_TIER; else process.env.SPOTLIGHT_MODEL_TIER = tier; });
+	const state = { phase: 'investigation', status: 'active', missing: ['validate-fact-check: FAIL  record:D2-F1 [investigator]: evidence bundle D2-E1 has no explicit finding link', 'validate-fact-check: FAIL  missing:D2-F9 [fact-checker]: finding D2-F9 has no fact-check verdict — every finding must be assessed'] };
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	assert.deepEqual(dispatchAt(state), { agent: 'fact-checker', task: '', step: 'fact-checker' });
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	assert.equal(dispatchAt(state)?.agent, 'investigator');
+});
+
+test('only code can reset the correction count', () => {
+	const active = { casesRoot: '/cases', caseDir: '/cases/a' } as never;
+	assert.throws(() => transitionArguments('resetCorrections', {}, active, ORCHESTRATOR), /refuses "resetCorrections"/);
+	assert.deepEqual(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true).slice(0, 1), ['reset-corrections']);
+});
+
+// Case 2bd8d15c: the blocked case's next step is the page, the route that exists.
+test('on a local tier a send-back with owed verdicts reaches the fact-checker, and repairable links go first', (t) => {
+	process.env.SPOTLIGHT_MODEL_TIER = '12b';
+	t.after(() => { delete process.env.SPOTLIGHT_MODEL_TIER; });
+	const owed = { phase: 'investigation', status: 'active', missing: ['investigator update'], follow_up: { instructions: 'Fix.' }, unverdicted: ['validate-fact-check: FAIL  missing:F1 [fact-checker]: finding F1 has no fact-check verdict'] };
+	assert.equal(dispatchAt(owed)?.agent, 'fact-checker');
+	assert.equal(dispatchAt({ ...owed, unverdicted: undefined }), undefined, 'with no verdict owed, the note stays the model\'s');
+	assert.equal(fixedStepAt({ ...owed, repairable_claim_links: true }), 'claim_links');
+	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
+	assert.equal(fixedStepAt({ ...owed, repairable_claim_links: true }), undefined, 'frontier unchanged');
+});
+
+test('every stop names its way out; a failed research round waits for the member', () => {
+	const at = (phase: string, exhausted_attempt: string) => nextAction({ phase: 'blocked', status: 'blocked', blocked: { phase, exhausted_attempt } }) ?? '';
+	for (const kind of ['structural-correction', 'fact-check-evidence-repair', 'investigation-cycle', 'research-round-cycle']) assert.match(at('investigation', kind), /^Next: call open_review .*send the case back/);
+	assert.match(at('research', 'amendment-correction'), /^Next: call open_review .*change their marks/);
+	assert.match(at('research', 'research-lane'), /^Next: tell the member .*Once the member says/);
 });

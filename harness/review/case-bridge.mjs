@@ -245,6 +245,8 @@ export function createWikiBridge({
 
 // Decision gates the resolver can report as pending, mapped from its status.
 export function pendingGate(status) {
+  // review.py investigation_stop: the way out of a stop during Investigation.
+  if (status?.next_phase === "blocked" && status?.blocked?.phase === "investigation") return "investigation_gate";
   if (status?.next_phase === "methodology_approval") return "methodology";
   if (status?.next_phase === "research_approval") return "research";
   if (["investigation_gate_approval", "investigation_gate_finalization"].includes(status?.next_phase)) return "investigation_gate";

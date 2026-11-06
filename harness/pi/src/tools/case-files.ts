@@ -14,7 +14,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCh
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, planDirections, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, factCheckerSourceURLs, fetchedFile, registeredCapture } from './fetch.ts';
-import { missingValues } from './claim-values.ts';
+import { citedFor, missingPeople, missingValues } from './claim-values.ts';
 import { flatText, linkText, sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
@@ -606,6 +606,11 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 		const old = was.get(item.id);
 		// A fact-checker's write leaves items it did not change as stored: any repair here reads as the fact-checker changing them, and refuseBundleRewrites then refuses its add for good (gold-asf on 3767f400).
 		if (old && context.env.SPOTLIGHT_ROLE === 'fact-checker' && isDeepStrictEqual(item, old)) continue;
+		// Case 275a35b6: an investigator rewrote its row without the claim_links record_finding had set, so the finding lost its support. A row for the same file keeps them unless the write says otherwise.
+		if (local && old && item.claim_links === undefined && Array.isArray(old.claim_links) && old.claim_links.length > 0 && item.raw_path === old.raw_path) {
+			item.claim_links = old.claim_links;
+			filled.push(`Code kept ${String(item.id)}'s claim_links, the finding links already recorded.`);
+		}
 		const path = item.raw_path;
 		const fromLeads = local && typeof path === 'string' && isLeadFile(context.caseDir, path) && !!registeredCapture(context, `${path}.raw`);
 		if (fromLeads) {
@@ -637,6 +642,32 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 // its own items, as phase-investigation tells it; no role moves the files of an
 // item that active passages cite.
 const ITEM_FILES = ['raw_path', 'path', 'downloaded_document_path', 'text_derivatives'];
+
+// Case 275a35b6: a correction invented D1-E2 (example.com, research/evidence2.md) with
+// claim_links to real findings, and nothing refused a row with no capture behind it.
+// On a local tier a new or moved row must name a file in the case. Refused whole, so
+// the real rows stand, and the text names the route that does work.
+function refuseMissingCapture(caseDir: string, target: string, content: string, env: Record<string, string | undefined>): void {
+	if (!localTier(env) || caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return;
+	const rowsOf = (text: string): Array<Record<string, unknown>> => {
+		try {
+			const items = (JSON.parse(text) as { items?: unknown }).items;
+			return Array.isArray(items) ? items.filter((item) => item && typeof item === 'object') : [];
+		} catch {
+			return [];
+		}
+	};
+	let stored: Array<Record<string, unknown>> = [];
+	try { stored = rowsOf(readFileSync(target, 'utf8')); } catch { /* the first write: nothing stored yet */ }
+	const known = new Map(stored.map((item) => [item.id, item.raw_path]));
+	for (const item of rowsOf(content)) {
+		const path = item.raw_path;
+		if (typeof path !== 'string' || !path.trim() || known.get(item.id) === path) continue;
+		const file = resolve(caseDir, path);
+		if (file.startsWith(`${caseDir}${sep}`) && existsSync(file)) continue;
+		throw new FileRefused(`refused: data/evidence-bundle.json item ${String(item.id)} names ${path}, which is not a capture in this case; the file is unchanged. An evidence item records a file you fetched. To link a finding to an existing item, read data/evidence-bundle.json and write that item as it is with claim_links added. To record a new source, fetch it first.`);
+	}
+}
 
 function refuseBundleRewrites(caseDir: string, target: string, content: string, role: string | undefined): void {
 	if (caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return;
@@ -677,7 +708,7 @@ function refuseBundleRewrites(caseDir: string, target: string, content: string, 
 		return [`${String(id)} (cited by ${cited.join(', ')})`];
 	});
 	if (moved.length === 0) return;
-	throw new FileRefused(`refused: data/evidence-bundle.json changes or removes the files of ${moved.join('; ')}; the file is unchanged. Recorded passages anchor to those files, so keep them as they are, and record any other file as a new item.`);
+	throw new FileRefused(`refused: data/evidence-bundle.json changes or removes the files of ${moved.join('; ')}; the file is unchanged. Recorded passages anchor to those files, so keep them as they are. To link a finding to one of these items, read data/evidence-bundle.json and write the item as it is with claim_links added. Record a file you fetched that is not listed as a new item.`);
 }
 
 // r12 (r12-ingest-audit A2): the fact-checker appended FC-E1 for its own
@@ -943,7 +974,9 @@ function completeSummary(caseDir: string, merged: string, notes: string[]): stri
 		return merged;
 	}
 	if (!summary || typeof summary !== 'object' || Array.isArray(summary) || !Array.isArray(findings) || !Array.isArray(claims)) return merged;
-	const verdicts = new Map(claims.map((claim) => [claim?.finding_id, claim?.verdict]));
+	// A finding with several fact-check rows is verified only if every row is (Codex R2).
+	const verdicts = new Map<unknown, unknown>();
+	for (const claim of claims) if (!verdicts.has(claim?.finding_id) || verdicts.get(claim?.finding_id) === 'verified') verdicts.set(claim?.finding_id, claim?.verdict);
 	const rows = findings.map((finding) => ({ id: finding?.id, claim: finding?.claim, confidence: finding?.confidence, fact_check_verdict: verdicts.get(finding?.id), ...(Array.isArray(finding?.sources) ? { source_count: finding.sources.length } : {}) }));
 	if (rows.some((row) => typeof row.fact_check_verdict !== 'string')) return merged;
 	const counts = new Map<unknown, number>();
@@ -959,6 +992,50 @@ function completeSummary(caseDir: string, merged: string, notes: string[]): stri
 		notes.push('Code wrote a plain count as title and summary where they were empty; write your own in their place.');
 	}
 	return `${JSON.stringify(filled, null, 2)}\n`;
+}
+
+// P4 (qwen-u9-mac.md: r3 left summary.md an unfilled template): on a local tier
+// code writes both gate summaries from the records, so the text is the case's
+// own: the lead, verified claims word for word, the open gaps. It reads plainer
+// than a model's overview and adds nothing the records do not hold. generated_at
+// is in both files, so a regenerated summary is never stale by hash (stale_summaries).
+export function writeGateSummary(caseDir: string): string {
+	const record = (path: string): Record<string, unknown> => {
+		try {
+			const value = JSON.parse(readFileSync(join(caseDir, path), 'utf8'));
+			return value && typeof value === 'object' ? value : {};
+		} catch {
+			return {};
+		}
+	};
+	const texts = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : []);
+	const methodology = record('data/methodology.json');
+	const cycles = Array.isArray(record('data/investigation-log.json').cycles) ? (record('data/investigation-log.json').cycles as { gaps_remaining?: unknown }[]) : [];
+	const lead = typeof methodology.lead === 'string' ? methodology.lead.trim() : '';
+	const limitations = [...new Set([...texts(cycles.at(-1)?.gaps_remaining), ...texts(methodology.limitations)])];
+	const title = lead.length > 120 ? `${lead.slice(0, lead.lastIndexOf(' ', 117))}...` : lead;
+	const done = completeSummary(caseDir, JSON.stringify({ title, cycles: Math.max(cycles.length, 1), limitations }), []);
+	const summary = JSON.parse(done) as { title: string; generated_at?: string; cycles: number; summary: string; findings?: { id: string; claim: string; confidence: unknown; fact_check_verdict: string; source_count?: number }[] };
+	if (!summary.findings || !summary.generated_at) throw new Error('the gate summary needs data/findings.json and a fact-check verdict for every finding');
+	// Unverified findings can hold invented names, so they stay out of the overview and the main list.
+	const verified = summary.findings.filter((row) => row.fact_check_verdict === 'verified');
+	const doubtful = summary.findings.filter((row) => row.fact_check_verdict !== 'verified');
+	const conclusions = verified.map((row) => row.claim);
+	const cell = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replaceAll('|', '\\|');
+	const findingTable = (rows: NonNullable<typeof summary.findings>, none: string) => (rows.length ? ['| # | Claim | Confidence | Verdict | Sources |', '|---|-------|------------|---------|---------|', ...rows.map((row) => `| ${[row.id, row.claim, row.confidence, row.fact_check_verdict, row.source_count ?? ''].map(cell).join(' | ')} |`)].join('\n') : none);
+	const list = (items: string[], none: string) => (items.length ? items.map((item) => `- ${item}`).join('\n') : none);
+	const markdown = [
+		`# ${summary.title}`,
+		`**Date:** ${summary.generated_at} | **Cycles:** ${summary.cycles} | **Status:** Pending review`,
+		`## Overview\n\n${lead ? `Asked: ${lead}\n\n` : ''}${summary.summary}`,
+		`## Key Conclusions\n\n${list(conclusions, 'No finding is verified.')}`,
+		`## Findings\n\n${findingTable(verified, summary.findings.length ? 'No finding is verified.' : 'No finding was recorded.')}`,
+		...(doubtful.length ? [`## Not verified, check before use\n\n${findingTable(doubtful, '')}`] : []),
+		`## Limitations\n\n${list(limitations, 'None recorded.')}`,
+	].join('\n\n');
+	writeConfined(caseDir, caseDir, 'data/summary.json', `${JSON.stringify({ ...summary, key_conclusions: conclusions }, null, 2)}\n`);
+	writeConfined(caseDir, caseDir, 'summary.md', `${markdown}\n`);
+	return `code wrote summary.md and data/summary.json: ${summary.summary}`;
 }
 
 // Only documented path fields get the case-root alias; other text is evidence
@@ -1134,7 +1211,29 @@ function fillResearchRefs(context: Pick<ToolContext, 'caseDir' | 'env'>, written
 
 // B14, B23(c) (K2-13: rejected for one top-level "model"; K5-4: bare strings, then {id, text, source_ref}). Only that field goes, never another unknown one.
 // A selection becomes {expression_id} when it names one passage on record; the quote's text always comes from that passage, so a typed copy is dropped.
+// T8 on 7656d7ba: the analyst's headlines drew on neighbouring lines and stood false beside
+// the verified pill. Nobody checks that prose, so a local tier reports the fact-checked claim
+// and nothing else about the finding. validate-report-draft.py accepts exactly this shape.
+function claimsAsHeadlines(caseDir: string, document: Record<string, unknown>, notes: string[]): void {
+	let findings: unknown;
+	try {
+		findings = JSON.parse(readFileSync(join(caseDir, 'data', 'findings.json'), 'utf8')).findings;
+	} catch {
+		return;
+	}
+	const claims = new Map((Array.isArray(findings) ? findings : []).map((finding) => [finding?.id, finding?.claim]));
+	let set = 0;
+	for (const treatment of Array.isArray(document.finding_treatments) ? document.finding_treatments : []) {
+		const claim = claims.get(treatment?.finding_id);
+		if (typeof claim !== 'string' || (treatment.headline === claim && treatment.summary === '' && treatment.why_it_matters === '')) continue;
+		Object.assign(treatment, { headline: claim, summary: '', why_it_matters: '' });
+		set += 1;
+	}
+	if (set) notes.push(`Code set ${set} headline(s) to the fact-checked claim and cleared their summary and why_it_matters; the report shows only checked claims.`);
+}
+
 function repairDraft(caseDir: string, document: Record<string, unknown>, notes: string[]): void {
+	claimsAsHeadlines(caseDir, document, notes);
 	if (Object.hasOwn(document, 'model')) {
 		delete document.model;
 		notes.push('Code dropped the top-level model field, which a report draft does not have.');
@@ -1609,6 +1708,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseLeadsEvidence(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseMissingCapture(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content, context.env);
 				refuseBundleRewrites(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content, role);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
@@ -1653,6 +1753,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
 				refuseLeadsEvidence(caseDir, target, updated);
+				refuseMissingCapture(caseDir, target, updated, context.env);
 				refuseBundleRewrites(caseDir, target, updated, role);
 				refuseDriftedClaims(caseDir, target, updated);
 				refuseMissingCitedFiles(caseDir, target, updated);
@@ -2191,13 +2292,14 @@ function sourcePages(context: ToolContext, item: RecordRow, recheck: Recheck): s
 	return [page && 'text' in page ? page.text : '', capture];
 }
 
-function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; status: string; passages?: string; pages?: string } {
+function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; located?: RecordRow[]; status: string; passages?: string; pages?: string } {
 	const items = findingItems(context, findingId);
 	const passages = recordRows(recordDocument(context, 'data/source-expressions.json').expressions).filter((passage) =>
 		recordRows(passage.lifecycle_events).at(-1)?.event === 'activated'
 		&& recordRows(passage.finding_links).some((link) => link.finding_id === findingId && link.relation === 'supports'));
 	const recheck = taskRecheck(context);
 	const statuses: string[] = [];
+	const located: RecordRow[] = [];
 	for (const item of items) {
 		const url = itemURL(item);
 		const own = passages.filter((passage) => passage.original_evidence_bundle_id === item.id && typeof passage.text === 'string');
@@ -2208,10 +2310,12 @@ function refetchedSupport(context: ToolContext, findingId: string): { item?: Rec
 		for (const passage of own) {
 			const found = locate(refetch.text, String(passage.text));
 			if (found && !sameSourceSupport(context, url, findingId, found.quote)) { unsupported = true; continue; }
-			if (found) return { status: 'found', passages: passages.map((row) => String(row.text ?? '')).join('\n'), pages: items.flatMap((other) => sourcePages(context, other, recheck)).join('\n'), item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } } };
+			if (found) located.push({ description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } });
 		}
+		if (located.length) continue;
 		statuses.push(unsupported ? `${url}: the investigation records no direct or indirect support from this source for the finding` : `${url}: re-fetched, but the supporting passage is no longer on the page`);
 	}
+	if (located.length) return { status: 'found', passages: passages.map((row) => String(row.text ?? '')).join('\n'), pages: items.flatMap((other) => sourcePages(context, other, recheck)).join('\n'), item: located[0], located };
 	if (!statuses.length) return { status: passages.length ? 'no harness re-fetch of its sources' : 'no recorded supporting passage to compare' };
 	return { status: statuses.join('; ') };
 }
@@ -2272,17 +2376,20 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 			let status = '';
 			if (input.answer === 'supports') {
 				const support = refetchedSupport(context, findingId);
-				if (support.item) evidence.unshift(support.item);
-				else status = support.status;
+				if (!support.item) status = support.status;
 				// B20b: a run with no harness re-fetch (no batch) cannot verify; "supports" must not turn a claim unverified.
 				const existing = recordRows(recordDocument(context, 'data/fact-check.json').claims).find((row) => row.finding_id === findingId);
-				if (!evidence.length && !context.env.SPOTLIGHT_TASK_RECHECK && existing) return textResult(`${findingId} keeps its ${String(existing.verdict)} claim: this run has no harness re-fetch to check it against.`);
+				if (!support.item && !context.env.SPOTLIGHT_TASK_RECHECK && existing) return textResult(`${findingId} keeps its ${String(existing.verdict)} claim: this run has no harness re-fetch to check it against.`);
 				// The claim check downgrades and never refuses: the same claim is written, unverified, with the value named.
 				const claim = recordRows(recordDocument(context, 'data/findings.json').findings).find((row) => row.id === findingId)?.claim;
 				const missing = support.item ? missingValues(String(claim ?? ''), support.passages ?? '', support.pages) : [];
-				if (missing.length) {
+				// Every person must be in what the verdict cites (D1-F5, D2-F7).
+				const cited = citedFor(String(claim ?? ''), support.located ?? []);
+				evidence.unshift(...cited);
+				const people = support.item ? missingPeople(String(claim ?? ''), cited.map((row) => String(row.quote)).join('\n')) : [];
+				if (missing.length || people.length) {
 					evidence.length = 0;
-					status = `the finding's sources do not contain ${missing.join(', ')}`;
+					status = [...(missing.length ? [`the finding's sources do not contain ${missing.join(', ')}`] : []), ...(people.length ? [`the cited passage does not name ${people.join(', ')}`] : [])].join('; ');
 				}
 			}
 			const against: RecordRow[] = [];
@@ -2303,11 +2410,15 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 				...(input.answer === 'partly' ? { flags: [{ code: 'partial_support', reason }] } : {}),
 			};
 			const result = await assess.execute(id, { assessment }, signal, ...rest);
-			const said = verdict === 'unverified' ? `${findingId} recorded as unverified${status ? `: ${status}` : ''}.` : `${findingId} recorded as ${verdict}.`;
+			const said = verdict === 'unverified' ? `${findingId} recorded as unverified${status ? `: ${status}` : ''}.${status.includes('does not name') ? ' Go on to your next finding; this one needs a passage that names them.' : ''}` : `${findingId} recorded as ${verdict}.`;
 			return { ...result, content: [...result.content, { type: 'text' as const, text: said }] };
 		},
 	};
 }
+
+const claimKey = (claim: unknown) => String(claim).normalize('NFKC').toLowerCase().replace(/[\s\p{P}]+/gu, ' ').trim();
+const sameClaim = (a: unknown, b: unknown) => claimKey(a) === claimKey(b);
+const hasPassage = (context: ToolContext, findingId: string) => recordRows(recordDocument(context, 'data/source-expressions.json').expressions).some((passage) => recordRows(passage.finding_links).some((link) => link.finding_id === findingId));
 
 export function recordTools(tools: ToolDefinition[], context: ToolContext): ToolDefinition[] {
 	const role = context.env.SPOTLIGHT_ROLE;
@@ -2362,7 +2473,12 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 				if (active && row.confidence === 'disputed') throw new ToolArgumentError('record_finding: activated findings use confidence high, medium or low; record uncertainty in the claim and grounding.');
 				if (!row.id) {
 					const prefix = context.env.SPOTLIGHT_DIRECTION ? `${context.env.SPOTLIGHT_DIRECTION}-F` : 'F';
-					const same = rows.find((item) => typeof item.id === 'string' && item.id.startsWith(prefix) && item.claim === row.claim);
+					// Local tiers (u9mac-rd3b81 F2, F3): a claim differing only in case or punctuation is the same claim, and
+					// once it holds a passage a second cite would overwrite good lines, so the first stands. Without a passage
+					// this is the repair route, which keeps the id. Same direction only: an empty direction is dispatched again.
+					const local = localTier(context.env);
+					const same = rows.find((item) => typeof item.id === 'string' && item.id.startsWith(prefix) && (local ? sameClaim(item.claim, row.claim) : item.claim === row.claim));
+					if (same && local && active && hasPassage(context, String(same.id))) return textResult(`This claim is already recorded as ${String(same.id)}, so nothing was written. Record a different claim, or finish.`);
 					let next = 1;
 					const taken = new Set(rows.map((item) => item.id));
 					while (taken.has(`${prefix}${next}`)) next++;

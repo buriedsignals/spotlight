@@ -30,8 +30,9 @@ import { basename, dirname, resolve } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
+import { directionTerms, wordsOf } from '../directions.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { LEAD_MARKER, readTarget, writeConfined } from './case-files.ts';
+import { LEAD_MARKER, localTier, readTarget, writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { startEgressProxy } from './proxy.ts';
 import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython, savePath, saveTarget } from './run.ts';
@@ -110,15 +111,38 @@ export async function rlmComplete(env: ToolContext['env'], baseURL: string, body
 	return answer.choices?.[0]?.message?.content?.trim() ?? '';
 }
 
+const CONTEXT_LINES = 3;
+function widened(picked: Array<{ line_start: number; line_end: number; lo: number; hi: number }>): typeof picked {
+	const out: typeof picked = [];
+	for (const range of [...picked].sort((a, b) => a.line_start - b.line_start)) {
+		const wide = { ...range, line_start: Math.max(range.lo, range.line_start - CONTEXT_LINES), line_end: Math.min(range.hi, range.line_end + CONTEXT_LINES) };
+		const last = out.at(-1);
+		if (last && wide.line_start <= last.line_end + 1) last.line_end = Math.max(last.line_end, wide.line_end);
+		else out.push(wide);
+	}
+	return out;
+}
+
+// Raw lines holding two or more of the direction's words, best first
+// (u9mac-s856, gate9 ab7e6c04: the helper never picked the line naming the
+// role). On the recorded Tor pages this finds 2 to 6 lines, the role line first.
+const MAX_TERM_LINES = 12;
+function termLines(lines: string[], terms: ReadonlySet<string>): number[] {
+	const scored = lines.flatMap((line, index) => {
+		const hits = [...wordsOf(line)].filter((word) => terms.has(word)).length;
+		return hits >= 2 ? [{ line: index + 1, hits }] : [];
+	});
+	return scored.sort((a, b) => b.hits - a.hits || a.line - b.line).slice(0, MAX_TERM_LINES).map(({ line }) => line);
+}
+
 // The helper chooses line ranges only. It never writes the text returned as a lead.
-async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<{ leads: string; inspected: number; total: number; selections: Array<{ line_start: number; line_end: number }> }> {
+async function distill(baseURL: string, env: ToolContext['env'], markdown: string, terms: ReadonlySet<string>, signal?: AbortSignal): Promise<{ leads: string; inspected: number; total: number; selections: Array<{ line_start: number; line_end: number }> }> {
 	const request = JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest;
 	const task = env.SPOTLIGHT_TASK_HEADER?.slice(0, 4000);
 	const scope = task ? `Task scope (not source evidence):\n${task}\n\n` : '';
 	const lines = markdown.split('\n').map((line) => line.endsWith('\r') ? line.slice(0, -1) : line);
 	if (lines.at(-1) === '') lines.pop();
-	const excerpts: string[] = [];
-	const selections: Array<{ line_start: number; line_end: number }> = [];
+	const picked: Array<{ line_start: number; line_end: number; lo: number; hi: number }> = [];
 	let next = 0;
 	for (let chunk = 0; chunk < 3 && next < lines.length; chunk++) {
 		const start = next;
@@ -140,13 +164,24 @@ async function distill(baseURL: string, env: ToolContext['env'], markdown: strin
 			if (!range || typeof range !== 'object' || Array.isArray(range) || Object.keys(range).sort().join() !== 'end,start') throw new Error('RLM returned invalid line selection');
 			const { start: first, end: last } = range as { start: unknown; end: unknown };
 			if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || (first as number) < start + 1 || (last as number) > next || (last as number) < (first as number)) throw new Error('RLM selected lines outside the inspected range');
-			selections.push({ line_start: first as number, line_end: last as number });
-			excerpts.push(`[raw lines ${first}-${last}]\n${lines.slice((first as number) - 1, last as number).join('\n')}`);
+			picked.push({ line_start: first as number, line_end: last as number, lo: start + 1, hi: next });
 		}
 	}
-	if (!excerpts.length) throw new Error('RLM returned no extractive leads');
-	const leads = excerpts.join('\n\n');
-	if (leads.length > MAX_RETURNED_CHARS) throw new Error('RLM selections exceed the output bound');
+	const matched = termLines(lines, terms).map((line) => ({ line_start: line, line_end: line, lo: 1, hi: lines.length }));
+	if (!picked.length && !matched.length) throw new Error('RLM returned no extractive leads');
+	const render = (ranges: Array<{ line_start: number; line_end: number }>) => ranges.map(({ line_start, line_end }) => `[raw lines ${line_start}-${line_end}]\n${lines.slice(line_start - 1, line_end).join('\n')}`).join('\n\n');
+	// qwen real launch (ab7e6c04): the helper picked 'Executive Director of the Tor Project.' and not the name two lines above it, so the page was
+	// refetched seven times. On the local tiers each pick keeps CONTEXT_LINES either side, inside the chunk the helper inspected; if that would
+	// pass the output bound, the helper's picks stay as chosen.
+	const wide = localTier(env) ? widened([...picked, ...matched]) : picked;
+	const selections = wide.map(({ line_start, line_end }) => ({ line_start, line_end }));
+	let leads = render(selections);
+	if (leads.length > MAX_RETURNED_CHARS && wide !== picked) {
+		const plain = picked.map(({ line_start, line_end }) => ({ line_start, line_end }));
+		leads = render(plain);
+		selections.splice(0, selections.length, ...plain);
+	}
+	if (!leads || leads.length > MAX_RETURNED_CHARS) throw new Error('RLM selections exceed the output bound');
 	return { leads, inspected: next, total: lines.length, selections };
 }
 
@@ -160,16 +195,16 @@ type ScrapeResult = { markdown?: string; source_url?: string; provider?: string;
 // cause comes first and short, and a URL that failed in this case is not
 // fetched again: once if a site blocked it, twice otherwise.
 export function fetchFailure(detail: string): string {
-	const lines = detail.split('\n').map((line) => line.trim()).filter((line) => line && !/Warning\b|warnings\.warn\(|^\[(?:FETCH|SCRAPE|COMPLETE|INIT)\]/.test(line));
+	const lines = detail.split('\n').map((line) => line.trim()).filter((line) => line && !/Warning\b|warnings\.warn\(|^\[(?:FETCH|SCRAPE|COMPLETE|INIT)\]|^[╔║╚]/.test(line));
 	const cause = lines.find((line) => line.startsWith('scrape failed:')) ?? lines.find((line) => line.startsWith('[ERROR]')) ?? lines.at(-1) ?? 'no output';
 	return cause.replace(/^scrape failed:\s*/, '').slice(0, 400);
 }
 
 const blocked = (cause: string) => /bot-blocked|anti-bot|captcha|\b403\b|access denied/i.test(cause);
-type Failures = Record<string, { count: number; cause: string }>;
+type Failures = Record<string, { count: number; cause: string; key?: string; told?: boolean }>;
 
 // One file per case, so two cases' workers never write the same file.
-function failuresPath(context: ToolContext): string | undefined {
+function failuresPath(context: Pick<ToolContext, 'caseDir' | 'env'>): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
 	return dataDir ? resolve(dataDir, 'work', 'fetch-failures', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
 }
@@ -183,6 +218,34 @@ function readFailures(path: string | undefined): Failures {
 	}
 }
 
+// `always` with a key Firecrawl refuses (case 3f58f43b): every page would fail the same way,
+// so one failure stops the case's fetches until the key or the mode changes, and the member
+// is told once (takeFirecrawlNotice). Only the key's hash is kept.
+const FIRECRAWL_STOP = 'firecrawl:key';
+const FIRECRAWL_KEY_FAULT = /^Firecrawl (?:rejected its key|is set to Always available and has no key)/;
+const keyHash = (context: Pick<ToolContext, 'env'>) => createHash('sha256').update(context.env?.FIRECRAWL_API_KEY ?? '').digest('hex').slice(0, 16);
+export function firecrawlMode(configPath: string | undefined): string {
+	try {
+		const mode = (JSON.parse(readFileSync(configPath ?? '', 'utf8')) as { firecrawl_mode?: unknown }).firecrawl_mode;
+		return typeof mode === 'string' ? mode : 'backup';
+	} catch {
+		return 'backup';
+	}
+}
+function firecrawlStop(context: ToolContext): string | undefined {
+	const stop = readFailures(failuresPath(context))[FIRECRAWL_STOP];
+	return stop && stop.key === keyHash(context) && firecrawlMode(context.configPath) === 'always' ? stop.cause : undefined;
+}
+export function takeFirecrawlNotice(context: Pick<ToolContext, 'caseDir' | 'env'>): string | undefined {
+	const path = failuresPath(context);
+	const all = readFailures(path);
+	const stop = all[FIRECRAWL_STOP];
+	if (!path || !stop || stop.told) return undefined;
+	all[FIRECRAWL_STOP] = { ...stop, told: true };
+	writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
+	return stop.cause.replace(/ \S+ was not read directly, so your IP stayed away from it\./, ' No page was read directly, so your IP stayed away from them.');
+}
+
 export function priorFailure(context: ToolContext, url: string): string | undefined {
 	const seen = readFailures(failuresPath(context))[url];
 	if (!seen || (seen.count < 2 && !blocked(seen.cause))) return undefined;
@@ -194,6 +257,7 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 	if (!path) return;
 	const all = readFailures(path);
 	all[url] = { count: (all[url]?.count ?? 0) + 1, cause };
+	if (FIRECRAWL_KEY_FAULT.test(cause)) all[FIRECRAWL_STOP] = { count: 1, cause, key: keyHash(context) };
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
@@ -209,7 +273,10 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 // has no tool to add one).
 // sha256 is the saved text's hash: a file changed after the fetch is not that
 // fetch any more (Codex review of #274b).
-export type Fetched = { url: string; accessed: string; provider?: string; sha256: string; acquired_by?: string };
+export type Fetched = { url: string; accessed: string; provider?: string; sha256: string; acquired_by?: string; distilled?: Distilled };
+// A distilled fetch's result without its leads text, and the hash of the leads
+// file: all a later fetch of the same URL needs to return it.
+type Distilled = { lead_file_sha256: string; result: Record<string, unknown> };
 function fetchedPath(context: ToolContext): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
 	return dataDir ? resolve(dataDir, 'work', 'fetched', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
@@ -292,6 +359,33 @@ export function factCheckerAlternative(context: ToolContext, relative: string): 
 	}
 }
 
+// gate9 ab7e6c04: an investigator fetched the same page 7 and 6 times under
+// new names, each time for the same leads. On the local tiers its fetch of a
+// URL it already holds returns that capture: no scrape, no helper call, no new
+// file. Only the investigator's, so the fact-checker keeps acquiring its own;
+// and only while the raw page and its leads are unchanged since the fetch.
+const sameURL = (a: string, b: unknown) => typeof b === 'string' && a.split('#')[0] === b.split('#')[0];
+function reusedCapture(context: ToolContext, url: string): Record<string, unknown> | undefined {
+	const registry = fetchedPath(context);
+	if (!registry || !localTier(context.env) || context.env.SPOTLIGHT_ROLE !== 'investigator') return undefined;
+	let captures: Record<string, Fetched>;
+	try { captures = JSON.parse(readFileSync(registry, 'utf8')) as Record<string, Fetched>; } catch { return undefined; }
+	for (const [rawPath, capture] of Object.entries(captures)) {
+		const kept = capture.distilled;
+		if (!kept || capture.acquired_by !== 'investigator' || !(sameURL(url, capture.url) || sameURL(url, kept.result.requested_url)) || !registeredCapture(context, rawPath)) continue;
+		let leadFile: string;
+		try { leadFile = readFileSync(readTarget(context.caseDir, String(kept.result.saved_to)), 'utf8'); } catch { continue; }
+		if (sha256(leadFile) !== kept.lead_file_sha256) continue;
+		return {
+			...kept.result,
+			reused: true,
+			note: `Already fetched in this case at ${capture.accessed}: this is that capture, kept as ${String(kept.result.saved_to)}, and nothing new was saved. Read the lines you need from ${rawPath}, or go to the next source.`,
+			leads: leadFile.slice(leadFile.indexOf('\n\n') + 2, -1),
+		};
+	}
+	return undefined;
+}
+
 export function fetchTool(context: ToolContext): ToolDefinition {
 	return {
 		name: 'fetch',
@@ -308,6 +402,10 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			}
 			const rlm = rlmEndpoint(context.env);
 			if (rlm && !input.save_as) throw new Error('fetch: on this tier fetch needs save_as, so the raw page is kept beside its leads.');
+			const reused = rlm ? reusedCapture(context, input.url) : undefined;
+			if (reused) return jsonResult(reused);
+			const stopped = firecrawlStop(context);
+			if (stopped) throw new Error(`fetch failed: ${stopped}`);
 			const prior = priorFailure(context, input.url);
 			if (prior) throw new Error(prior);
 			const viaTor = anonymizedFetch(context.env);
@@ -369,7 +467,8 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown) });
 			let selected: Awaited<ReturnType<typeof distill>>;
 			try {
-				selected = await distill(rlm, context.env, markdown, signal);
+				const terms = localTier(context.env) && context.env.SPOTLIGHT_ROLE === 'investigator' ? directionTerms(context.caseDir, context.env.SPOTLIGHT_DIRECTION) : new Set<string>();
+				selected = await distill(rlm, context.env, markdown, terms, signal);
 			} catch (error) {
 				// The page stays on disk; its text still never enters the context.
 				return jsonResult({
@@ -384,7 +483,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			const { leads, inspected, total, selections } = selected;
 			const leadFile = `${LEAD_MARKER} ${page.final_url}\n# (extracts; raw source: ${basename(rawPath)}; inspected lines 1-${inspected} of ${total})\n\n${leads}\n`;
 			const saved = writeConfined(context.caseDir, context.writeRoot, leadPath, leadFile);
-			return jsonResult({
+			const answer = {
 				...page,
 				distilled: true,
 				saved_to: saved,
@@ -396,8 +495,9 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 				raw_path: rawPath,
 				raw_sha256: sha256(markdown),
 				truncated: leads.length > MAX_RETURNED_CHARS,
-				leads: leads.slice(0, MAX_RETURNED_CHARS),
-			});
+			};
+			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown), distilled: { lead_file_sha256: sha256(leadFile), result: answer } });
+			return jsonResult({ ...answer, leads: leads.slice(0, MAX_RETURNED_CHARS) });
 		},
 	};
 }

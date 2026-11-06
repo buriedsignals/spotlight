@@ -24,6 +24,7 @@ from .contract import (
     SCRIPT_DIR,
 )
 from .dependencies import (
+    investigation_gate_dependencies,
     approval_matches,
     current_hashes,
     investigation_gate_approval_matches,
@@ -32,7 +33,7 @@ from .dependencies import (
     sha256,
     validate_approval,
 )
-from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, research_plan, research_switch_on, status_for
+from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, rebuilt_claim_links, research_plan, research_switch_on, status_for
 from . import research as research_rules
 from .research import AMENDMENT_CORRECTION, CYCLE, ROUND_CYCLE
 from .case_contract import bind as bind_case_contract
@@ -222,7 +223,7 @@ def _decider(
     return {"decided_by": decided_by, "decided_at": decided_at}
 
 
-def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> None:
+def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str, reopen: bool = True) -> None:
     if kind not in RECORDABLE_ATTEMPTS:
         raise OrchestrationError(f"unsupported attempt kind: {kind}")
     if not gap.strip():
@@ -249,7 +250,7 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     attempts[kind] = attempts.get(kind, 0) + 1
     if research:
         state["open_research"] = {"kind": kind, "gap": gap}
-    else:
+    elif reopen:
         state["open_cycle"] = {"kind": kind, "gap": gap, **rework_snapshot(case)}
     if kind in (CYCLE, ROUND_CYCLE):
         state["cycle_gaps"] = [*state.get("cycle_gaps", []), gap]
@@ -268,6 +269,41 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
             # The gaps report: every unresolved gap the cycles recorded.
             state["blocked"]["gaps_report"] = list(state["cycle_gaps"])
     _publish(case, data_descriptor, state)
+
+
+def reset_corrections(case: Path, data_descriptor: int) -> None:
+    """A correction made progress: the no-progress count starts again, so it counts
+    in a row. Code's own step, never the model's; a blocked case stays blocked."""
+    state = load_state(case, data_descriptor)
+    if "blocked" in state or not state["attempts"].get("structural-correction"):
+        return
+    state["attempts"].pop("structural-correction")
+    if (state.get("open_cycle") or {}).get("kind") == "structural-correction":
+        state.pop("open_cycle")
+    _publish(case, data_descriptor, state)
+
+
+def repair_claim_links(case: Path, data_descriptor: int) -> None:
+    """Write the claim links findings already name. Code's own step. A repaired link is
+    not the investigator's update: an open follow-up still waits for one, so the member's
+    note cannot lapse on this write. The repair ends a correction that was about links."""
+    state = load_state(case, data_descriptor)
+    if status_for(case, state, data_descriptor)["next_phase"] != "investigation":
+        raise OrchestrationError("claim links are repaired during investigation")
+    bundle = rebuilt_claim_links(case)
+    if bundle is None:
+        return
+    path = "data/evidence-bundle.json"
+    before = sha256(case_path(case, path))
+    updated = (json.dumps(bundle, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    state["attempts"].pop("structural-correction", None)
+    if (state.get("open_cycle") or {}).get("kind") == "structural-correction":
+        state.pop("open_cycle")
+    for record in (state.get("follow_up"), state.get("open_cycle")):
+        hashes = record.get("investigator_sha256") if isinstance(record, dict) else None
+        if isinstance(hashes, dict) and hashes.get(path) == before:
+            hashes[path] = hashlib.sha256(updated).hexdigest()
+    _publish(case, data_descriptor, state, extra={path: updated})
 
 
 def start_research_round(case: Path, data_descriptor: int) -> None:
@@ -412,6 +448,22 @@ def record_amendment(case: Path, data_descriptor: int, build: bool = False) -> N
     _publish(case, data_descriptor, state, ledger, {"data/methodology.json": amendment_bytes})
 
 
+def resume_stopped_research(case: Path, data_descriptor: int) -> None:
+    """The way out of a stop at Research. A refused amendment goes back to the Research
+    page, where the member changes the marks; a failed round runs again. Each try needs
+    the member, so this cannot loop by itself."""
+    state = load_state(case, data_descriptor)
+    status = status_for(case, state, data_descriptor)
+    if status["next_phase"] != "blocked" or status["blocked"].get("phase") != "research":
+        raise OrchestrationError("only a case stopped at Research can resume it")
+    kind = state.pop("blocked")["exhausted_attempt"]
+    state["attempts"].pop(kind, None)
+    if kind == AMENDMENT_CORRECTION:
+        state["approvals"].pop("research", None)
+        state.pop("open_amendment", None)
+    _publish(case, data_descriptor, state)
+
+
 def continue_without_research(case: Path, data_descriptor: int) -> None:
     """The member's choice while Research is off: drop the research plan.
     The methodology changes, so the Methodology gate reopens and the member
@@ -486,7 +538,9 @@ def request_follow_up(
         raise OrchestrationError("instructions must describe the requested follow-up")
     requester = _follow_up_requester(nonce, decided_by, decided_at, requested_by_role)
     state = load_state(case, data_descriptor)
-    phase = status_for(case, state, data_descriptor)["next_phase"]
+    status = status_for(case, state, data_descriptor)
+    phase = status["next_phase"]
+    stopped = review.investigation_stop(status)
     # Bind the Report the member actually saw in this same locked transaction.
     if shown_gate is not None or shown_digest is not None:
         if shown_gate != "report" or nonce is None or not isinstance(shown_digest, str):
@@ -495,7 +549,7 @@ def request_follow_up(
             raise review.ReviewDigestChanged("review digest changed since the page loaded; reload and decide again")
         if phase != "report":
             raise OrchestrationError("the Report is no longer waiting for the member")
-    if phase not in {
+    if not stopped and phase not in {
         "investigation_gate_approval",
         "investigation_gate_finalization",
         "report",
@@ -508,7 +562,8 @@ def request_follow_up(
         case, data_descriptor, "investigation_gate", nonce, digest,
         ready_check=False, unpaged_channel=AGENT_CHANNEL,
     )
-    dependency_digest = require_investigation_gate_digest(case)
+    # A stopped case may lack gate inputs, such as a summary; sending it back is how it gets them.
+    dependency_digest = str(investigation_gate_dependencies(case)["dependency_digest"]) if stopped else require_investigation_gate_digest(case)
     record_decision(ledger, binding, "follow_up", dependency_digest)
     # Indicator Framework items the member sent to the next cycle, from the
     # review record this decision binds (binding["review_sha256"]).
@@ -522,6 +577,8 @@ def request_follow_up(
         "decision": "follow_up",
         "review": binding,
     }
+    if stopped:  # the member's note starts a new try
+        state["attempts"].pop(state.pop("blocked")["exhausted_attempt"], None)
     state["approvals"].pop("investigation_gate", None)
     state.pop("investigation_gate_finalization", None)
     state["decisions"].clear()

@@ -3,7 +3,7 @@
 // model that only writes text does too").
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ROUTER_MODEL, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { ROUTER_MODEL, memberHasTheMove, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { INPUTS_REFUSED, refusedSpawnMove } from './tools/spotlight.ts';
 import { FACT_CHECKERS_SPENT } from './subagents.ts';
 import { EMPTY_TURN_NUDGE, RUNAWAY_TURN_NUDGE } from './extension.ts';
@@ -25,18 +25,16 @@ test('the code router resolves after any event, follows open_review, and otherwi
 	assert.equal(routeWithoutMember(routerState([call('spotlight_resolve', true), resolved({ phase: 'brief', next_action: 'Next: restate the lead.' })])).kind, 'model');
 });
 
-test('a case blocked on a refused amendment ends the turn with code-written words, not a model turn', () => {
-	const blocked = [call('spotlight_resolve', true), resolved({ phase: 'blocked', status: 'blocked', blocked: { exhausted_attempt: 'amendment-correction' } })];
-	const move = routeWithoutMember(routerState(blocked));
-	assert.equal(move.kind, 'stop');
-	assert.match((move as { text: string }).text, /plan is unchanged[\s\S]*change the methodology[\s\S]*approve it again/);
-	// A format error: no claim about the fact-check, and a way back that fits it.
-	const format = (routeWithoutMember(routerState([call('spotlight_resolve', true), resolved({ status: 'blocked', blocked: { exhausted_attempt: 'structural-correction' } })])) as { text: string }).text;
-	assert.doesNotMatch(format, /fact-check/);
-	assert.match(format, /format check[\s\S]*not in your plan[\s\S]*approve the methodology again[\s\S]*small edit/);
-	// Other blocks and a stale resolve are not this stop's.
-	assert.equal(routeWithoutMember(routerState([call('spotlight_resolve', true), resolved({ status: 'blocked', blocked: { exhausted_attempt: 'investigation-cycle' } })])).kind, 'model');
-	assert.equal((routeWithoutMember(routerState([...blocked, call('spawn_agent'), result('spawn_agent')])) as { tool?: string }).tool, 'spotlight_resolve');
+test('a stop at Research after a failed round waits for the member, whose message runs it again once', () => {
+	const stopped = resolved({ phase: 'blocked', status: 'blocked', blocked: { phase: 'research', exhausted_attempt: 'research-lane', gap: 'OpenRouter key rejected\nmore' }, next_action: 'Next: tell the member. Once they say so, call open_review.' });
+	const inTurn = [{ role: 'user', content: 'Continue.' }, call('spawn_agent'), result('spawn_agent'), call('spotlight_resolve', true), stopped];
+	const stop = routeWithoutMember(routerState(inTurn));
+	assert.equal(stop.kind, 'stop', 'the turn that failed does not run again by itself');
+	assert.match((stop as { text: string }).text, /failed three times \(OpenRouter key rejected\)[\s\S]*send a message here[\s\S]*runs the research again/);
+	assert.ok(memberHasTheMove((stop as { text: string }).text));
+	const answered = [{ role: 'user', content: 'The key is fixed.' }, call('spotlight_resolve', true), stopped];
+	assert.equal((routeWithoutMember(routerState(answered)) as { tool?: string }).tool, 'open_review');
+	assert.equal((routeWithoutMember(routerState([...answered, call('open_review'), result('open_review')])) as { tool?: string }).tool, 'spotlight_resolve', 'then the case goes on');
 });
 
 test('a member message: approval talk writes the brief only while the Brief resolve is the latest event; an unanswered intent goes to the model', () => {
@@ -126,4 +124,13 @@ test('one refusal, changed records and the router\'s own call all leave the turn
 	assert.deepEqual(routeRefusedSpawn(atModel(KDE), handed, twice, 'changed', refusedSpawnMove), handed, 'the count starts again after a change');
 	const resolve = { kind: 'call', tool: 'spotlight_resolve', reason: 'fresh state first' } as const;
 	assert.deepEqual(routeRefusedSpawn(atModel(SFC), resolve, refusedTwice('analyst', 'no'), 'd', refusedSpawnMove), resolve);
+});
+
+// D1 loads on demand: a triage it could not answer ends on code's line, not the model's retelling (qwen-no-d1.md: asked the same question four times).
+test('a round held at triage stops on code\'s words, naming the failure and both ways on', () => {
+	const held = routerState([call('spotlight_resolve', true), resolved({ phase: 'research', research: { resume_at: 'triage' }, research_round: { triage: { ok: false, error: 'traceback\nresearch-triage: no triage written: local unavailable: HTTP 503' } } })]);
+	const move = routeWithoutMember(held) as { kind: string; text: string };
+	assert.equal(move.kind, 'stop');
+	assert.match(move.text, /could not triage[\s\S]*HTTP 503[\s\S]*Send a message here to try again[\s\S]*turn Research off/);
+	assert.doesNotMatch(move.text, /traceback/);
 });

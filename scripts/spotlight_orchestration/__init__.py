@@ -14,11 +14,14 @@ __all__ = [
     "OrchestrationError",
     "approve",
     "continue_without_research",
+    "resume_stopped_research",
+    "repair_claim_links",
     "decide_ingest",
     "decide_report",
     "issue_review_nonce",
     "record_amendment",
     "record_attempt",
+    "reset_corrections",
     "request_follow_up",
     "resolve",
     "review_edit",
@@ -74,10 +77,15 @@ def approve(
     )
 
 
+def reset_corrections(case_dir: str | Path, *, authorized_cases_root: str | Path | None = None) -> None:
+    _transition(case_dir, transitions.reset_corrections, authorized_cases_root=authorized_cases_root)
+
+
 def record_attempt(
     case_dir: str | Path,
     kind: str,
     gap: str,
+    reopen: bool = True,
     *,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
@@ -86,6 +94,7 @@ def record_attempt(
         transitions.record_attempt,
         kind,
         gap,
+        reopen,
         authorized_cases_root=authorized_cases_root,
     )
 
@@ -107,6 +116,24 @@ def continue_without_research(
     the Methodology gate reopens for the plan without research."""
     _transition(
         case_dir, transitions.continue_without_research, authorized_cases_root=authorized_cases_root
+    )
+
+
+def resume_stopped_research(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> None:
+    """The way out of a stop at Research (transitions.resume_stopped_research)."""
+    _transition(
+        case_dir, transitions.resume_stopped_research, authorized_cases_root=authorized_cases_root
+    )
+
+
+def repair_claim_links(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> None:
+    """Write the claim links findings already name (transitions.repair_claim_links)."""
+    _transition(
+        case_dir, transitions.repair_claim_links, authorized_cases_root=authorized_cases_root
     )
 
 
@@ -309,6 +336,12 @@ def review_view(
             "review_digest": None,
             "nonce_sha256": None,
         }
-    return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
-            "can_request_follow_up": gate in {"investigation_gate", "report"}
-            and status["phase"] in {"investigation_gate_approval", "investigation_gate_finalization", "report"}}
+    stopped = gate == "investigation_gate" and review.investigation_stop(status)
+    if stopped:  # the failures block approval, so sending the case back is the one decision left
+        gaps = status["blocked"].get("gaps_report") or [status["blocked"].get("gap") or ""]
+        lines = [line.strip() for gap in gaps for line in str(gap).splitlines() if line.strip()]
+        view = {**view, "blocking": lines + view["blocking"]}
+    warning = review.local_model_warning() if gate == "investigation_gate" else None
+    return {**view, **({"model_warning": warning} if warning else {}), "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
+            "can_request_follow_up": stopped or (gate in {"investigation_gate", "report"}
+            and status["phase"] in {"investigation_gate_approval", "investigation_gate_finalization", "report"})}

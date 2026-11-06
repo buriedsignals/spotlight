@@ -4,7 +4,7 @@
 // is attached to the worker's answer for the orchestrator. After the analyst,
 // the fixed point is the batch build from its proposal.
 import { randomUUID } from 'node:crypto';
-import { writeConfined } from './tools/case-files.ts';
+import { localTier, writeConfined } from './tools/case-files.ts';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { RESEARCH_SWITCH } from './config.ts';
@@ -171,11 +171,16 @@ export async function validateFactCheckBatch(context: ToolContext, expectedFutur
 				if ((result.code !== 0 && result.code !== 3) || data.ok !== (result.code === 0) || data.ok !== (failed.length === 0)) {
 					throw new Error(`invalid validator JSON/exit status combination (exit ${result.code})`);
 				}
-				const pending = failed.filter((row) => row.owner === 'fact-checker' && future.has(row.id));
+				// Case 2bd8d15c: a missing claim link stopped the batches at 3 of 28. The fact-checker
+				// cannot repair one, and a verdict does not need it, so on a local tier later batches
+				// still run; the last one reports it. Any other broken record still stops them.
+				const waits = (row: { id: unknown; owner?: unknown }) => (row.owner === 'fact-checker' && future.has(String(row.id))) || (future.size > 0 && localTier(context.env) && row.owner === 'investigator' && String(row.id).startsWith('record:') && /finding link|not linked to finding|structured claim_links/.test(String((row as { reason?: unknown }).reason)));
+				const pending = failed.filter(waits);
 				const errors = failed.filter((row) => !pending.includes(row));
 				passed = errors.length === 0;
 				report = errors.map((row) => `FAIL ${row.id}${row.owner ? ` [${row.owner}]` : ''}${row.locator ? ` ${row.locator} (${row.finding_id})` : ''}: ${row.reason}`).join('\n');
-				if (pending.length) report += `${report ? '\n' : ''}${pending.length} future findings remain unassessed: ${pending.map((row) => row.id.slice('missing:'.length)).join(', ')}.`;
+				const unassessed = pending.filter((row) => String(row.id).startsWith('missing:'));
+				if (unassessed.length) report += `${report ? '\n' : ''}${unassessed.length} future findings remain unassessed: ${unassessed.map((row) => row.id.slice('missing:'.length)).join(', ')}.`;
 			}
 			lines.push(`${check.name}: ${passed ? 'batch progress valid' : 'FAILED'}${report ? `\n${report}` : ''}`);
 			if (!passed) return { ran, passed: false, report: lines.join('\n\n') };

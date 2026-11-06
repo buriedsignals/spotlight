@@ -559,6 +559,8 @@ const BACKING_SETTINGS = [
 	'SPOTLIGHT_RLM_CONTEXT',
 	'SPOTLIGHT_RLM_TIMEOUT_MS',
 	'SPOTLIGHT_RLM_MODEL',
+	'SPOTLIGHT_REVIEW_HOLD_MS',
+	'SPOTLIGHT_PREFILL_MS',
 ];
 
 // Every variable Spotlight hands unchanged to a helper program: pi processes,

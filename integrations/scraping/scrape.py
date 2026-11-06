@@ -8,7 +8,9 @@ bot-block/empty the seam escalates to **Firecrawl**'s managed proxy pool — the
 optional paid escape hatch (KTD6) — but only when FIRECRAWL_API_KEY is present;
 with no key the seam stays sovereign and surfaces the block honestly. (The
 Scrapling stealth middle rung was dropped 2026-07-08 — ladder is Crawl4AI ->
-optional Firecrawl.)
+optional Firecrawl.) With ``firecrawl_mode: always`` a member reads pages through
+Firecrawl only, which keeps their IP away from the target: a Firecrawl failure
+raises with the cause and the next step, and is never read directly, as with Tor.
 
 Tor (U7 / KTD8): pass ``anonymize=True`` (or set ``SPOTLIGHT_ANONYMIZE_FETCH=true``
 for a whole run) to route the Crawl4AI fetch through the local Tor SOCKS proxy, so
@@ -23,10 +25,11 @@ import — they never touch a vendor SDK directly.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
-from .._firecrawl_policy import refusal
+from .._firecrawl_policy import mode, refusal
 from .._protected import ProtectedSourceError, check_outgoing
 from .scrape_types import ScrapeError, ScrapeResult
 
@@ -66,13 +69,45 @@ def _blocked(result: ScrapeResult) -> bool:
     return result.is_empty() or (result.status_code in _BLOCK_STATUSES)
 
 
+def _firecrawl_only(provider: str | None, proxy: str | None, escalate: bool) -> bool:
+    # The member's `always`, unless the operator chose a provider or this fetch
+    # is Tor's. refusal() covers sensitive cases, which stay on Crawl4AI.
+    return (escalate and proxy is None and not provider and not os.environ.get("SCRAPE_PROVIDER")
+            and mode() == "always" and refusal() is None)
+
+
+_KEY_REJECTED = re.compile(r"unauthori[sz]ed|invalid (?:token|api key)|payment required|\b40[12]\b", re.IGNORECASE)
+_NEXT_STEP = "Replace the Firecrawl key in Indicator Lab, or set Firecrawl to Backup only"
+
+
+def _read_by_firecrawl(url: str, timeout_ms: int) -> ScrapeResult:
+    """`always` (case 3f58f43b): Firecrawl reads this page or the fetch fails, naming why."""
+    from . import firecrawl_provider
+
+    kept = "was not read directly, so your IP stayed away from it"
+    if not credential("FIRECRAWL_API_KEY"):
+        raise ScrapeError(f"Firecrawl is set to Always available and has no key. Add the key in Indicator Lab, "
+                          f"or set Firecrawl to Backup only. {url} {kept}.")
+    try:
+        result = firecrawl_provider.fetch(url, timeout_ms=timeout_ms)
+    except ScrapeError as exc:
+        if _KEY_REJECTED.search(str(exc)):
+            raise ScrapeError(f"Firecrawl rejected its key. {_NEXT_STEP}. {url} {kept}.", status_code=exc.status_code) from exc
+        raise ScrapeError(f"Firecrawl could not read {url}, which {kept}. Set Firecrawl to Backup only "
+                          f"to read pages directly. ({exc})", status_code=exc.status_code) from exc
+    if result.is_empty():
+        raise ScrapeError(f"Firecrawl returned nothing for {url}, which {kept}. Set Firecrawl to Backup only "
+                          "to read pages directly.")
+    return result
+
+
 def scrape(url: str, *, provider: str | None = None, timeout_ms: int = 45_000,
            escalate: bool = True, anonymize: bool | None = None) -> ScrapeResult:
     """Fetch url to a ScrapeResult via the selected backend.
 
     Default ladder (KTD6): Crawl4AI primary -> Firecrawl (managed proxy pool) only
     when Crawl4AI is bot-blocked/empty AND FIRECRAWL_API_KEY is set. escalate=False,
-    or selecting a non-default provider, disables the ladder. ``anonymize`` routes
+    or selecting a non-default provider, disables the ladder and `always`. ``anonymize`` routes
     the Crawl4AI fetch through Tor (U7). Raises ScrapeError on an unknown provider,
     an absent backend, or a fetch failure that isn't a recoverable bot-block.
     """
@@ -85,6 +120,8 @@ def scrape(url: str, *, provider: str | None = None, timeout_ms: int = 45_000,
     if name == "crawl4ai":
         from . import crawl4ai_provider
 
+        if _firecrawl_only(provider, proxy, escalate):
+            return _read_by_firecrawl(url, timeout_ms)
         try:
             result = crawl4ai_provider.fetch(url, timeout_ms=timeout_ms, proxy=proxy)
         except ScrapeError as exc:

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import os
 import json
 import re
 import subprocess
@@ -43,6 +44,11 @@ AI_NOTICE = (
     "Spotlight is designed to help surface, organize, and cross-check information, "
     "but AI can make mistakes. You are responsible for verifying sources, confirming "
     "authenticity, assessing risks, and deciding what is publishable."
+)
+# Tom, 2026-11-06: the journalist verifies. Same words as review.py LOCAL_MODEL_WARNING.
+LOCAL_MODEL_WARNING = (
+    "Spotlight's local model can get facts wrong, even on findings marked verified. "
+    "Check every finding against its source before you use it."
 )
 CONFIDENCE_VALUE = {"low": 1, "medium": 2, "high": 3}
 VERDICTS_1_1 = ("verified", "unverified", "disputed", "false", "not_checkable")
@@ -309,6 +315,10 @@ def ordered_findings(findings_doc: dict[str, Any], draft: dict[str, Any]) -> lis
     by_id = {text(item.get("id")): item for item in findings}
     order = [text(fid) for fid in draft.get("finding_order", [])]
     return [by_id[fid] for fid in order if fid in by_id]
+
+
+def local_tier() -> bool:
+    return (os.environ.get("SPOTLIGHT_MODEL_TIER", "").strip() or "12b") != "frontier"
 
 
 def treatment_map(draft: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -743,6 +753,7 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
     lines = [
         f"# Investigation Report: {md_safe(title)}",
         "",
+        *([f"> **{LOCAL_MODEL_WARNING}**", ""] if local_tier() else []),
         "> **AI assistance notice:** " + AI_NOTICE,
         "",
         "The model authored the editorial framing and priority in `data/report-draft.json`; "
@@ -785,10 +796,9 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
             "",
             f"### {md_safe(record['id'])}: {md_safe(treatment.get('headline'))}",
             "",
-            md_safe(treatment.get("summary")),
-            "",
+            *([md_safe(treatment.get("summary")), ""] if text(treatment.get("summary")) else []),
             f"- **Canonical fact-checked claim:** {md_safe(finding.get('claim'))}",
-            f"- **Why it matters:** {md_safe(treatment.get('why_it_matters'))}",
+            *([f"- **Why it matters:** {md_safe(treatment.get('why_it_matters'))}"] if text(treatment.get("why_it_matters")) else []),
             f"- **Verdict:** {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}",
             f"- **Report confidence:** {verdict['confidence'].title()}",
         ]
@@ -1127,13 +1137,16 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
             + '</blockquote>'
             for expression in record["quotes"]
         )
+        # A local tier's treatment holds the claim alone (validate-report-draft.py).
+        lede = f'<p class="lede">{h(treatment.get("summary"))}</p>' if text(treatment.get("summary")) else ""
+        why = f'<p><strong>Why it matters:</strong> {h(treatment.get("why_it_matters"))}</p>' if text(treatment.get("why_it_matters")) else ""
         finding_sections.append(f'''
   <section class="finding" id="{h(anchor)}">
     <div class="finding-meta"><span class="pill pill-id">{h(fid)}</span><span class="pill pill-{pill}">{h(verdict['confidence'])}</span><span class="cat">{h(label)}</span></div>
     <h2>{h(treatment.get('headline'))}</h2>
-    <p class="lede">{h(treatment.get('summary'))}</p>
+    {lede}
     <p><strong>Canonical fact-checked claim:</strong> {h(finding.get('claim'))}</p>
-    <p><strong>Why it matters:</strong> {h(treatment.get('why_it_matters'))}</p>
+    {why}
     {evidence_html}
     <p><strong>Independent fact-check:</strong> {h(assessment)}</p>
     {quotations}
@@ -1202,6 +1215,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
     # renders byte-for-byte the same HTML as before this integration existed.
     arbiter_block = f"\n  {appendix}" if appendix else ""
 
+    local_warning = f"<p><strong>{h(LOCAL_MODEL_WARNING)}</strong></p>" if local_tier() else ""
     return f'''<!doctype html>
 <html lang="{h(draft.get('language') or 'und')}">
 <head>
@@ -1218,7 +1232,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
   <h1>{h(title)}</h1>
   <p class="deck">{h(lead)}</p>
   <p class="byline"><strong>Model-authored editorial synthesis · deterministically rendered</strong><br>{verified_count} verified finding(s) · {source_count} accessible source record(s)</p>
-  <section class="honesty" aria-label="AI assistance notice"><p><strong>AI assistance notice:</strong> {h(AI_NOTICE)}</p><p>The model chose localized framing and priority. Deterministic checks bind every prose block to finding IDs and place canonical verdicts beside it; they do not claim semantic entailment.</p><p><strong>Framing references:</strong> {h('; '.join(framing_labels))}</p></section>
+  <section class="honesty" aria-label="AI assistance notice">{local_warning}<p><strong>AI assistance notice:</strong> {h(AI_NOTICE)}</p><p>The model chose localized framing and priority. Deterministic checks bind every prose block to finding IDs and place canonical verdicts beside it; they do not claim semantic entailment.</p><p><strong>Framing references:</strong> {h('; '.join(framing_labels))}</p></section>
   <section class="tldr" aria-label="findings summary">{''.join(summary_items)}</section>
   {diagrams_block}
   {''.join(finding_sections)}{arbiter_block}

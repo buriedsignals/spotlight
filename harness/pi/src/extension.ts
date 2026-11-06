@@ -1,6 +1,7 @@
 // The Spotlight extension, loaded by path into every Spotlight pi process. It
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
+import { REPEAT_STOP, STALL_STOP } from './tools/run.ts';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
@@ -8,7 +9,8 @@ import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { ROUTER_CALL_PREFIX, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
+import { takeFirecrawlNotice } from './tools/fetch.ts';
+import { DECISION_RECORDED, MEMBER_DECIDED, ROUTER_CALL_PREFIX, decisionHelperNotice, memberHasTheMove, ROUTER_MODEL, clearSpawnRefusals, closingMessage, harnessTurn, noteRefusedSpawn, routeMember, routeRefusedSpawn, routeWithoutMember, routerOn, routerState, spawnRefusals } from './router.ts';
 import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit, caseRelative, pickWrite, writeCommitDue, writeCommitFile, writeCommitState, writeCommitText, writeCommitTools } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
@@ -16,7 +18,7 @@ import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withLocalThinking, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
-import { READ_TRUNCATED, canonicalWriteCall, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
+import { READ_TRUNCATED, canonicalWriteCall, localTier, readTarget, secondSourceFetched, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { dispatchRunner } from './tools/review.ts';
 import { fixedStepRunner } from './tools/programs.ts';
@@ -25,9 +27,9 @@ import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/h
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { STALLED_DISPATCHES, bindActiveCase, nextAction, pythonAdapter, recordsDigest, refusedSpawnMove, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchStall } from './tools/spotlight.ts';
-import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
+import { CORRECTION_SPENT, FACT_CHECKERS_SPENT, requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool, withProgress } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
+import { PAGE_NOT_OPENED, REVIEW_HOLD_MS, batchBlocked, failureLines, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { deliverablePasses, evidenceValidates, hasDeliverableCheck, validateFactCheckBatch } from './validators.ts';
 
@@ -88,18 +90,29 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
-		pi.on('before_agent_start', (event) => {
-			if (event.messageType !== 'user') return;
+		const progress: { say?: (text: string) => void; after?: () => void } = {};
+		let memberMessages = 0;
+		memberNotice = (text) => progress.say?.(text);
+		// What a member's message resets. A decision on a held review page counts too:
+		// its fresh run fires agent_start but not before_agent_start.
+		const memberTurn = (byHarness = false) => {
 			resetFactCheckerCycle(cycle);
 			// Only the member's own turn lets code start a stalled worker again;
 			// a harness nudge does not (Codex review of simp-redispatch, P1).
-			if (!harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim())) {
+			if (!byHarness) {
 				Object.assign(stall, { key: '', count: 0, digest: '', repaired: new Set<string>() });
 				clearSpawnRefusals(refusedSpawns);
 			}
 			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
 			// on a member's message.
 			process.send?.({ kind: 'spotlight-member-turn' });
+		};
+		pi.on('before_agent_start', (event, ctx) => {
+			if (localTier(process.env)) progress.say = (text) => ctx.ui.notify(text, 'info');
+			if (event.messageType !== 'user') return;
+			const byHarness = harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim());
+			if (!byHarness) memberMessages += 1;
+			memberTurn(byHarness);
 		});
 		const spawning = new Map<string, string>();
 		pi.on('tool_execution_start', (event) => {
@@ -113,10 +126,15 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			// A worker that started and failed is not a refusal.
 			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
 		});
-		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
+		// A worker's or lane's fetch found the Firecrawl key unusable: the member hears it once.
+		progress.after = () => {
+			const notice = takeFirecrawlNotice({ caseDir: active.caseDir, env: process.env });
+			if (notice) progress.say?.(notice);
+		};
+		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle, progress);
+		tools.push(...spotlightTools(active, runAdapter, role, (retry, signal) => withProgress(progress.say, 'research round', requestResearchRound(retry, signal)).finally(() => progress.after?.()), () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall, memberTurns: () => memberMessages }));
 		tools.push(spawnTool);
-		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir)), localTier(process.env) ? { ms: reviewHoldMs(process.env), say: (text) => progress.say?.(text), resolved: () => resolveCase(active, runAdapter), decided: () => { log('the decision on the page counts as the member\'s turn'); memberTurn(); } } : undefined));
 		casePhase = async () => String((await resolveCase(active, runAdapter)).phase ?? '');
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, casePhase!)));
 	}
@@ -161,19 +179,28 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 // reason in responseId) so records, detectors, scoring and training extraction
 // never count it as a model decision; every other request goes to the model
 // unchanged. Each decision is logged with its reason.
-const INTENT_TIMEOUT_MS = 8000;
-function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number }> {
+// The orchestrator's notice to the member, for the router below.
+let memberNotice: ((text: string) => void) | undefined;
+// A line swapped in at message_end never streams, and Osaurus shows deltas only
+// (real launch dfdad41e), so the member gets it as a notice too. Workers set no notice.
+function shownStop<T extends { message: unknown }>(event: T, text: string) {
+	memberNotice?.(text);
+	return { message: { ...(event.message as object), content: [{ type: 'text', text }] } as T['message'] };
+}
+// Past member-intent.py's own 90 s, so the script reports the failure itself.
+const INTENT_TIMEOUT_MS = 95_000;
+function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number; failed?: string }> {
 	const started = Date.now();
 	return new Promise((answered) => {
-		const done = (intent?: Intent, probability?: number) => answered({ intent, probability, ms: Date.now() - started });
+		const done = (intent?: Intent, probability?: number, failed?: string) => answered({ intent, probability, ms: Date.now() - started, failed });
 		const child = execFile(process.env.SPOTLIGHT_PYTHON || 'python3', [resolve(CHECKOUT_ROOT, 'scripts', 'member-intent.py'), ...(process.env.SPOTLIGHT_CONFIG ? ['--config', process.env.SPOTLIGHT_CONFIG] : [])], { timeout: INTENT_TIMEOUT_MS, encoding: 'utf8', signal }, (error, stdout) => {
-			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined); return; }
+			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined, undefined, signal?.aborted ? undefined : error.killed ? 'it timed out' : 'its check could not run'); return; }
 			try {
-				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; probability?: number; unavailable?: string };
+				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; probability?: number; unavailable?: string; failed?: boolean };
 				if (answer.unavailable) log(`[router] decision model unavailable: ${answer.unavailable.slice(0, 200)}`);
-				done(answer.intent, answer.probability);
+				done(answer.intent, answer.probability, answer.failed ? answer.unavailable : undefined);
 			} catch {
-				done(undefined);
+				done(undefined, undefined, 'its answer could not be read');
 			}
 		});
 		child.stdin?.end(message);
@@ -206,6 +233,7 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 				const asked = await memberIntent(state.member, options?.signal);
 				// r1-router-smoke.md: each decision logs D1's probability and latency.
 				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
+				if (asked.failed) memberNotice?.(decisionHelperNotice(asked.failed));
 				move = routeMember(state, asked.intent);
 				if (move.kind === 'call' && move.tool === 'spawn_agent' && (await casePhase?.()) !== 'methodology_approval') move = { kind: 'model', reason: 'member change_request, but the case is no longer at the methodology review' };
 			} else move = routeRefusedSpawn(state, routeWithoutMember(state, state.resolved?.phase === 'complete' ? closingMessage(required('SPOTLIGHT_CASE_DIR')) : undefined), refusedSpawns, refusedSpawns.seen.size ? recordsDigest(required('SPOTLIGHT_CASE_DIR')) : '', refusedSpawnMove);
@@ -223,6 +251,8 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 			const stop = routerMessage(model, [words], move.reason, 'stop');
 			out.push({ type: 'start', partial: { ...stop, content: [] } });
 			out.push({ type: 'text_start', contentIndex: 0, partial: { ...stop, content: [{ type: 'text', text: '' }] } });
+			// Osaurus shows text from deltas only (PiRPCAdapter.swift), so code's words must stream.
+			out.push({ type: 'text_delta', contentIndex: 0, delta: words.text, partial: stop });
 			out.push({ type: 'text_end', contentIndex: 0, content: words.text, partial: stop });
 			out.push({ type: 'done', reason: 'stop', message: stop });
 			out.end(stop);
@@ -344,10 +374,17 @@ const commitStream: StreamFn = (model, context, options) => {
 			try {
 				const answer = await narrowedRequest(model, context, options, COMMIT_TEXT, COMMIT_TOOLS);
 				const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
-				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickCommit(calls, state.shown);
+				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickCommit(calls, state.shown, state.committed);
 				if ('args' in accepted) {
 					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})${accepted.dropped.length ? `; dropped ${accepted.dropped.join('; ')}` : ''}`);
 					emitCommit(out, answer, 'record_finding', accepted.args, accepted.dropped, 'Commit step: kept the first finding', `commit step: ${state.uncommitted.length} unrecorded line(s) shown`);
+					return;
+				}
+				// The worker sees why its cite was dropped and gets the lines; the next commit step can then keep it.
+				if ('read' in accepted && accepted.read && getCurrentTools(context.messages).some((tool) => tool.name === 'read_file')) {
+					log(`[commit] read_file at tool turn ${state.turns} (${JSON.stringify(accepted.read)})`);
+					// A fixed note: the path is the model's text, and it travels only as the call's argument.
+					emitCommit(out, answer, 'read_file', accepted.read, ['the finding, because its cite names lines not shown to you; cite it again once you have read them'], 'Commit step: reading the cited lines', 'commit step: cited lines not shown');
 					return;
 				}
 				reason = accepted.reason;
@@ -706,7 +743,7 @@ function registerCompletionFloor(pi: ExtensionAPI): void {
 	});
 	pi.on('message_end', (event) => {
 		if (!starved || (event.message as { role?: string }).role !== 'assistant') return undefined;
-		return { message: { ...event.message, content: [{ type: 'text', text: NO_ROOM_STOP }] } as typeof event.message };
+		return shownStop(event, NO_ROOM_STOP);
 	});
 }
 
@@ -735,13 +772,23 @@ const CHECK_EVERY = 256;
 // base213 (Anomaly, 5ce09322): an investigator turn ran 10,240 tokens with no
 // text, reasoning or tool call left after the server stripped its special
 // tokens. Each streamed chunk is about one token, so this many chunks in a row
-// with nothing visible stop the turn too. Prompt processing sends no chunks.
+// with nothing visible stop the turn too. Osaurus's keep-alives count here, at
+// one per 2.5 s, so a stream of nothing else still ends.
 const INVISIBLE_CHUNKS = 1024;
-// A server may send nothing at all for stripped tokens while the stream stays
-// open, so a turn with nothing visible for this long after its first token
-// chunk is stopped as well. The clock starts at the first chunk after the role
-// chunk, so prompt processing (20-40 s for a 16k prompt on a Mac) never counts.
+// A server may send nothing at all while the stream stays open, so a turn with
+// no chunk of any kind for this long is stopped as well. T9 (t9ingest): Osaurus
+// sends empty keep-alives through prompt processing, which ran past 60 s on a
+// 38k-character request, and this clock used to count them as silence. It starts
+// at the first chunk after the role chunk, so a server silent through prompt
+// processing never counts.
 const INVISIBLE_MS = 60_000;
+// Until a turn's first visible output the silence is prompt processing. T9 on
+// a4869840: a cold 38k-character request sent no data for 85 s, and Osaurus's SSE
+// comments never reach Pi. 137 s was seen, and a 65,536-token prompt on a slower
+// Mac can take minutes. A dead server costs up to this much per turn. Below
+// piSettings' 900 s transport limit, so that limit does not undercut it.
+export const PREFILL_MS = 600_000;
+const prefillMs = () => { const ms = Number(process.env.SPOTLIGHT_PREFILL_MS ?? PREFILL_MS); return Number.isFinite(ms) && ms > 0 ? ms : PREFILL_MS; };
 // A turn cut at the cap after this few tokens is a full context slot, not a
 // ramble: a nudge would only overflow again.
 const MIN_CUT_TOKENS = 10;
@@ -749,7 +796,8 @@ const MIN_CUT_TOKENS = 10;
 // Whether a raw OpenAI-style stream chunk carries anything the turn keeps.
 function visibleChunk(data: unknown): boolean {
 	const delta = (data as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined)?.choices?.[0]?.delta;
-	if (!delta) return true;
+	// Osaurus's prefill progress has choices: [] and no delta: nothing the turn keeps (T9 on 1a1aca40).
+	if (!delta) return false;
 	const text = (value: unknown) => typeof value === 'string' && value.length > 0;
 	return text(delta.content) || text(delta.reasoning_content) || text(delta.reasoning) || (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0);
 }
@@ -764,11 +812,7 @@ export function repeatsItself(text: string): boolean {
 	return false;
 }
 
-export const REPEAT_STOP = 'Spotlight stopped this turn because it ran on without calling a tool or writing anything usable; nothing in it was used. The results before it stand.';
-// lfm3-r5 on uk-cpi (rc3, 52bf6183): the server streamed two complete tool
-// calls, then held the stream open for 223 s. The stop dropped the calls and
-// the run ended with no line for the member.
-export const STALL_STOP = 'Spotlight stopped this turn because the model stopped responding. Ask Spotlight to continue.';
+export { REPEAT_STOP, STALL_STOP };
 
 function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let nudged = false;
@@ -776,8 +820,10 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let unchecked = 0;
 	let stopped = false;
 	let stalled = false;
+	let silent = false;
 	let invisible = 0;
-	let lastVisible = 0;
+	let lastChunk = 0;
+	let visible = false;
 	let clock: ReturnType<typeof setInterval> | undefined;
 	const stopClock = () => {
 		if (clock) clearInterval(clock);
@@ -798,22 +844,23 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		invisible = 0;
 		stopped = false;
 		stalled = false;
+		silent = false;
+		visible = false;
 		stopClock();
 	});
 	pi.on('provider_stream_event', (event, ctx) => {
 		if (stopped) return;
 		const delta = (event.data as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined)?.choices?.[0]?.delta;
 		if (delta && 'role' in delta && !visibleChunk(event.data)) return;
-		if (visibleChunk(event.data)) {
-			invisible = 0;
-			lastVisible = Date.now();
-		} else {
-			invisible += 1;
-		}
+		lastChunk = Date.now();
+		visible ||= visibleChunk(event.data);
+		invisible = visibleChunk(event.data) ? 0 : invisible + 1;
 		if (!clock) {
-			lastVisible = Date.now();
 			clock = setInterval(() => {
-				if (!stopped && Date.now() - lastVisible >= INVISIBLE_MS) stopInvisible(() => ctx.abort());
+				if (!stopped && Date.now() - lastChunk >= (visible ? INVISIBLE_MS : prefillMs())) {
+					silent = true;
+					stopInvisible(() => ctx.abort());
+				}
 			}, 1000);
 			clock.unref();
 		}
@@ -845,7 +892,8 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		// it, and a worker's line is its answer to the orchestrator. A turn stopped
 		// after it streamed tool calls lost them in the abort.
 		const calls = parts.some((part) => part.type === 'toolCall');
-		if (stopped) return { message: { ...event.message, content: [{ type: 'text', text: stalled && calls ? STALL_STOP : REPEAT_STOP }] } as typeof event.message };
+		// Case 96f45e2d: a closed laptop silenced a worker for 17 minutes, and this said it ran on.
+		if (stopped) return shownStop(event, stalled && (calls || silent) ? STALL_STOP : REPEAT_STOP);
 		if (calls) return undefined;
 		const output = (event.message as { usage?: { output?: number } }).usage?.output;
 		if (message.stopReason === 'length' && output && output < MIN_CUT_TOKENS) return undefined;
@@ -883,6 +931,8 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 			return;
 		}
 		if (message.stopReason !== 'stop' || nudged || held() || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
+		// The run that ends a held review: the decision's own fresh run follows (registerEndTurnOnOpen).
+		if (parts.some((part) => part.text === DECISION_RECORDED || memberHasTheMove(part.text))) return;
 		let status: Record<string, unknown>;
 		try {
 			status = await resolve();
@@ -1161,7 +1211,6 @@ function registerCallBudget(pi: ExtensionAPI, budget: number): void {
 export const REVIEW_REFUSAL_CAP = 5;
 export const PAGE_COULD_NOT_START = 'The Spotlight review page could not start.';
 export const REVIEW_START_STOP = 'Spotlight stopped this turn because the review page could not start five times. Nothing was changed in your case. This is a problem with Spotlight on this computer, not with your case, so asking again will not help until it is fixed. The reason is in review-start.log in Spotlight\'s data folder.';
-const REVIEW_ERROR_LINES = 3;
 
 // The stop line is the member's, so it names the problem in plain words and
 // shows at most the validator's first three FAIL lines.
@@ -1169,12 +1218,8 @@ export function reviewRefusalStop(refusal: string): string {
 	const report = refusal.slice(PAGE_NOT_OPENED.length).startsWith('data/report-draft.json ');
 	const stop = report
 		? 'Spotlight stopped this turn because the report draft was refused five times. The draft did not pass the report check, so nothing was rendered or recorded. Ask Spotlight to try again, or say what to change.'
-		: 'Spotlight stopped this turn because the review page was refused five times. The case files it needed did not pass their check, so nothing was recorded. Ask Spotlight to try again, or say what to change.';
-	const errors = refusal
-		.split('\n')
-		.filter((line) => line.startsWith('FAIL '))
-		.slice(0, REVIEW_ERROR_LINES)
-		.map((line) => line.replace(/^FAIL\s+/, ''));
+		: 'Spotlight stopped this turn because the review page was refused five times. The case files it needed did not pass their check, so nothing was recorded and your case is saved. Send a message here to try again. If the same problems come back, the page cannot open until they are fixed.';
+	const errors = failureLines(refusal);
 	return errors.length > 0 ? `${stop}\nThe check found these problems.\n${errors.join('\n')}` : stop;
 }
 
@@ -1183,15 +1228,31 @@ export function reviewRefusalStop(refusal: string): string {
 // member and the test driver act only between turns. Every phase skill ends
 // the turn at the page, so once it opens the harness ends the turn before the
 // next model request and the member sees this line.
+// SPOTLIGHT_REVIEW_HOLD_MS=0 turns the hold off.
+const reviewHoldMs = (env: NodeJS.ProcessEnv) => { const ms = Number(env.SPOTLIGHT_REVIEW_HOLD_MS ?? REVIEW_HOLD_MS); return Number.isFinite(ms) && ms >= 0 ? ms : REVIEW_HOLD_MS; };
+
 export const REVIEW_OPEN_STOP = 'Spotlight opened the review page in your browser and is waiting for your decision there. Say here when you are done.';
 
 function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 	let opened = false;
+	let decided = false;
+	let stopLine = REVIEW_OPEN_STOP;
 	pi.on('agent_start', () => {
 		opened = false;
 	});
 	pi.on('tool_execution_end', (event) => {
-		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { opened?: unknown } | undefined)?.opened === true) opened = true;
+		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { opened?: unknown } | undefined)?.opened === true) {
+			opened = true;
+			stopLine = (event.result?.details as { stop?: string }).stop ?? REVIEW_OPEN_STOP;
+		}
+		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { decided?: unknown } | undefined)?.decided === true) decided = true;
+	});
+	// A decision on the page is the member's turn: a follow-up queued here starts a
+	// fresh run, so every per-turn reset applies, before Osaurus's turn settles.
+	pi.on('agent_end', () => {
+		if (!decided) return;
+		decided = false;
+		pi.sendUserMessage(MEMBER_DECIDED, { deliverAs: 'followUp' });
 	});
 	pi.on('before_provider_request', (_event, ctx) => {
 		if (opened) ctx.abort();
@@ -1200,7 +1261,7 @@ function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 	pi.on('message_end', (event) => {
 		if (!opened || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		opened = false;
-		return { message: { ...event.message, content: [{ type: 'text', text: REVIEW_OPEN_STOP }] } as typeof event.message };
+		return shownStop(event, stopLine);
 	});
 }
 
@@ -1431,7 +1492,7 @@ function registerUnproductiveBound(pi: ExtensionAPI, next: () => Promise<string 
 		if (!stopping || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		stopping = false;
 		count = 0;
-		return { message: { ...event.message, content: [{ type: 'text', text: ORCHESTRATOR_LOOP_STOP }] } as typeof event.message };
+		return shownStop(event, ORCHESTRATOR_LOOP_STOP);
 	});
 }
 
@@ -1454,7 +1515,7 @@ function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
 		if (!stopping || message.role !== 'assistant') return undefined;
 		stopping = false;
 		notices = 0;
-		return { message: { ...event.message, content: [{ type: 'text', text: ORCHESTRATOR_LOOP_STOP }] } as typeof event.message };
+		return shownStop(event, ORCHESTRATOR_LOOP_STOP);
 	});
 	pi.on('before_provider_request', (_event, ctx) => {
 		if (stopping) ctx.abort();
@@ -1468,32 +1529,30 @@ function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
 // methodology. Once a resolve or transition returns it, a text answer ends
 // the turn as usual; a message with more tool calls is replaced by this line,
 // with no calls, so the turn ends. The member's next message starts afresh.
-export const blockedStop = (open: number) =>
-	`Spotlight stopped the investigation because it has tried every step it is allowed and ${open > 1 ? 'some questions are' : 'one question is'} still open. To continue, change the methodology and approve it again.`;
+export const blockedStop = () => 'Spotlight stopped this case, and your case is saved. Send a message here and Spotlight takes you to the way on: the review page, or a new research round.';
 
 function registerBlockedStop(pi: ExtensionAPI): void {
 	let blocked = false;
-	let open = 1;
 	pi.on('agent_start', () => {
 		blocked = false;
 	});
 	pi.on('tool_execution_end', (event) => {
 		if ((event.toolName !== 'spotlight_resolve' && event.toolName !== 'spotlight_transition') || event.isError) return;
 		try {
-			const status = JSON.parse(event.result?.content?.[0]?.text ?? '') as { status?: unknown; blocked?: { gaps_report?: unknown } };
+			const status = JSON.parse(event.result?.content?.[0]?.text ?? '') as { status?: unknown };
 			if (status.status !== 'blocked') return;
 			blocked = true;
-			const gaps = status.blocked?.gaps_report;
-			open = Array.isArray(gaps) && gaps.length > 1 ? gaps.length : 1;
 		} catch {
 			// Not a resolved state.
 		}
 	});
 	pi.on('message_end', (event) => {
-		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		const message = event.message as { role?: string; content?: Array<{ type: string; name?: string }> };
 		if (!blocked || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		// The page is a stopped case's way out (case 2bd8d15c: the stop swallowed this call).
+		if (message.content.every((part) => part.type !== 'toolCall' || part.name === 'open_review')) return undefined;
 		log('the case is blocked and the orchestrator went on; its turn was ended');
-		return { message: { ...event.message, content: [{ type: 'text', text: blockedStop(open) }] } as typeof event.message };
+		return shownStop(event, blockedStop());
 	});
 }
 
@@ -1576,7 +1635,7 @@ function registerReviewRefusalCap(pi: ExtensionAPI): void {
 		if (!stop || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		const text = stop;
 		stop = undefined;
-		return { message: { ...event.message, content: [{ type: 'text', text }] } as typeof event.message };
+		return shownStop(event, text);
 	});
 }
 

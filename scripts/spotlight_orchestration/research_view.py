@@ -28,6 +28,7 @@ import hashlib
 import importlib.util
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -202,7 +203,7 @@ def _section(lead: Mapping[str, Any], result: Mapping[str, Any]) -> str:
     return "direction"
 
 
-def _lead_view(entry: Mapping[str, Any], rank: int, ranked: Mapping[str, Any], result: Mapping[str, Any]) -> dict[str, Any]:
+def _lead_view(entry: Mapping[str, Any], rank: int, ranked: Mapping[str, Any], result: Mapping[str, Any], same_source: int = 0) -> dict[str, Any]:
     lead = entry["lead"]
     excerpt = lead.get("excerpt") if isinstance(lead.get("excerpt"), dict) else {}
     capture = lead.get("capture") if isinstance(lead.get("capture"), dict) else {}
@@ -227,6 +228,7 @@ def _lead_view(entry: Mapping[str, Any], rank: int, ranked: Mapping[str, Any], r
                         "stance": _text(attribution.get("stance"), 40),
                         "verbatim": _text(attribution.get("attribution_verbatim"), 1000)} if attribution else None,
         "copies": len(entry.get("copies") or []),
+        "same_source": same_source,
         "journalist_input": lead.get("journalist_input") is True,
         "clues": list(ranked.get("clues") or []),
         "source_families": ranked.get("source_families", 0),
@@ -416,7 +418,10 @@ def content(case: Path, saved_items: Mapping[str, Any]) -> tuple[dict[str, Any],
         ranked = [{"lead_id": e["lead"]["lead_id"]} for e in entries]
     by_id = {e["lead"]["lead_id"]: e for e in entries}
     results = {r["lead_id"]: r for r in (triage_doc or {}).get("leads") or [] if isinstance(r, dict) and "lead_id" in r}
-    leads = [_lead_view(by_id[r["lead_id"]], n, r, results.get(r["lead_id"], {}))
+    # D4: leads with one merge_key are claims of one source; the page says how many others.
+    sources = merge._source_of(entries)
+    per_source = Counter(sources.values())
+    leads = [_lead_view(by_id[r["lead_id"]], n, r, results.get(r["lead_id"], {}), per_source[sources[r["lead_id"]]] - 1)
              for n, r in enumerate(ranked[:MAX_LEADS], 1)]
     positions = {lead["lead_id"]: lead["rank"] for lead in leads}
 

@@ -8,7 +8,7 @@ import { CHECKOUT_ROOT, createCaseBridge, createWikiBridge, safeChildEnvironment
 import { startReviewServer } from "../server.mjs";
 
 const BUILDER = join(CHECKOUT_ROOT, "tests", "fixtures", "review_case.py");
-const PYTHON = which("python3");
+export const PYTHON = which("python3");
 
 export function tempRoot(t) {
   const root = mkdtempSync(join(tmpdir(), "spotlight-review-test-"));

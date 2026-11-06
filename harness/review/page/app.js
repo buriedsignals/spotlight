@@ -118,6 +118,59 @@ function sourceLink(value) {
   return el("a", { href: url.href, target: "_blank", rel: "noopener noreferrer", title: url.href, text: url.hostname.replace(/^www\./, "") });
 }
 
+// Recorded evidence is a web page's text, so it is untrusted. It becomes DOM
+// nodes through el(), which only ever sets text, so HTML stays visible text.
+// Only headings, bold, italics, lists and http(s) links are formatted. Images
+// are dropped, never fetched: viewing the page must not call out.
+const EVIDENCE_LIMIT = 4000; // review.py _text
+const EVIDENCE_INLINE = /\[([^\]\n]*)\]\(((?:[^\s()]|\([^\s()]*\))*)(?:\s+"[^"\n]*")?\)|\*\*(?=\S)(.+?)(?<=\S)\*\*|(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)|(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])|(?<!\w)_(?=[^\s_])(.+?)(?<=[^\s_])_(?!\w)/g;
+
+function evidenceInline(text) {
+  const out = [];
+  let at = 0;
+  for (const match of text.matchAll(EVIDENCE_INLINE)) {
+    out.push(text.slice(at, match.index));
+    at = match.index + match[0].length;
+    const [, label, address, bold, boldUnderscore, italic, italicUnderscore] = match;
+    if (label !== undefined) {
+      const url = webUrl(address);
+      out.push(url && !url.username ? el("a", { href: url.href, target: "_blank", rel: "noopener noreferrer nofollow", title: url.href }, evidenceInline(label)) : evidenceInline(label));
+    } else if ((bold ?? boldUnderscore) !== undefined) out.push(el("strong", {}, evidenceInline(bold ?? boldUnderscore)));
+    else out.push(el("em", {}, evidenceInline(italic ?? italicUnderscore)));
+  }
+  out.push(text.slice(at));
+  return out.filter((part) => part !== "");
+}
+
+function evidenceBlocks(raw) {
+  // A cut can end inside a link or image: that tail is dropped, and the page says so.
+  let cut = raw.length >= EVIDENCE_LIMIT;
+  const whole = raw.replace(cut ? /!?\[[^\]\n]*(?:\]\([^)\n]*)?$/ : /!?\[[^\]\n]*\]\([^)\n]*$/, "");
+  cut ||= whole !== raw;
+  const text = whole
+    .replace(/!\[[^\]\n]*\](?:\((?:[^()\n]|\([^()\n]*\))*\)|\[[^\]\n]*\])/g, "")
+    .replace(/\[\s*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, "");
+  const blocks = [];
+  let list;
+  for (const line of text.split("\n").map((row) => row.trim())) {
+    const item = /^(?:([-*+])|\d+[.)])(?:\s+(.*))?$/.exec(line);
+    if (!line || (item && !item[2])) continue;
+    if (item) {
+      const tag = item[1] ? "ul" : "ol";
+      if (list?.tag !== tag) blocks.push((list = { tag, items: [] }));
+      list.items.push(el("li", {}, evidenceInline(item[2])));
+      continue;
+    }
+    list = undefined;
+    const heading = /^#{1,6}\s+(.*?)\s*#*$/.exec(line);
+    blocks.push(el("p", heading ? { className: "evidence-heading" } : {}, evidenceInline(heading ? heading[1] : line)));
+  }
+  const shown = blocks.map((block) => (block.items ? el(block.tag, {}, block.items) : block));
+  if (!shown.length) shown.push(el("p", { className: "muted", text: raw.trim() ? "This evidence held only images, which are not shown." : "No text." }));
+  if (cut) shown.push(el("p", { className: "muted", text: "The excerpt is cut here. The source file has the full passage." }));
+  return shown;
+}
+
 function sourceLinks(values) {
   const links = [...new Set(values)].map(sourceLink);
   return links.flatMap((link, index) => (index ? [" · ", link] : [link]));
@@ -204,7 +257,7 @@ function list(items, empty) {
   return el("ul", {}, items.map((item) => el("li", { text: item })));
 }
 
-function methodologyContent(content) {
+function methodologyContent(content, items) {
   return el(
     "section",
     { "aria-labelledby": "plan-heading" },
@@ -230,6 +283,8 @@ function methodologyContent(content) {
       ? el("p", { className: "card", text: `Indicator Framework: ${content.indicator_framework.on ? "on" : "off"}${content.indicator_framework.reason ? ` — ${content.indicator_framework.reason}` : ""}` })
       : null,
     content.research_plan ? researchPlanContent(content.research_plan) : null,
+    items.filter((item) => item.key === "selection:research_plan").map((item) => selectionCard(item, null, "Run Research on this case")),
+    content.research_dropped ? el("p", { className: "card", text: "Research is dropped for this case. To plan it again, ask for a change." }) : null,
     content.anomaly ? anomalyPlanContent(content.anomaly) : null,
   );
 }
@@ -263,6 +318,7 @@ function researchPlanContent(plan) {
   const consent = plan.consent;
   return [
     el("h3", { text: "Research plan" }),
+    plan.code_default ? el("p", { text: "Research is on, so Spotlight added this plan: one web research topic per direction. It runs when you approve, unless you drop it below." }) : null,
     el("p", {
       text: `Cloud research (topic briefs sent to a cloud model): ${consent.swarm ? "yes" : "no"}. Journalist input to the local corpus lane: ${consent.journalist_input ? "yes" : "no"}. Approving this plan records this consent under your name and the time you approve.`,
     }),
@@ -295,7 +351,7 @@ function findingDetails(finding) {
   return [
     el("p", { className: "meta" }, verdictPill(finding.verdict), confidencePill(finding.confidence)),
     el("p", { className: "quote lede", text: finding.claim }),
-    finding.evidence ? el("p", { className: "quote" }, el("strong", { text: "Recorded evidence: " }), finding.evidence) : null,
+    finding.evidence ? el("div", { className: "evidence" }, el("p", {}, el("strong", { text: "Recorded evidence" })), evidenceBlocks(finding.evidence)) : null,
     finding.fact_check_notes ? el("p", { className: "quote" }, el("strong", { text: "Independent fact-check: " }), finding.fact_check_notes) : null,
     finding.sources.length
       ? el("ul", { className: "sources", "aria-label": `Sources for finding ${finding.id}` }, finding.sources.map((source) => el("li", {}, sourceLink(source.url), source.description ? ` ${source.description}` : null)))
@@ -465,19 +521,22 @@ function investigationContent(content, items) {
   const flags = items.filter((item) => item.kind === "disposition");
   const selection = items.filter((item) => item.kind === "selection");
   const open = flags.filter((item) => item.final === null).length;
+  // Unverified findings can hold invented names, so they stay out of the main list.
+  const verified = content.findings.filter((finding) => finding.verdict === "verified");
   return [
     el(
       "section",
       { "aria-labelledby": "findings-heading" },
-      el("h2", { id: "findings-heading", text: `Findings (${content.findings.length})` }),
-      content.findings.length
-        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note", "Sources"], content.findings.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
-        : el("p", { className: "muted", text: "The case records no findings." }),
+      el("h2", { id: "findings-heading", text: `Verified findings (${verified.length})` }),
+      verified.length
+        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note", "Sources"], verified.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
+        : el("p", { className: "muted", text: content.findings.length ? "No finding is verified." : "The case records no findings." }),
     ),
     el(
       "section",
       { "aria-labelledby": "flags-heading" },
-      el("h2", { id: "flags-heading", text: `Flags needing a disposition (${open} open of ${flags.length})` }),
+      el("h2", { id: "flags-heading", text: `Not verified, check before use (${flags.length})` }),
+      flags.length ? el("p", { className: "muted", text: `Each one needs your decision. ${open} still open.` }) : null,
       flags.length ? flags.map((item) => dispositionCard(item, findings.get(item.target))) : el("p", { className: "muted", text: "No findings are flagged." }),
     ),
     el(
@@ -764,6 +823,7 @@ function leadTags(lead) {
     lead.status !== "candidate" ? el("span", { className: "tag strong", text: words(lead.status) }) : null,
     lead.source_families ? el("span", { className: "tag", text: `Source families: ${lead.source_families}` }) : null,
     lead.copies ? el("span", { className: "tag", text: `Copies collapsed: ${lead.copies}` }) : null,
+    lead.same_source ? el("span", { className: "tag", text: `Same source as ${lead.same_source} other ${lead.same_source === 1 ? "lead" : "leads"}, counts once` }) : null,
     lead.journalist_input ? el("span", { className: "tag strong", text: "Journalist input (local only)" }) : null,
     (lead.triage?.context ?? []).map((context) => el("span", { className: "tag", text: CONTEXT_LABELS[context] ?? words(context) })),
     lead.clues.map((clue) => el("span", { className: "tag strong", text: `Clue: ${words(clue)}` })),
@@ -1132,6 +1192,13 @@ function recordedThrough(receipt) {
   return "the command line";
 }
 
+// A page with no draft or batch holds no chat turn (open_review), so a decline
+// there carries nothing on by itself.
+function nothingOffered() {
+  if (view.gate === "report") return !view.content?.draft_ready;
+  return view.gate === "ingest" && !view.content?.batch?.records?.length;
+}
+
 function receiptSection() {
   const receipt = view.receipt;
   if (!receipt) {
@@ -1149,7 +1216,7 @@ function receiptSection() {
     { "aria-labelledby": "receipt-heading", className: "card" },
     el("h2", { id: "receipt-heading", tabindex: "-1", text: "Decision recorded" }),
     el("dl", {}, rows.flatMap(([name, value]) => [el("dt", { text: name }), el("dd", { text: value })])),
-    el("p", { text: "The review is read-only. You can close this tab and tell the agent you are done." }),
+    el("p", { text: receipt.decision === "declined" && nothingOffered() ? "The review is read-only. You can close this tab. Go back to the Spotlight chat and say what to do next." : "The review is read-only. You can close this tab. The case carries on in your chat; if nothing happens there, send a message." }),
   );
 }
 
@@ -1389,19 +1456,22 @@ function render(next) {
     }
     const parts = [];
     if (readOnly()) parts.push(receiptSection());
+    if (view.model_warning) parts.push(el("p", { className: "warning", text: view.model_warning }));
     if (view.blocking.length) {
       parts.push(
         el(
           "section",
           { "aria-labelledby": "blocking-heading" },
           fold("blocking", el("h2", { id: "blocking-heading", text: `Blocking failures (${view.blocking.length})` }), [
-            el("p", { text: "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
+            el("p", { text: view.phase === "blocked"
+              ? "Spotlight stopped on these, so the case cannot be approved. To go on, use Request follow-up below to send it back to Investigation, with a note on what to fix."
+              : "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
             list(view.blocking, ""),
           ], { className: "fold blocking" }),
         ),
       );
     }
-    if (view.gate === "methodology") parts.push(methodologyContent(view.content));
+    if (view.gate === "methodology") parts.push(methodologyContent(view.content, view.items));
     if (view.gate === "research") parts.push(...researchContent(view.content, view.items));
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(...reportContent(view.content));

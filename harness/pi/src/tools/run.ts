@@ -198,3 +198,9 @@ export function saveTarget(context: Pick<ToolContext, 'caseDir' | 'writeRoot'> &
 // carry direct_quote; a model's arguments are never in this set (Codex review
 // of fix14).
 export const HARNESS_PROPOSALS = new WeakSet<object>();
+
+export const REPEAT_STOP = 'Spotlight stopped this turn because it ran on without calling a tool or writing anything usable; nothing in it was used. The results before it stand.';
+// lfm3-r5 on uk-cpi (rc3, 52bf6183): the server streamed two complete tool
+// calls, then held the stream open for 223 s. The stop dropped the calls and
+// the run ended with no line for the member.
+export const STALL_STOP = 'Spotlight stopped this turn because the model stopped responding. Ask Spotlight to continue.';

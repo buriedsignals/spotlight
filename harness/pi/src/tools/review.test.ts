@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { gateCheck, missingForApproval, openReviewTool } from './review.ts';
+import { REVIEW_DECLINE_NOTICE, gateCheck, missingForApproval, openReviewTool } from './review.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { bindActiveCase, pythonAdapter } from './spotlight.ts';
 
@@ -119,4 +119,42 @@ test('open_review at the Investigation gate refuses until both summaries are wri
 	await writeFile(join(active.caseDir, 'data/summary.json'), summaries[1]);
 	await call();
 	assert.equal(opened, 1, 'with both summaries written the page opens');
+});
+
+// Option D: a page with nothing to approve needs the chat, so it never holds; only a moved gate counts as a decision.
+test('a hold ends on a decision, not on an edit, and a page with nothing to approve holds nothing', async (t) => {
+	const root = await mkdtemp(join(tmpdir(), 'review-hold-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const active = bindActiveCase(root, join(root, 'case'));
+	await mkdir(join(active.caseDir, 'data'), { recursive: true });
+	const record = join(active.caseDir, 'data/orchestration.json');
+	await writeFile(record, '{"n": 0}');
+	let phase = 'report';
+	const said: string[] = [];
+	let decisions = 0;
+	const hold = { ms: 8_000, say: (text: string) => said.push(text), resolved: async () => ({ phase }), decided: () => { decisions += 1; } };
+	const opener = async () => ({ status: 'opened' });
+	const run = (note?: () => Promise<string | undefined>) => openReviewTool(active.caseDir, root, opener, undefined, note, hold).execute('call', {}, undefined, undefined, undefined as never);
+
+	const held = run();
+	await writeFile(record, '{"n": 1}'); // written, but the gate has not moved
+	await new Promise((done) => setTimeout(done, 2_500));
+	assert.equal(decisions, 0);
+	phase = 'ingest';
+	await writeFile(record, '{"n": 2}');
+	const result = await held;
+	assert.deepEqual(result.details, { opened: false, decided: true });
+	assert.deepEqual([decisions, said.length], [1, 1]);
+
+	// Codex R3: a decision made while the page is still opening counts.
+	const quick = await openReviewTool(active.caseDir, root, async () => {
+		phase = 'complete';
+		await writeFile(record, '{"n": 3}');
+		return { status: 'opened' };
+	}, undefined, undefined, hold).execute('call', {}, undefined, undefined, undefined as never);
+	assert.deepEqual(quick.details, { opened: false, decided: true });
+
+	const free = await run(async () => 'No report draft is written yet.');
+	assert.deepEqual(free.details, { opened: true });
+	assert.deepEqual(said.slice(2), [REVIEW_DECLINE_NOTICE], 'no hold; the chat says where to come back, the last point code can reach it');
 });

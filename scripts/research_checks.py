@@ -56,7 +56,7 @@ CASE_BUDGET_CEILING_USD = 5
 MIN_TOKEN_BUDGET = 20_000
 # The lane runner's default (harness/pi/src/lanes.ts DEFAULT_TOKEN_BUDGET): the
 # floor allows about one turn, so a refusal names the default as the value to use.
-DEFAULT_TOKEN_BUDGET = 200_000
+DEFAULT_TOKEN_BUDGET = 800_000
 CLUE_MARKS = {"pursue", "dismiss"}
 DIRECTION_MARKS = {"keep", "drop", "add"}
 

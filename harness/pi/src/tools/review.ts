@@ -9,9 +9,11 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createReviewOpener, describeOpenResult } from '../../../review/open.mjs';
 import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { REVIEW_DECIDED } from '../router.ts';
+import { localTier, writeGateSummary } from './case-files.ts';
 import { RECEIPTS, runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
-import { NEXT_METHODOLOGY_FAILING, draftWritten, resolveCase } from './spotlight.ts';
+import { NEXT_METHODOLOGY_FAILING, draftWritten, resolveCase, transitionArguments } from './spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchRunner } from './spotlight.ts';
 
 // open_review's refusal starts with this; the refusal cap in extension.ts counts it.
@@ -42,6 +44,7 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 	return async () => {
 		const resolved = await resolveCase(active, runAdapter);
 		const phase = String(resolved.phase ?? '');
+		if (phase === 'blocked') return stopExit(resolved.blocked as CaseStop, active, runAdapter);
 		// r3/r4 12B (A2 northwind): the page opened before the summaries were
 		// written, and the gate refused the member's approval with a 422.
 		const unwritten = phase === 'investigation_gate_approval' && Array.isArray(resolved.missing) ? resolved.missing.filter((item) => item !== GATE_APPROVAL) : [];
@@ -50,7 +53,18 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 		}
 		const checks = GATE_CHECKS[phase]?.(context) ?? [];
 		for (const { file, args } of checks) {
-			const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
+			const run = () => runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
+			let result = await run();
+			// Lab OptiQ leg on d3b8305f: a model's template summary refused the page five
+			// times and no role could repair it. On a local tier the summary is code's.
+			if (result.code !== 0 && phase === 'investigation_gate_approval' && localTier(context.env) && /summary\.(?:md|json)/.test(`${result.stdout}\n${result.stderr}`)) {
+				try {
+					writeGateSummary(context.caseDir);
+					result = await run();
+				} catch {
+					// No verdicts to build from: the refusal below names what is wrong.
+				}
+			}
 			if (result.code !== 0) {
 				const output = `${result.stdout}\n${result.stderr}`.trim();
 				// The plan's own errors are code's to correct (spotlight.ts
@@ -109,7 +123,80 @@ export async function missingForApproval(caseDir: string, resolved: Record<strin
 	return undefined;
 }
 
-export function openReviewTool(caseDir: string, casesRoot: string, opener?: Opener, check?: GateCheck, note?: () => Promise<string | undefined>): ToolDefinition {
+// The validator's first lines, for the member: at most three, FAIL or bullet.
+export function failureLines(refusal: string): string[] {
+	return refusal.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('FAIL ') || line.startsWith('• ')).slice(0, 3).map((line) => line.replace(/^(?:FAIL\s+|•\s+)/, ''));
+}
+
+// A failed Investigation gate check that is not the summary has no worker to
+// repair it: only the approval is missing, so spawns are refused and resolve names
+// open_review again. The page shows the failure and can send the case back, so on
+// a local tier it opens and the turn ends on this line.
+const NO_REPAIR_ROUTE = /^data\/(?:findings|fact-check)\.json does not pass /;
+export function gateBlockedStop(failure: string): string {
+	const lines = failureLines(failure);
+	return `Spotlight stopped before the Investigation gate: the case files did not pass their check, so it cannot be approved yet. Your case is saved.${lines.length ? `\nThe check found these problems.\n${lines.join('\n')}` : ''}\nNext: on the review page, send the case back to Investigation with a note saying what to fix.`;
+}
+
+// Every stop's way out, and every stop comes here (case 2bd8d15c): Investigation stops
+// open the gate page; a Research stop is resumed first. A stop's text says only this.
+type CaseStop = { phase?: unknown; exhausted_attempt?: unknown; gap?: unknown; gaps_report?: unknown };
+const STOP_REASONS: Record<string, string> = {
+	'structural-correction': 'two corrections in a row made no progress',
+	'fact-check-evidence-repair': 'repairing the fact-check evidence did not work',
+	'investigation-cycle': 'it has used every cycle it is allowed and questions are still open',
+	'research-round-cycle': 'the extra cycle after the research round left questions open',
+};
+const STOPPED = /^Spotlight stopped /;
+export const RESEARCH_RESUMED = 'Research runs again now. Call spotlight_resolve.';
+export function investigationStop(stop: CaseStop): string {
+	const gaps = Array.isArray(stop.gaps_report) ? stop.gaps_report : [stop.gap ?? ''];
+	const lines = gaps.flatMap((gap) => String(gap).split('\n')).map((line) => line.trim().replace(/^(?:FAIL\s+|•\s+)/, '').slice(0, 200)).filter(Boolean).slice(0, 3);
+	return `Spotlight stopped the investigation, because ${STOP_REASONS[String(stop.exhausted_attempt)] ?? 'it could not go further'}. This stop deleted nothing.${lines.length ? `\nWhat failed:\n${lines.map((line) => `• ${line}`).join('\n')}` : ''}\nThe review page lists everything that failed. Send the case back to Investigation there, with a note on what to fix.`;
+}
+export const AMENDMENT_STOP = 'Spotlight stopped at Research: the changes you marked could not be written into the plan, and the plan is unchanged. The Research page lists your marks. Change them there and approve again.';
+async function stopExit(stop: CaseStop, active: ActiveCase, runAdapter: AdapterRunner): Promise<string> {
+	if (stop.phase !== 'research') return investigationStop(stop);
+	await runAdapter(transitionArguments('resumeResearch', {}, active, 'orchestrator', true));
+	return stop.exhausted_attempt === 'amendment-correction' ? AMENDMENT_STOP : RESEARCH_RESUMED;
+}
+
+// Option D (paperwork-p5-option-d.md): members expect the case to go on once
+// they decide in the browser, but Osaurus shows nothing outside a turn, so on a
+// local tier open_review holds the turn until the decision lands. The time limit
+// stays under the page's 45 idle minutes; past it the turn ends as it always did.
+export const REVIEW_HOLD_MS = 30 * 60_000;
+const HOLD_POLL_MS = 2_000;
+export const REVIEW_HOLD_NOTICE = 'Waiting for your decision on the review page. The case carries on here once you decide. To use this chat now, press Stop: the page stays open.';
+// Osaurus shows nothing between turns, so code cannot post after a decline on a page
+// that holds no turn; this is the last point it can reach the chat.
+export const REVIEW_DECLINE_NOTICE = 'If you decline on the page, come back to this chat and say what to do next.';
+export type ReviewHold = { ms: number; say?: (text: string) => void; resolved: () => Promise<Record<string, unknown>>; decided?: () => void };
+
+// Whether the gate moved within the limit. Decisions write data/orchestration.json,
+// so the resolver runs only when that file changes. The starting point is taken
+// before the page opens, so a quick decision is not part of it (Codex R3).
+const orchestrationRecord = (caseDir: string) => {
+	try { return readFileSync(join(caseDir, 'data/orchestration.json'), 'utf8'); } catch { return ''; }
+};
+async function decisionLanded(caseDir: string, hold: ReviewHold, start: { seen: string; before: string }, signal?: AbortSignal): Promise<boolean> {
+	const record = () => orchestrationRecord(caseDir);
+	let { seen } = start;
+	const { before } = start;
+	const deadline = Date.now() + hold.ms;
+	for (let first = true; Date.now() < deadline && !signal?.aborted; first = false) {
+		if (!first) await new Promise<void>((done) => {
+			const timer = setTimeout(done, Math.min(HOLD_POLL_MS, Math.max(deadline - Date.now(), 0)));
+			signal?.addEventListener('abort', () => { clearTimeout(timer); done(); }, { once: true });
+		});
+		if (record() === seen) continue;
+		seen = record();
+		if (JSON.stringify(await hold.resolved()) !== before) return true;
+	}
+	return false;
+}
+
+export function openReviewTool(caseDir: string, casesRoot: string, opener?: Opener, check?: GateCheck, note?: () => Promise<string | undefined>, hold?: ReviewHold): ToolDefinition {
 	const open: Opener = opener ?? createReviewOpener({ casesRoot });
 	return {
 		name: 'open_review',
@@ -117,12 +204,25 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 		description:
 			'Open the review page for the gate this case is waiting on, in the member\'s browser. Call it when a phase skill reaches a gate, then end your turn; the member decides on the page.',
 		parameters: Type.Object({}),
-		async execute() {
+		async execute(_id, _params, signal) {
 			const failed = await check?.();
-			if (failed) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
+			if (failed === RESEARCH_RESUMED) return { content: [{ type: 'text', text: failed }], details: { opened: false } };
+			const blocked = failed && STOPPED.test(failed) ? failed : hold && failed && NO_REPAIR_ROUTE.test(failed) ? gateBlockedStop(failed) : undefined;
+			if (failed && !blocked) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
+			const start = hold?.ms ? { seen: orchestrationRecord(caseDir), before: JSON.stringify(await hold.resolved()) } : undefined;
 			const result = await open({ caseDir });
-			const missing = result.status === 'opened' ? await note?.() : undefined;
-			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: { opened: result.status === 'opened' } };
+			if (blocked && result.status !== 'opened') throw new Error(`${PAGE_NOT_OPENED}${failed}`);
+			const missing = result.status === 'opened' && !blocked ? await note?.() : undefined;
+			// A page with nothing to approve needs the chat, so it holds nothing.
+			if (hold?.ms && result.status === 'opened' && missing) hold.say?.(REVIEW_DECLINE_NOTICE);
+			if (hold && start && result.status === 'opened' && !missing) {
+				hold.say?.(blocked ?? REVIEW_HOLD_NOTICE);
+				if (await decisionLanded(caseDir, hold, start, signal)) {
+					hold.decided?.();
+					return { content: [{ type: 'text', text: REVIEW_DECIDED }], details: { opened: false, decided: true } };
+				}
+			}
+			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: { opened: result.status === 'opened', ...(blocked ? { stop: blocked } : {}) } };
 		},
 	};
 }

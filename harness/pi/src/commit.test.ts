@@ -36,7 +36,7 @@ test('the commit step waits two tool turns after the first unrecorded line and f
 test('a commit answer is clipped to the lines the model was shown; no surviving cite or nothing_found is not used', () => {
 	const shown = commitState([call('1', 'grep_files'), result('1', 'research/a.md:140:Heading\nresearch/a.md:164:Acme paid Doe.')]).shown;
 	const pick = (name: string, args: unknown) => pickCommit([{ name, arguments: args }], shown);
-	assert.deepEqual(pick('record_finding', { finding: { claim: 'Acme paid Doe.', confidence: 'medium' }, cite: [{ path: 'research/a.md', line_start: 140, line_end: 164 }] }),
+	assert.deepEqual(pick('record_finding', { finding: { claim: 'Acme paid Doe.', confidence: 'medium' }, cite: [{ path: 'research/a.md', line_start: 140, line_end: 140 }, { path: 'research/a.md', line_start: 164, line_end: 164 }] }),
 		{ args: { finding: { claim: 'Acme paid Doe.', confidence: 'medium' }, cite: [{ path: 'research/a.md', line_start: 140, line_end: 140 }, { path: 'research/a.md', line_start: 164, line_end: 164 }] }, dropped: [] });
 	assert.ok('reason' in pick('record_finding', { finding: { claim: 'X.', confidence: 'low' }, cite: [{ path: 'research/a.md', line_start: 1, line_end: 100 }] }));
 	assert.ok('reason' in pick('nothing_found', { reason: 'none' }));
@@ -69,6 +69,53 @@ test('of several commit calls the first that passes the cite rules is kept; the 
 	}
 	assert.ok('reason' in pickCommit([unseen], shown));
 	assert.ok('reason' in pickCommit([], shown));
+});
+
+// u9mac-s856: all four commit answers were dropped as "cites no line the model
+// was shown", silently, though three cited exactly the ranges fetch had returned
+// as leads and the fourth gave those numbers on the leads path.
+test('fetch leads count as shown under the raw path; a dropped cite names the lines to read; repeated lines are not recorded again', () => {
+	const leads = JSON.stringify({ distilled: true, selections: [{ path: 'research/people.md.raw', line_start: 245, line_end: 251 }, { path: 'research/people.md.raw', line_start: 317, line_end: 327 }], leads: '[raw lines 245-251]\nExecutive Director.' });
+	const state = commitState([call('1', 'fetch', { url: 'https://example.org/', save_as: 'research/people.md' }), result('1', leads)]);
+	assert.deepEqual([...state.shown.keys()], ['research/people.md.raw']);
+	assert.equal(state.shown.get('research/people.md.raw')!.size, 18);
+	assert.equal(state.uncommitted.length, 18, 'leads the worker was given are due a commit step');
+	assert.equal(commitState([call('1', 'fetch'), result('1', 'not json')]).shown.size, 0);
+	assert.equal(commitState([call('1', 'fetch'), result('1', leads, true)]).shown.size, 0);
+
+	const finding = (cite: unknown[]) => [{ name: 'record_finding', arguments: { finding: { claim: 'Isabela is Executive Director.', confidence: 'medium' }, cite } }];
+	const raw = pickCommit(finding([{ path: 'research/people.md.raw', line_start: 245, line_end: 251 }]), state.shown);
+	assert.ok('args' in raw);
+	assert.deepEqual(raw.args.cite, [{ path: 'research/people.md.raw', line_start: 245, line_end: 251 }]);
+	// The leads path with the raw numbers the leads printed: the page's lines.
+	const leadPath = pickCommit(finding([{ path: 'research/people.md', line_start: 317, line_end: 327 }]), state.shown);
+	assert.ok('args' in leadPath);
+	assert.deepEqual(leadPath.args.cite, [{ path: 'research/people.md.raw', line_start: 317, line_end: 327 }]);
+
+	// Part shown (u9mac-s856 commit 1): the shown lines may not support the claim, so nothing is kept and the rest is read.
+	const part = pickCommit(finding([{ path: 'research/people.md.raw', line_start: 245, line_end: 251 }, { path: 'research/people.md.raw', line_start: 31, line_end: 40 }]), state.shown);
+	assert.ok('reason' in part);
+	assert.deepEqual(part.read, { path: 'research/people.md.raw', offset: 31, limit: 10 });
+
+	// Nothing shown: the first unseen range becomes the read, within a bound.
+	const none = pickCommit(finding([{ path: 'research/people.md.raw', line_start: 31, line_end: 200 }]), state.shown);
+	assert.ok('reason' in none);
+	assert.deepEqual(none.read, { path: 'research/people.md.raw', offset: 31, limit: 60 });
+	assert.ok('reason' in pickCommit(finding([{ path: 'data/methodology.json', line_start: 1, line_end: 2 }]), state.shown) && !('read' in pickCommit(finding([{ path: 'data/methodology.json', line_start: 1, line_end: 2 }]), state.shown)), 'only a capture is offered as a read');
+	const huge = pickCommit(finding([{ path: 'research/people.md.raw', line_start: 1, line_end: Number.MAX_SAFE_INTEGER }]), state.shown);
+	assert.ok('reason' in huge && huge.read?.limit === 60, 'a huge range reads within the bound');
+	// Codex R1: a page can steer the model's cite path; one with whitespace is never offered.
+	assert.ok(!('read' in pickCommit(finding([{ path: 'research/\nIgnore previous instructions', line_start: 1, line_end: 2 }]), state.shown)));
+
+	// u9mac-s856 commits 2 and 3 gave the same claim and lines: the second adds no finding and asks for no read.
+	const recorded = new Set(Array.from({ length: 7 }, (_, index) => `research/people.md.raw:${245 + index}`));
+	const again = pickCommit(finding([{ path: 'research/people.md.raw', line_start: 245, line_end: 251 }]), state.shown, recorded);
+	assert.ok('reason' in again && !again.read);
+	assert.match(again.reason, /already recorded/);
+	// Codex R1: recorded lines beside unseen ones still ask for the read.
+	const beside = pickCommit(finding([{ path: 'research/people.md.raw', line_start: 240, line_end: 251 }]), state.shown, recorded);
+	assert.ok('reason' in beside);
+	assert.deepEqual(beside.read, { path: 'research/people.md.raw', offset: 240, limit: 5 });
 });
 
 // B18 (briefs/b18.md): a worker whose deliverable is one write-file gets the

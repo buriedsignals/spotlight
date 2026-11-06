@@ -4,16 +4,20 @@ import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { chmod, copyFile, mkdir, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, readdir, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { cpSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } from './test-support/fake-openai.ts';
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
+import { DECISION_RECORDED } from './router.ts';
+import { NEXT_BRIEF } from './tools/spotlight.ts';
+import { reviewRefusalStop } from './extension.ts';
+import { AMENDMENT_STOP, PAGE_NOT_OPENED, REVIEW_HOLD_NOTICE } from './tools/review.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { registerCapture } from './test-support/receipts.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
@@ -985,7 +989,8 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	// Passage attachments stay outside the case. Only explicit harness recheck
 	// and diagnostic artifacts may be added; existing case bytes stay unchanged.
 	const afterFiles = await caseDigests(caseDir);
-	for (const [path, digest] of before) assert.equal(afterFiles.get(path), digest, path);
+	// A correction that changed nothing is counted, and that is the one record it may touch.
+	for (const [path, digest] of before) if (!(correction && path === 'data/orchestration.json')) assert.equal(afterFiles.get(path), digest, path);
 	for (const path of afterFiles.keys()) if (!before.has(path)) assert.match(path, /^(research\/fc-recheck-|data\/harness-checks\/fact-checker\/)/, 'only harness recheck/diagnostic artifacts were added');
  });
 });
@@ -1109,10 +1114,11 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 		const fake = await startFakeOpenAI((_request, index) => (index === 0 ? first : { text: 'Done.' }));
 		t.after(() => fake.close());
 		const space = await workspace(t);
-		const chat = launch(t, baseEnv(space, fake.baseURL));
+		// A dead stream before any visible output waits out the prefill limit, shortened here.
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PREFILL_MS: '3000' });
 
 		if (name === 'stalled' || name === 'stalled after calls') {
-			// The clock stops a turn after 60 s with nothing visible.
+			// The clock stops a turn after 60 s with nothing visible, once it has shown output.
 			chat.send({ id: 'p-stalled', type: 'prompt', message: 'Start.' });
 			await chat.waitFor((record) => record.type === 'agent_settled', 0, 90_000);
 		} else {
@@ -1127,7 +1133,7 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 			assert.equal(fake.requests.length, 2, 'one nudge, then the answer');
 			const history = fake.requests[1].messages;
 			assert.match(JSON.stringify(history[history.length - 1].content), /Your last turn ran on without a tool call and was cut off/);
-		} else if (name === 'stalled after calls') {
+		} else if (name === 'stalled' || name === 'stalled after calls') {
 			assert.equal(fake.requests.length, 1, `${name}: the run ends at the stop`);
 			assert.match(settled, /Spotlight stopped this turn because the model stopped responding\. Ask Spotlight to continue\./, name);
 			assert.ok(!chat.lines.some((line) => line.includes('"type":"tool_execution_start"')), `${name}: the dropped calls do not run`);
@@ -2089,14 +2095,14 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 
 	// step3c (reports/step3c-commit-design.md): an investigator that only reads
 	// and never records gets a commit step on the local tiers. A cite of lines
-	// it was never shown leaves no finding, nothing_found changes nothing, and a
-	// cite clipped to the lines it was shown is recorded through the real tool.
+	// it was never shown leaves no finding and reads them, nothing_found changes
+	// nothing, and a cite of lines it was shown is recorded through the real tool.
 	// On frontier no commit request is ever made, even with the switch forced on.
 	for (const tier of ['12b', 'frontier'] as const) await t.test(`commit step (${tier})`, async (t) => {
 		const answers = [
 			{ name: 'record_finding', arguments: { finding: { claim: 'The page is about something else.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 4, line_end: 4 }] } },
 			{ name: 'nothing_found', arguments: { reason: 'Not sure yet.' } },
-			{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 1, line_end: 3 }] } },
+			{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } },
 		];
 		// inv-retest-def8674f.md: LFM3 answered with two record_finding calls; the first that passes is kept, the other named.
 		const second = { name: 'record_finding', arguments: { finding: { claim: 'The licence allows redistribution.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } };
@@ -2161,13 +2167,19 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.equal(commits.length, 3, 'three commit attempts, four turns apart');
 		assert.deepEqual(toolNames(commits[0]), ['nothing_found', 'record_finding']);
 		assert.match(JSON.stringify(commits[0].messages.at(-1)), /Commit step \(from the harness, not the member\)/);
-		// Only the clipped, shown line is recorded; the unseen cite and nothing_found left nothing.
+		// Only the shown line is recorded; the unseen cite and nothing_found left nothing.
 		assert.ok(!findings.findings.some((row) => row.claim === 'The page is about something else.'));
+		// The dropped cite was not silent: the turn says so and reads the lines it named, and the worker then sees them.
+		const read = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined).at(-1)!.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>).find((call) => call.function.name === 'read_file' && call.id.startsWith('commit-'))!;
+		assert.deepEqual(JSON.parse(read.function.arguments), { path: 'research/licence-page.md', offset: 4, limit: 1 });
+		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'investigator') && toolResults(request).some((text) => text.includes('Unrelated footer.'))));
+		assert.ok(fake.requests.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('Commit step: reading the cited lines; not recorded: the finding, because its cite names lines not shown to you'))));
 		const committed = findings.findings.find((row) => row.claim === 'The licence permits modification.')!;
 		assert.deepEqual(committed.evidence, ['You may modify the software'], 'a one-cite commit keeps evidence as a list of the cited text');
 		// inv-retest-def8674f.md: the bundle the commit created carries its schema_version, the case validates and the fact-checker starts.
 		assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).schema_version, '1.0');
-		assert.ok(fake.requests.some((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker') && toolResults(request).some((text) => text.includes('[Harness checks after the investigator finished: all passed]') && text.includes('validate-case.py: PASSED'))), 'the investigator\'s case check passed');
+		// Read from the chat: since code writes the summary, the page opens with no further model request to carry this.
+		assert.ok(chat.lines.some((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"') && line.includes('[Harness checks after the investigator finished: all passed]') && line.includes('validate-case.py: PASSED')), 'the investigator\'s case check passed');
 		// The cited item links the finding (direct), so the fact-checker's judge_finding verifies it and the fact-check validates.
 		const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<{ id: string; created_by?: string; claim_links?: Array<Record<string, string>> }> };
 		const citedItem = bundle.items.find((item) => item.created_by === 'investigator' && item.claim_links?.some((link) => link.finding_id === committed.id));
@@ -2195,7 +2207,7 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.ok(!findings.findings.some((row) => row.claim === 'The licence allows redistribution.'));
 		assert.ok(worker.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('Commit step: kept the first finding; not recorded: call 2 (record_finding: one finding per commit step'))));
 		// Continuity: after each fall-through the model's own request followed, and the worker finished on its own words.
-		assert.match(toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n'), /Investigator finished\./);
+		assert.ok(chat.lines.some((line) => line.includes('"type":"tool_execution_end"') && line.includes('"toolName":"spawn_agent"') && line.includes('Investigator finished.')));
 	});
 });
 
@@ -2582,7 +2594,7 @@ test('with the Research switch off, the methodology check refuses a research pla
 			assert.deepEqual(written.tools_required, ['fetch']);
 			assert.deepEqual([written.navigator.used, written.navigator.outcome, typeof written.navigator.fallback_reason], [false, 'unavailable', 'string']);
 			const plan = written.research_plan;
-			assert.deepEqual([plan.topics[0].topic_id, plan.topics[0].token_budget, plan.mode, plan.round_budget_usd, plan.case_budget_usd], ['d1-web', 200000, 'openrouter_swarm', 1, 1]);
+			assert.deepEqual([plan.topics[0].topic_id, plan.topics[0].token_budget, plan.mode, plan.round_budget_usd, plan.case_budget_usd], ['d1-web', 800000, 'openrouter_swarm', 1, 1]);
 			assert.deepEqual(plan.egress, [{ topic_id: 'd1-web', destination: 'public_web' }]);
 			assert.deepEqual(plan.keys, [{ name: 'FIRECRAWL_API_KEY', topics: ['d1-web'] }]);
 			assert.deepEqual(plan.consent, { swarm: true });
@@ -2700,6 +2712,575 @@ test('an analyst proposal that fails interface 1 is refused when written, and af
 	const writes = writeCalls(analyst.at(-1)!);
 	assert.deepEqual(writes.map(([id]) => id.startsWith('commit-')), route === 'own' ? [false, false] : [true, false], 'the refused write was the commit step\'s; the valid one the analyst\'s own');
  });
+});
+
+// P6: the notice must reach the RPC client as a notify request and stay out of what the model reads.
+test('on a local tier a worker\'s start and end reach the chat client as notices, outside the transcript; frontier sends none', async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Stopped.' })));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await caseAtIngest(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+		await settledPrompt(chat, 'Continue.');
+		const notices = chat.lines.map((line) => JSON.parse(line) as { type?: string; method?: string; message?: string }).filter((record) => record.type === 'extension_ui_request' && record.method === 'notify').map((record) => record.message);
+		assert.deepEqual(notices, tier === 'frontier' ? [] : ['The analyst started.', 'The analyst finished.'], tier);
+		assert.doesNotMatch(JSON.stringify(fake.requests.at(-1)!.messages), /The analyst started/);
+	}
+});
+
+// Option D (paperwork-p5-option-d.md): members expect the case to go on once they decide in the browser.
+const atGate = (space: Workspace) => {
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	return caseDir;
+};
+const holdScript = (request: ChatRequest): Reply => (request.messages.some((message) => message.role === 'tool') ? { text: 'Done.' } : { toolCalls: [{ name: 'open_review', arguments: {} }] });
+const notices = (chat: { lines: string[] }) => chat.lines.map((line) => JSON.parse(line) as { method?: string; message?: string }).filter((record) => record.method === 'notify').map((record) => record.message ?? '');
+// What Osaurus shows: its codec reads text only from text_delta (PiRPCAdapter.swift decodeMessageUpdate).
+const shownText = (chat: { lines: string[] }) => chat.lines.map((line) => JSON.parse(line) as { type?: string; assistantMessageEvent?: { type?: string; delta?: string } }).filter((record) => record.type === 'message_update' && record.assistantMessageEvent?.type === 'text_delta').map((record) => record.assistantMessageEvent!.delta).join('');
+const settles = (chat: { lines: string[] }) => chat.lines.filter((line) => line.includes('"type":"agent_settled"')).length;
+
+test('on a local tier open_review holds the turn; a decision on the record carries the case on in the same chat turn, as a member turn', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_CODE_ROUTER: 'on' });
+
+	const turn = settledPrompt(chat, 'Continue.', 30_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 15_000);
+	assert.equal(settles(chat), 0, 'the turn stays open while the member decides');
+	assert.match(REVIEW_HOLD_NOTICE, /press Stop/);
+	memberApprovesGate(caseDir);
+	await turn;
+
+	assert.equal(settles(chat), 1, 'one chat turn from the page to the next step');
+	assert.equal(shownText(chat).split(DECISION_RECORDED).length - 1, 1, 'Osaurus shows text deltas only, so the line must stream, once');
+	assert.ok(chat.lines.filter((line) => line.includes('"type":"agent_start"')).length >= 2, 'a fresh run, so per-run limits start over');
+	assert.match(chat.stderr(), /the decision on the page counts as the member's turn/, 'and the member-turn resets, which a fresh run does not fire');
+	assert.notEqual(lastResolution(chat).phase, 'investigation_gate_approval', 'code resolved past the gate');
+	assert.ok(!chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)));
+});
+
+// Real launch dfdad41e: Ingest finished and the last line in the chat was still the hold notice.
+test('a decision that completes the case ends the held turn on code\'s closing line, as text the chat shows', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'ingest', '--activated', '--clean', '--proposal']);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_CODE_ROUTER: 'on' });
+
+	const turn = settledPrompt(chat, 'Continue.', 40_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 20_000);
+	execFileSync(PYTHON, [SEAM, 'decide-ingest', 'declined', '--decided-by', 'journalist:fixture', '--decided-at', '2026-08-23T12:00:00Z', caseDir]);
+	await turn;
+
+	const shown = shownText(chat);
+	assert.match(shown, /Case complete: \d+ findings?/, shown);
+	assert.ok(shown.lastIndexOf('Case complete') > shown.lastIndexOf(DECISION_RECORDED), 'the closing line is the last thing said');
+	assert.equal(settles(chat), 1);
+});
+
+test('past the limit, the turn ends as it always did; Stop ends the hold at once; frontier never holds', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	for (const [name, env] of [['limit', { SPOTLIGHT_REVIEW_HOLD_MS: '300' }], ['frontier', { SPOTLIGHT_REVIEW_HOLD_MS: '60000', SPOTLIGHT_MODEL_TIER: 'frontier' }]] as const) {
+		const fake = await startFakeOpenAI(holdScript);
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		atGate(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), ...env });
+		await settledPrompt(chat, 'Continue.', 20_000);
+		assert.equal(fake.requests.length, 1, name);
+		assert.equal(notices(chat).includes(REVIEW_HOLD_NOTICE), name === 'limit', name);
+		assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), `${name}: the fallback line`);
+		if (name === 'limit') assert.ok(notices(chat).includes(REVIEW_OPEN_STOP), 'a replaced line reaches Osaurus as a notice');
+	}
+
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_REVIEW_HOLD_MS: '60000' });
+	const turn = settledPrompt(chat, 'Continue.', 10_000 + 20_000);
+	await waitUntil(() => notices(chat).includes(REVIEW_HOLD_NOTICE), 15_000);
+	const stopped = Date.now();
+	chat.send({ type: 'abort' });
+	await turn;
+	assert.ok(Date.now() - stopped < 8_000, 'inside Osaurus\'s 8 s Stop grace');
+	// A decision after Stop keeps option B: the member's next message moves the case.
+	memberApprovesGate(caseDir);
+	await settledPrompt(chat, 'I decided.', 20_000);
+	assert.equal(settles(chat), 2, 'the chat is free again after Stop');
+});
+
+// Lab OptiQ leg on d3b8305f (kseeds/u9mac-od3b81): the analyst left [verdict] in summary.md and five refusals ended the turn.
+test('at the gate a summary the check refuses is rebuilt by code on a local tier, and the page opens; frontier keeps the refusal', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI(holdScript);
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = atGate(space);
+		await writeFile(join(caseDir, 'summary.md'), '- Finding ID [id]: Verdict [verdict]\n');
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+		await settledPrompt(chat, 'Continue.', 20_000);
+		const written = await readFile(join(caseDir, 'summary.md'), 'utf8');
+		if (tier === 'frontier') {
+			assert.equal(chat.opened().length, 0);
+			assert.match(written, /\[verdict\]/);
+		} else {
+			assert.equal(chat.opened().length, 1, 'the page opened');
+			assert.doesNotMatch(written, /\[verdict\]/);
+			assert.match(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir], { encoding: 'utf8' }), /PASS|valid/i);
+		}
+	}
+});
+
+// A failure at the gate that is not the summary: no worker may repair it there, but the page shows it and can send the case back.
+test('a gate check failure with no repair route opens the page at once and ends on code\'s stop, naming it and the next step; frontier keeps the refusal', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'open_review', arguments: {} }] }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'investigation_gate']);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_REVIEW_HOLD_MS: '300' });
+		await settledPrompt(chat, 'Continue.', 30_000);
+		const said = chat.lines.filter((line) => line.includes('"type":"message_end"') && line.includes('Spotlight stopped')).join('\n');
+		if (tier === 'frontier') {
+			assert.equal(chat.opened().length, 0, 'frontier refuses as before');
+			continue;
+		}
+		assert.equal(chat.opened().length, 1, 'the page opened');
+		assert.equal(fake.requests.length, 1, 'no refusal loop');
+		assert.match(said, /did not pass their check[\s\S]*The check found these problems\.[\s\S]*send the case back to Investigation/);
+		assert.ok(!said.includes(REVIEW_OPEN_STOP));
+		assert.ok(notices(chat).some((text) => text.includes('send the case back to Investigation')), 'the hold names it while the member decides');
+	}
+});
+
+// D1 loads on demand: the router waits for a slow answer. A failure never locks the member out: the model takes the turn, with a notice.
+test('the router waits out a cold decision model, and when it fails the model takes the turn and the member is told', async (t) => {
+	for (const [name, status, delay] of [['slow', 200, 9_000], ['error', 503, 0]] as const) {
+		const decision = createServer((_req, res) => {
+			_req.resume();
+			setTimeout(() => {
+				res.writeHead(status, { 'content-type': 'application/json' });
+				res.end(JSON.stringify({ answers: { intent: { choice: 'question', probabilities: { question: 0.9 } } } }));
+			}, delay);
+		});
+		await new Promise<void>((done) => decision.listen(0, '127.0.0.1', done));
+		t.after(() => decision.close());
+		const fake = await startFakeOpenAI(() => ({ text: 'The model answered.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const config = join(space.root, 'decision-config.json');
+		await writeFile(config, JSON.stringify({ integrations: { decisions: { endpoint: { url: `http://127.0.0.1:${(decision.address() as AddressInfo).port}/v1/systemone`, credential_env: 'SPOTLIGHT_NO_KEY', api: 'openrouter-decisions' } } } }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_CONFIG: config });
+		await settledPrompt(chat, 'What is the status?', 30_000);
+		if (name === 'slow') {
+			assert.match(chat.stderr(), /\[D1 question/, chat.stderr().slice(-400));
+			assert.equal(fake.requests.length, 1);
+			continue;
+		}
+		assert.equal(fake.requests.length, 1, 'the model takes the turn');
+		assert.ok(chat.lines.some((line) => line.includes('The model answered.')), 'and the member gets its reply');
+		assert.deepEqual(notices(chat).filter((text) => text.includes('did not answer (HTTP 503)')).length, 1, 'with one notice');
+		assert.doesNotMatch(JSON.stringify(fake.requests[0].messages), /did not answer/, 'outside the transcript');
+	}
+});
+
+// Case 7656d7ba: 'As of today. ... Approved, proceed' got the same Brief next_action as the first message, and the model asked again.
+test('at the Brief a member\'s reply changes what resolve says, and following it writes the brief and moves the case on; frontier keeps its text', async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI((request) => {
+			const last = request.messages.at(-1)!;
+			if (last.role === 'user') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
+			const said = String(last.content);
+			if (said.includes('Write brief-directions.txt now')) return { toolCalls: [{ name: 'write_file', arguments: { path: 'brief-directions.txt', content: 'Who runs the Tor Project, as of today.\n' } }] };
+			return { text: 'Here is the direction. Do you approve?' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: 'off' });
+
+		await settledPrompt(chat, 'Who runs the Tor Project?', 20_000);
+		assert.equal(lastResolution(chat).next_action, NEXT_BRIEF, 'the first message gets the proposal step');
+		await settledPrompt(chat, 'As of today. Core leadership only. Approved, proceed.', 20_000);
+		const written = existsSync(join(space.casesRoot, 'case-a', 'brief-directions.txt'));
+		assert.equal(written, tier !== 'frontier', tier);
+		if (tier !== 'frontier') {
+			assert.ok(chat.lines.some((line) => line.includes('"type":"tool_execution_end"') && line.includes('approved in any words')), 'the reply changed the step');
+			assert.doesNotMatch(execFileSync(PYTHON, [SEAM, 'status', join(space.casesRoot, 'case-a')], { encoding: 'utf8' }), /brief/, 'the case left the Brief');
+		}
+	}
+});
+
+// An [investigator] fault code cannot repair (a link it can): a cited row with no stored artifact.
+type Row = { id: string; raw_path?: string; sha256?: string; text_derivatives?: unknown };
+const unrepairable = (items: Row[], id = 'E9') => {
+	const { raw_path: _path, sha256: _hash, text_derivatives: _text, ...row } = structuredClone(items.find((item) => item.id === 'E1')!);
+	items.push({ ...row, id });
+};
+const withArtifact = (path: string) => {
+	const items = JSON.parse(readFileSync(path, 'utf8')).items as Row[];
+	const { raw_path, sha256 } = items.find((item) => item.id === 'E1')!;
+	return items.map((item) => (item.id === 'E9' ? { ...item, raw_path, sha256 } : item));
+};
+
+// Case 2bd8d15c: about 10 corrections in an hour with attempts {}: validate-case passed, so each read as fixed
+// while validate-fact-check still named the same [investigator] fault, and the resolver sent the next one.
+test('a correction that leaves validate-fact-check\'s investigator fault in place is counted, and two end in the stop; a real repair is not', async (t) => {
+	for (const repaired of [false, true]) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				if (!repaired || toolResults(request).length) return { text: 'The structural correction has been completed.' };
+				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: withArtifact(path) }) } }] };
+			}
+			if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+			return fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator') && !isWorkerRequest(seen, 'fact-checker')).length <= 6 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = atGate(space);
+		const path = join(caseDir, 'data', 'evidence-bundle.json');
+		const document = JSON.parse(await readFile(path, 'utf8'));
+		const row = document.items.find((item: { id: string }) => item.id === 'E1');
+		unrepairable(document.items);
+		await writeFile(path, JSON.stringify(document));
+		const findingsPath = join(caseDir, 'data', 'findings.json');
+		const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+		findings.findings[0].evidence_bundle_refs = ['E1', 'E9'];
+		await writeFile(findingsPath, JSON.stringify(findings));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+		await settledPrompt(chat, 'Continue.', 60_000);
+
+		const corrections = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0 && /STRUCTURAL CORRECTION/.test(userText(request)));
+		const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+		if (repaired) {
+			assert.equal(corrections.length, 1, 'one repair, then the case moves on');
+			assert.equal(state.attempts?.['structural-correction'], undefined, 'a real repair is not counted');
+		} else {
+			assert.equal(corrections.length, 2, 'bounded');
+			assert.equal(state.attempts['structural-correction'], 2);
+			assert.match(state.blocked.gap, /no stored artifact path/, 'the stop records the real fault');
+		}
+	}
+});
+
+// Case 2bd8d15c, 05:58 to 06:29: code sent STRUCTURAL at each resolve and the model sent the investigator
+// MODE: EVIDENCE CORRECTION between them, which nothing counted. Any correction mode shares one bound.
+test('corrections of any mode, from code or the model, share one bound when nothing improves', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'The correction has been completed.' };
+		const turn = fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator')).length;
+		if (turn > 8) return { text: 'Stopped.' };
+		return { toolCalls: [turn % 2 ? { name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EVIDENCE CORRECTION\nCASE_DIR: .\nEVIDENCE VALIDATOR REASONS (evidence/data only):\nrecord:F1' } } : { name: 'spotlight_resolve', arguments: {} }] };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const path = join(caseDir, 'data', 'evidence-bundle.json');
+	const document = JSON.parse(await readFile(path, 'utf8'));
+	unrepairable(document.items);
+	await writeFile(path, JSON.stringify(document));
+	const findingsPath = join(caseDir, 'data', 'findings.json');
+	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+	findings.findings[0].evidence_bundle_refs = ['E1', 'E9'];
+	await writeFile(findingsPath, JSON.stringify(findings));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const starts = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).length;
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.equal(state.attempts['structural-correction'], 2);
+	assert.equal(starts, 2, 'the second no-progress correction ends it, whichever mode it was');
+	assert.equal(state.blocked.exhausted_attempt, 'structural-correction');
+});
+
+// T9 (t9ingest): 13 of 21 analyst calls died at 79-112 s, and a replay answered at 77.8 s. Through a long
+// prefill Osaurus sends a role chunk, then empty keep-alives: a live stream, not silence.
+test('keep-alives through a long prefill are not silence; the turn gets its answer', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: 'The answer after a long prefill.', keepAlives: { count: 28, everyMs: 2_500 } }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	chat.send({ id: 'p-prefill', type: 'prompt', message: 'Start.' });
+	await chat.waitFor((record) => record.type === 'agent_settled', 0, 100_000);
+	const settled = chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n');
+	assert.match(settled, /The answer after a long prefill\./);
+	assert.doesNotMatch(settled, /Spotlight stopped this turn/);
+});
+
+// T9 on a4869840: 6 of 10 analyst calls aborted. A cold prefill sent no data for 85 s.
+test('85 s with no chunk before the first visible output is a prefill, and the turn gets its answer', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: 'The answer after a cold prefill.', quietMs: 85_000 }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	chat.send({ id: 'p-cold', type: 'prompt', message: 'Start.' });
+	await chat.waitFor((record) => record.type === 'agent_settled', 0, 110_000);
+	const settled = chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n');
+	assert.match(settled, /The answer after a cold prefill\./);
+	assert.doesNotMatch(settled, /Spotlight stopped this turn/);
+});
+
+// Case 96f45e2d: the stream goes quiet after its keep-alives, as with a closed laptop.
+test('a stream that goes silent after its keep-alives is stopped as a stall', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: '', stall: true, keepAlives: { count: 3, everyMs: 1_000 } }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PREFILL_MS: '3000' });
+	chat.send({ id: 'p-silent', type: 'prompt', message: 'Start.' });
+	await chat.waitFor((record) => record.type === 'agent_settled', 0, 90_000);
+	assert.match(chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n'), /the model stopped responding/);
+});
+
+// Case 96f45e2d, 09:20: the first correction was cut by a closed laptop, the second repaired the
+// bundle, no fact-checker had run, and the missing fact-check.json read as a failed correction.
+test('a correction that leaves only the fact-checker\'s next step is not counted, clears the count and reaches the fact-checker', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Repaired.' };
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: STRUCTURAL CORRECTION\nFix the bundle.' } }] } : fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator') && !isWorkerRequest(seen, 'fact-checker')).length <= 3 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const path = join(caseDir, 'data', 'orchestration.json');
+	await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, 'utf8')), attempts: { 'structural-correction': 1 } }));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	assert.equal(state.blocked, undefined, 'no stop');
+	assert.deepEqual(state.attempts, {}, 'a repair clears the count');
+	assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), 'the fact-checker runs');
+});
+
+// Tom: two no-progress corrections with real progress between them must not end a long case.
+test('a correction that reduces the failures resets the count, and two in a row with no progress still stop', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const started = fake.requests.filter((seen) => isWorkerRequest(seen, 'investigator') && toolResults(seen).length === 0).length;
+			if (started !== 2 || toolResults(request).length) return { text: 'Done.' };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: withArtifact(path) }) } }] };
+		}
+		return fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator')).length <= 8 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const path = join(caseDir, 'data', 'evidence-bundle.json');
+	const document = JSON.parse(await readFile(path, 'utf8'));
+	unrepairable(document.items);
+	unrepairable(document.items, 'E8');
+	await writeFile(path, JSON.stringify(document));
+	const findingsPath = join(caseDir, 'data', 'findings.json');
+	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+	const first = findings.findings[0];
+	findings.findings = [{ ...first, evidence_bundle_refs: ['E1', 'E9'] }, { ...structuredClone(first), id: 'F2', claim: 'A second fixture claim.', evidence_bundle_refs: ['E1', 'E8'] }];
+	await writeFile(findingsPath, JSON.stringify(findings));
+	const checkPath = join(caseDir, 'data', 'fact-check.json');
+	const check = JSON.parse(await readFile(checkPath, 'utf8'));
+	check.claims.push({ finding_id: 'F2', claim_text: 'A second fixture claim.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' });
+	await writeFile(checkPath, JSON.stringify(check));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 90_000);
+
+	const starts = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).length;
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.equal(starts, 4, 'no progress, progress, then two with none');
+	assert.equal(state.blocked?.exhausted_attempt, 'structural-correction');
+});
+
+// Case 2bd8d15c's order: a correction, then the fact-checker's verdicts, then corrections. The verdicts are progress
+// made between corrections, so the count starts again and only two in a row with none end the run.
+test('a verdict between two corrections resets the count, and the stop comes after two more with no progress', async (t) => {
+	const judged = (text: string) => [...text.matchAll(/^- (F\d+): "(.*)"$/gm)].map(([, id, claim]) => ({ finding_id: id, claim_text: claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' }));
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return toolResults(request).length ? { text: 'Checked.' } : { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'case-a', claims: judged(userText(request)) }) } }] };
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Done.' };
+		const turn = fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator') && !isWorkerRequest(seen, 'fact-checker')).length;
+		if (turn === 1) return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EVIDENCE CORRECTION\nCASE_DIR: .\nEVIDENCE VALIDATOR REASONS (evidence/data only):\nrecord:F1' } }] };
+		return turn <= 6 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const path = join(caseDir, 'data', 'evidence-bundle.json');
+	const document = JSON.parse(await readFile(path, 'utf8'));
+	unrepairable(document.items);
+	await writeFile(path, JSON.stringify(document));
+	const findingsPath = join(caseDir, 'data', 'findings.json');
+	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+	const first = findings.findings[0];
+	findings.findings = [{ ...first, evidence_bundle_refs: ['E1', 'E9'] }, ...[2, 3].map((n) => ({ ...structuredClone(first), id: `F${n}`, claim: `Fixture claim ${n}.`, evidence_bundle_refs: ['E1', 'E9'] }))];
+	await writeFile(findingsPath, JSON.stringify(findings));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 90_000);
+
+	const order = fake.requests.filter((request) => (isWorkerRequest(request, 'investigator') || isWorkerRequest(request, 'fact-checker')) && toolResults(request).length === 0).map((request) => (isWorkerRequest(request, 'investigator') ? 'correction' : 'verdicts'));
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.deepEqual(order, ['correction', 'verdicts', 'correction', 'correction']);
+	assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')).claims.length, 3);
+	assert.equal(state.blocked?.exhausted_attempt, 'structural-correction', 'two in a row with no progress still stop');
+});
+
+// The same case: fact-check.json stayed at 3 of 28, because a batch's check failed on investigator lines the
+// fact-checker cannot fix, and those lines also took the dispatch. The findings are judged first.
+test('missing claim links are repaired by code: every finding reaches a verdict and no correction is sent', async (t) => {
+	const findings = Array.from({ length: 14 }, (_, i) => ({ id: `F${i + 1}`, claim: `Fixture filing ${i + 1}.` }));
+	const judged = (text: string) => [...text.matchAll(/^- (F\d+): "(.*)"$/gm)].map(([, id, claim]) => ({ finding_id: id, claim_text: claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' }));
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return toolResults(request).length ? { text: 'Checked.' } : { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'case-a', claims: judged(userText(request)) }) } }] };
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Done.' };
+		return fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator') && !isWorkerRequest(seen, 'fact-checker')).length <= 4 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const findingsPath = join(caseDir, 'data', 'findings.json');
+	const document = JSON.parse(await readFile(findingsPath, 'utf8'));
+	const kept = document.findings[0];
+	document.findings = [{ ...kept, evidence_bundle_refs: ['E1'] }, ...findings.slice(1).map((row) => ({ ...structuredClone(kept), ...row, evidence_bundle_refs: ['E1'] }))];
+	await writeFile(findingsPath, JSON.stringify(document));
+	const bundlePath = join(caseDir, 'data', 'evidence-bundle.json');
+	const bundle = JSON.parse(await readFile(bundlePath, 'utf8'));
+	bundle.items = bundle.items.filter((item: { id: string }) => item.id === 'E1');
+	delete bundle.items[0].claim_links;
+	await writeFile(bundlePath, JSON.stringify(bundle));
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify({ project: JSON.parse(await readFile(findingsPath, 'utf8')).project, claims: [{ finding_id: 'F1', claim_text: kept.claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' }] }));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const file = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	assert.equal(file.claims.length, 14, 'every finding was judged, past the fact-checker cap of three spawns');
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, 0, 'no correction is sent');
+	assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8')).blocked, undefined);
+});
+
+// Case 3f58f43b: only the worker saw the rejected key. The member hears it once, in the chat.
+test('a Firecrawl key fault recorded by a worker reaches the member once as a notice', async (t) => {
+	const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Stopped.' })));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const env = baseEnv(space, fake.baseURL);
+	const file = join(env.SPOTLIGHT_HARNESS_DATA, 'work', 'fetch-failures', `${createHash('sha256').update(await realpath(caseDir)).digest('hex').slice(0, 16)}.json`);
+	await mkdir(dirname(file), { recursive: true });
+	await writeFile(file, JSON.stringify({ 'firecrawl:key': { count: 1, cause: 'Firecrawl rejected its key. Replace the Firecrawl key in Indicator Lab, or set Firecrawl to Backup only. https://a.example.com/1 was not read directly, so your IP stayed away from it.', key: 'x' } }));
+	const chat = launch(t, { ...env, SPOTLIGHT_MODEL_TIER: '12b' });
+	await settledPrompt(chat, 'Continue.', 30_000);
+	assert.equal(notices(chat).filter((text) => text.startsWith('Firecrawl rejected its key.')).length, 1);
+});
+
+// Case 2bd8d15c: asked to go on, the blocked case repeated its stop text with no page. The route runs from the message to the page.
+test('a member message at the correction stop opens the gate page, says what failed and how to send the case back, and a send-back carries on', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const path = join(caseDir, 'data', 'orchestration.json');
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	state.attempts = { 'structural-correction': 2 };
+	state.blocked = { phase: 'investigation', exhausted_attempt: 'structural-correction', gap: 'FAIL  record:F1 [investigator]: evidence bundle E1 has no explicit finding link', attempts: state.attempts };
+	await writeFile(path, JSON.stringify(state));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_REVIEW_HOLD_MS: '60000' });
+
+	const turn = settledPrompt(chat, 'Reopen the methodology please.', 40_000);
+	await waitUntil(() => chat.opened().length === 1, 20_000);
+	await waitUntil(() => notices(chat).some((text) => text.includes('Send the case back to Investigation')), 20_000);
+	assert.ok(notices(chat).some((text) => text.includes('no explicit finding link')), 'the failure is named');
+	execFileSync(PYTHON, [SEAM, 'request-follow-up', '--instructions', 'Link the findings to E1.', '--requested-by-role', 'orchestrator', caseDir]);
+	await turn;
+	assert.equal(settles(chat), 1, 'the turn carries on from the page');
+	assert.equal(JSON.parse(await readFile(path, 'utf8')).blocked, undefined);
+});
+
+const stopCase = async (caseDir: string, stop: Record<string, unknown>) => {
+	const path = join(caseDir, 'data', 'orchestration.json');
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	await writeFile(path, JSON.stringify({ ...state, attempts: { [String(stop.exhausted_attempt)]: 1 }, blocked: { ...stop, attempts: {} } }));
+	return path;
+};
+
+test('on a frontier tier a stop opens the gate page too, with no hold, and the turn ends on the failures and the way out', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	await stopCase(caseDir, { phase: 'investigation', exhausted_attempt: 'investigation-cycle', gap: 'who owns the fund', gaps_report: ['who owns the fund'] });
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Reopen the methodology please.', 30_000);
+	assert.equal(chat.opened().length, 1);
+	assert.match(notices(chat).join('\n'), /every cycle[\s\S]*who owns the fund[\s\S]*Send the case back to Investigation/);
+});
+
+test('a member message at a refused amendment reopens the Research page and says the marks are theirs to change', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(holdScript);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'research'], { env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } });
+	const path = await stopCase(caseDir, { phase: 'research', exhausted_attempt: 'amendment-correction', gap: 'D8: no direction left' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_REVIEW_HOLD_MS: '1' });
+
+	await settledPrompt(chat, 'What now?', 40_000);
+	assert.equal(chat.opened().length, 1);
+	assert.ok(notices(chat).includes(AMENDMENT_STOP));
+	assert.equal(JSON.parse(await readFile(path, 'utf8')).blocked, undefined);
+});
+
+test('a member message at a failed research round runs it again, with no page', async (t) => {
+	const fake = await startFakeOpenAI((request) => (request.messages.some((message) => message.role === 'tool') ? { text: 'Done.' } : { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'research'], { env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } });
+	const path = await stopCase(caseDir, { phase: 'research', exhausted_attempt: 'research-lane', gap: 'OpenRouter key rejected' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_RESEARCH_SWARMS: 'on' });
+
+	await settledPrompt(chat, 'The key is fixed.', 40_000);
+	assert.equal(chat.opened().length, 0);
+	const state = JSON.parse(await readFile(path, 'utf8'));
+	assert.equal(state.blocked, undefined);
+	assert.deepEqual(state.attempts, {});
+});
+
+// qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
+// carries a skeleton whose placeholders the builder refuses until they are filled.
+test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {
+	const skeleton = (request: ChatRequest) => JSON.parse(userText(request).match(/"proposal_skeleton":(\{.*?"story_arcs":\[\]\})/)![1]);
+	const write = (proposal: unknown) => ({ toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(proposal) } }] });
+	const fake = await startFakeOpenAI(
+		delegateToAnalyst((request) => {
+			const done = toolResults(request).length;
+			if (done === 0) return write(skeleton(request));
+			if (done > 1) return { text: 'Proposed.' };
+			const proposal = skeleton(request);
+			const [claim] = proposal.claims;
+			return write({ ...proposal, claims: [{ ...claim, proposition: 'Acme paid Doe.', statement: { subject: { text: 'Acme' }, predicate: 'paid' }, attributed: claim.attributed ?? false }] });
+		}),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).at(-1)!);
+	assert.match(results[0], /^refused: data\/knowledge-proposal\.json/, 'an unfilled skeleton never passes');
+	assert.match(results[1], /wrote data\/knowledge-proposal\.json/);
+	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the case goes on to the Ingest page');
 });
 
 // LFM3 r3 kde stage 3 on Osaurus (ecbcd23e): a schema-valid proposal broke the
@@ -3045,6 +3626,7 @@ test('the orchestrator is stopped at the fifth open_review refusal, even with wr
 	);
 	const stopLine = chat.lines.find((line) => line.includes('The check found these problems.')) ?? '';
 	assert.equal(stopLine.split('\\nSTRUCTURE: ').length - 1, 3, 'at most the first three errors');
+	assert.match(reviewRefusalStop(`${PAGE_NOT_OPENED}data/findings.json does not pass validate-case.py.\n  • findings.json: F1 has no source`), /Send a message here to try again[\s\S]*The check found these problems\.\nfindings\.json: F1 has no source/, 'a gate refusal names the next step and validate-case\'s own lines');
 });
 
 // r3 held-kde run (ecbcd23e): at brief, with no brief-directions.txt and no
@@ -3521,7 +4103,7 @@ test('once the case is blocked, the orchestrator\'s next tool calls end the turn
 
 	assert.equal(fake.requests.length, 2, 'no call runs after the blocked resolve');
 	assert.match(toolResults(fake.requests[1])[0], /"status":"blocked"/);
-	assert.ok(chat.lines.some((line) => line.includes(blockedStop(1))), 'the member is told why');
+	assert.ok(chat.lines.some((line) => line.includes(blockedStop())), 'the member is told why');
 });
 
 // U3 census stage 1 (0af4585b): told to spawn the fact-checker, the r5
@@ -4015,6 +4597,9 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
 	assert.equal(lane.status, 'completed');
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+	// P6: a round is a long silence too; on the default local tier it reports as a worker does.
+	const notices = chat.lines.map((line) => JSON.parse(line) as { method?: string; message?: string }).filter((record) => record.method === 'notify').map((record) => record.message);
+	assert.ok(notices.includes('The research round started.') && notices.includes('The research round finished.'), JSON.stringify(notices));
 });
 
 // Constellation G5b through the launcher: a decision endpoint that fails with
@@ -5288,7 +5873,7 @@ test('a rejected multi-quote write is carried after its earlier evidence side ef
 // may cite the re-fetch itself, or answer judge_finding and code writes the
 // claim; a page that changed leaves the finding unverified with the reason.
 test('a fact-checker can cite the harness recheck as its independent acquired evidence, or answer judge_finding and code writes the claim', async (t) => {
- for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts', 'judge-value'] as const) await t.test(route, async (t) => {
+ for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts', 'judge-value', 'judge-person'] as const) await t.test(route, async (t) => {
 	const url = 'https://registry.example.org/recheck';
 	// The case's supporting passage is "Acme paid Doe." (the fixture's SX1).
 	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : route === 'judge-contradicts' ? 'Registry record\nAcme [never](https://registry.example.org/note) paid Doe.\n' : 'Registry record\nAcme paid Doe.\n';
@@ -5325,11 +5910,11 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	// One investigator item to recheck: the fixture's own FC-E1 re-fetch is left out.
 	bundle.items = bundle.items.filter((item: { created_by?: string }) => item.created_by !== 'fact-checker');
 	await writeFile(bundlePath, JSON.stringify(bundle));
-	if (route === 'judge-value') {
-		// The claim check: the passage is on the page, but it does not hold the finding's figure.
+	if (route === 'judge-value' || route === 'judge-person') {
+		// The claim check: the passage is on the page, but it does not hold the finding's figure, or person.
 		const findingsPath = join(caseDir, 'data', 'findings.json');
 		const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
-		const claim = 'Acme paid Doe 1.2M on 3 March 2024.';
+		const claim = route === 'judge-person' ? 'Dennis Jackson is a member of the Acme board.' : 'Acme paid Doe 1.2M on 3 March 2024.';
 		findings.findings[0].claim = claim;
 		await writeFile(findingsPath, JSON.stringify(findings));
 		for (const item of bundle.items) for (const link of item.claim_links ?? []) if (link.finding_id === 'F1') link.claim_text = claim;
@@ -5368,6 +5953,15 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 		} catch (error) {
 			assert.fail(`validate-fact-check.py: ${String((error as { stdout?: string }).stdout ?? error)} ${JSON.stringify(checked.claims)}`);
 		}
+		return;
+	}
+	if (route === 'judge-person') {
+		// u9mac-verdict2bd8 D1-F5: a person swap is written unverified, names them, and validates.
+		assert.equal(checked.claims[0].verdict, 'unverified');
+		assert.equal(checked.claims[0].evidence_for.length, 0);
+		assert.match(checked.claims[0].notes, /Harness re-check: the cited passage does not name Dennis Jackson/);
+		assert.match(toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!)[0], /F1 recorded as unverified: the cited passage does not name Dennis Jackson\. Go on to your next finding/);
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
 		return;
 	}
 	if (route === 'judge-value') {
@@ -5576,14 +6170,11 @@ test('after the member approves the gate, spotlight_resolve builds the provenanc
 	assert.match(await readFile(join(caseDir, 'review.html'), 'utf8'), /<!doctype html>/i);
 });
 
-test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open_review reaches the report gate; the analyst writes the summary and the draft', async (t) => {
+test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open_review reaches the report gate; code writes the summary and the analyst the draft', async (t) => {
 	const space = await workspace(t);
 	const caseDir = caseAtGate(space);
-	const summaryMd = await readFile(join(caseDir, 'summary.md'), 'utf8');
-	// P3W-1 (pod-3way-qwen35-9b.md): the file as Qwen3.5-9B wrote it, no title, status, summary or generated_at, findings with claim_text.
-	// Code completes it from the findings and the fact-check, and the case reaches the report gate.
+	// P4 (qwen-u9-mac.md): r3 left summary.md a template. On a local tier no analyst writes it.
 	const [finding] = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')).findings;
-	const summaryJson = JSON.stringify({ schema_version: '1.0', project: 'offline-demo', findings: [{ id: finding.id, claim_text: finding.claim }] });
 	await unlink(join(caseDir, 'summary.md'));
 	await unlink(join(caseDir, 'data', 'summary.json'));
 	const fake = await startFakeOpenAI((request) => {
@@ -5592,9 +6183,7 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 			// The analyst writes only prose into the structure the harness wrote.
 			const skeleton = () => JSON.parse(readFileSync(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
 			const prose = () => ({ ...skeleton(), title: REPORT_DRAFT.title, deck: REPORT_DRAFT.deck, finding_treatments: REPORT_DRAFT.finding_treatments });
-			return /report-draft\.json/.test(userText(request))
-				? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(prose()) } }] }
-				: { toolCalls: [{ name: 'write_file', arguments: { path: 'summary.md', content: summaryMd } }, { name: 'write_file', arguments: { path: 'data/summary.json', content: summaryJson } }] };
+			return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(prose()) } }] };
 		}
 		const last = request.messages.at(-1)!;
 		if (last.role !== 'tool') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
@@ -5614,12 +6203,14 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
 	const called = orchestrator.flatMap((request) => (request.messages.filter((message) => message.role === 'assistant').flatMap((message) => (message.tool_calls ?? []) as Array<{ function: { name: string } }>)).map((call) => call.function.name));
 	assert.deepEqual([...new Set(called)].sort(), ['open_review', 'spawn_agent', 'spotlight_resolve']);
-	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), summaryMd);
+	assert.ok((await readFile(join(caseDir, 'summary.md'), 'utf8')).includes(finding.claim));
 	const completed = JSON.parse(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8'));
 	assert.deepEqual(completed.findings, [{ id: 'F1', claim: finding.claim, confidence: 'high', fact_check_verdict: 'verified', source_count: 1 }]);
 	assert.match(execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir], { encoding: 'utf8' }), /PASS|valid/i, 'the completed file passes the check that stopped the Qwen run');
-	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /write title, summary, key_conclusions and limitations; code fills the rest/);
-	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, caveats: [], next_steps: [] });
+	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!), /report-draft\.json/, 'the first analyst is the Report one');
+	// On a local tier the headline is the fact-checked claim, set by code (claimsAsHeadlines).
+	const claimOnly = REPORT_DRAFT.finding_treatments.map((treatment) => ({ ...treatment, headline: finding.claim, summary: '', why_it_matters: '' }));
+	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), { ...REPORT_DRAFT, finding_treatments: claimOnly, caveats: [], next_steps: [] });
 	assert.match(userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)))!), /holds the report's structure/);
 	// report-direct-quote-diff.md: the Report analyst reads which passages are
 	// direct quotes, the only ones quote_selections may cite.

@@ -100,6 +100,10 @@ legend { font-size: 19px; line-height: 1.25; padding: 0 8px; }
 .card.unverified { border: 2px dashed var(--amber); }
 .warning { font-weight: 600; color: var(--red); }
 .quote { white-space: pre-wrap; overflow-wrap: anywhere; }
+.evidence { overflow-wrap: anywhere; margin: 12px 0; }
+.evidence p { margin: 4px 0; }
+.evidence ul, .evidence ol { margin: 4px 0; }
+.evidence-heading { font-weight: 600; margin-top: 10px; }
 ul, ol { padding-left: 1.4rem; }
 li { overflow-wrap: anywhere; }
 li::marker { color: var(--muted); }
