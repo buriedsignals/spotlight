@@ -370,6 +370,8 @@ test('a fact-checker\'s bundle add leaves investigator items it did not touch, e
 	// Continuity: the next add goes through too, and an item a write does change still gets the receipt's values, so B24 holds.
 	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...bundle.items[0], id: 'FC-E10', created_by: 'fact-checker', claim_links: [] }] }) });
 	assert.ok((await json('evidence-bundle.json')).items.some((entry: { id: string }) => entry.id === 'FC-E10'));
+	// A real file, so this reaches the rewrite check: a path with no capture is refused before it (ec41950c).
+	await writeFile(join(caseDir, 'research/other.md'), 'Another capture.\n');
 	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...stale, raw_path: 'research/other.md' }] }) }), /changes or removes D3-E1/);
 });
 
