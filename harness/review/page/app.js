@@ -1456,6 +1456,7 @@ function render(next) {
     }
     const parts = [];
     if (readOnly()) parts.push(receiptSection());
+    if (view.model_warning) parts.push(el("p", { className: "warning", text: view.model_warning }));
     if (view.blocking.length) {
       parts.push(
         el(

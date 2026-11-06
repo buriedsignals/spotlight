@@ -79,6 +79,16 @@ def require_gate(gate: str) -> None:
         raise OrchestrationError(f"unknown review gate: {gate}")
 
 
+# Tom, 2026-11-06: the journalist verifies, Spotlight does the work. A local tier's Investigation
+# page and report say so; render-report.py holds the same words.
+LOCAL_MODEL_WARNING = ("Spotlight's local model can get facts wrong, even on findings marked verified. "
+                       "Check every finding against its source before you use it.")
+
+
+def local_model_warning() -> str | None:
+    return None if (os.environ.get("SPOTLIGHT_MODEL_TIER", "").strip() or "12b") == "frontier" else LOCAL_MODEL_WARNING
+
+
 def investigation_stop(status: dict[str, Any]) -> bool:
     """The case stopped during Investigation, whichever attempt ran out (case 2bd8d15c). The
     Investigation page is its way out: it lists the failures and can send the case back."""

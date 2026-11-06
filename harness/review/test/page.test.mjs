@@ -118,6 +118,17 @@ test("at a stop the failures name the send-back, not the agent", async (t) => {
   assert.ok(page.getElementById("request-follow-up"));
 });
 
+// Tom, 2026-11-06: the journalist verifies, and a local tier's pages say so.
+test("the Investigation page warns about the local model on a local tier, and not on frontier", async (t) => {
+  const line = "Spotlight's local model can get facts wrong, even on findings marked verified. Check every finding against its source before you use it.";
+  for (const [tier, shown] of [["12b", true], ["frontier", false]]) {
+    const caseDir = buildCase(tempRoot(t), "case", "investigation_gate");
+    const env = { ...process.env, SPOTLIGHT_MODEL_TIER: tier };
+    const page = await renderClient(await createCaseBridge({ caseDir, env }).view("investigation_gate"));
+    assert.equal(JSON.stringify(page.getElementById("app"), (key, value) => (key === "listeners" ? undefined : value)).includes(line), shown, tier);
+  }
+});
+
 // Tom, 2026-11-05: a page with nothing to approve holds no turn, so a decline there
 // carries nothing on. The member is told where to go next.
 test("a decline with nothing offered sends the member back to the chat; any other decision keeps the usual line", async (t) => {

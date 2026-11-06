@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -481,6 +482,26 @@ def check_code_set_headlines(root: Path) -> None:
     assert result.returncode != 0 and "summary must be a non-empty string" in result.stdout, result.stdout
 
 
+LOCAL_WARNING = ("Spotlight's local model can get facts wrong, even on findings marked verified. "
+                 "Check every finding against its source before you use it.")
+
+
+def check_local_model_warning(root: Path) -> None:
+    """Tom, 2026-11-06: the journalist verifies, and a local tier's report says so at the top."""
+    for tier, shown in (("12b", True), ("frontier", False)):
+        case = build_case(root / f"warning-{tier}")
+        result = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True,
+                                env={**os.environ, "SPOTLIGHT_MODEL_TIER": tier})
+        assert result.returncode == 0, result.stdout + result.stderr
+        html_text = (case / "report.html").read_text()
+        markdown = (case / "findings-report.md").read_text()
+        escaped = LOCAL_WARNING.replace("'", "&#x27;")
+        assert (escaped in html_text) is shown, tier
+        assert (LOCAL_WARNING.replace("'", "\\'") in markdown or LOCAL_WARNING in markdown) is shown, tier
+        if shown:
+            assert html_text.index(escaped) < html_text.index('class="finding"'), "at the top"
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -503,6 +524,7 @@ def main() -> int:
         check_disposition_kept_finding(Path(tmp))
         check_non_direct_quote_selection(Path(tmp))
         check_code_set_headlines(Path(tmp))
+        check_local_model_warning(Path(tmp))
         # Frontier's draft keeps every field it wrote.
         assert '<p class="lede">' in html and "Why it matters:" in html and "Why it matters:" in markdown
         assert "<script>alert('unsafe')</script>" not in html

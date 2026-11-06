@@ -341,6 +341,7 @@ def review_view(
         gaps = status["blocked"].get("gaps_report") or [status["blocked"].get("gap") or ""]
         lines = [line.strip() for gap in gaps for line in str(gap).splitlines() if line.strip()]
         view = {**view, "blocking": lines + view["blocking"]}
-    return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
+    warning = review.local_model_warning() if gate == "investigation_gate" else None
+    return {**view, **({"model_warning": warning} if warning else {}), "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
             "can_request_follow_up": stopped or (gate in {"investigation_gate", "report"}
             and status["phase"] in {"investigation_gate_approval", "investigation_gate_finalization", "report"})}
