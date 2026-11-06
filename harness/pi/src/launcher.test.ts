@@ -5834,7 +5834,7 @@ test('a rejected multi-quote write is carried after its earlier evidence side ef
 // may cite the re-fetch itself, or answer judge_finding and code writes the
 // claim; a page that changed leaves the finding unverified with the reason.
 test('a fact-checker can cite the harness recheck as its independent acquired evidence, or answer judge_finding and code writes the claim', async (t) => {
- for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts', 'judge-value'] as const) await t.test(route, async (t) => {
+ for (const route of ['record', 'judge', 'judge-changed', 'judge-redirected', 'record-unrelated', 'judge-contradicts', 'judge-value', 'judge-person'] as const) await t.test(route, async (t) => {
 	const url = 'https://registry.example.org/recheck';
 	// The case's supporting passage is "Acme paid Doe." (the fixture's SX1).
 	const page = route === 'judge-changed' ? 'Registry record\nThe record was withdrawn.\n' : route === 'judge-contradicts' ? 'Registry record\nAcme [never](https://registry.example.org/note) paid Doe.\n' : 'Registry record\nAcme paid Doe.\n';
@@ -5871,11 +5871,11 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	// One investigator item to recheck: the fixture's own FC-E1 re-fetch is left out.
 	bundle.items = bundle.items.filter((item: { created_by?: string }) => item.created_by !== 'fact-checker');
 	await writeFile(bundlePath, JSON.stringify(bundle));
-	if (route === 'judge-value') {
-		// The claim check: the passage is on the page, but it does not hold the finding's figure.
+	if (route === 'judge-value' || route === 'judge-person') {
+		// The claim check: the passage is on the page, but it does not hold the finding's figure, or person.
 		const findingsPath = join(caseDir, 'data', 'findings.json');
 		const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
-		const claim = 'Acme paid Doe 1.2M on 3 March 2024.';
+		const claim = route === 'judge-person' ? 'Dennis Jackson is a member of the Acme board.' : 'Acme paid Doe 1.2M on 3 March 2024.';
 		findings.findings[0].claim = claim;
 		await writeFile(findingsPath, JSON.stringify(findings));
 		for (const item of bundle.items) for (const link of item.claim_links ?? []) if (link.finding_id === 'F1') link.claim_text = claim;
@@ -5914,6 +5914,15 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 		} catch (error) {
 			assert.fail(`validate-fact-check.py: ${String((error as { stdout?: string }).stdout ?? error)} ${JSON.stringify(checked.claims)}`);
 		}
+		return;
+	}
+	if (route === 'judge-person') {
+		// u9mac-verdict2bd8 D1-F5: a person swap is written unverified, names them, and validates.
+		assert.equal(checked.claims[0].verdict, 'unverified');
+		assert.equal(checked.claims[0].evidence_for.length, 0);
+		assert.match(checked.claims[0].notes, /Harness re-check: the cited passage does not name Dennis Jackson/);
+		assert.match(toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!)[0], /F1 recorded as unverified: the cited passage does not name Dennis Jackson\. Go on to your next finding/);
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
 		return;
 	}
 	if (route === 'judge-value') {

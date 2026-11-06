@@ -14,7 +14,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCh
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, planDirections, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, factCheckerSourceURLs, fetchedFile, registeredCapture } from './fetch.ts';
-import { missingValues } from './claim-values.ts';
+import { citedFor, missingPeople, missingValues } from './claim-values.ts';
 import { flatText, linkText, sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
@@ -2292,13 +2292,14 @@ function sourcePages(context: ToolContext, item: RecordRow, recheck: Recheck): s
 	return [page && 'text' in page ? page.text : '', capture];
 }
 
-function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; status: string; passages?: string; pages?: string } {
+function refetchedSupport(context: ToolContext, findingId: string): { item?: RecordRow; located?: RecordRow[]; status: string; passages?: string; pages?: string } {
 	const items = findingItems(context, findingId);
 	const passages = recordRows(recordDocument(context, 'data/source-expressions.json').expressions).filter((passage) =>
 		recordRows(passage.lifecycle_events).at(-1)?.event === 'activated'
 		&& recordRows(passage.finding_links).some((link) => link.finding_id === findingId && link.relation === 'supports'));
 	const recheck = taskRecheck(context);
 	const statuses: string[] = [];
+	const located: RecordRow[] = [];
 	for (const item of items) {
 		const url = itemURL(item);
 		const own = passages.filter((passage) => passage.original_evidence_bundle_id === item.id && typeof passage.text === 'string');
@@ -2309,10 +2310,12 @@ function refetchedSupport(context: ToolContext, findingId: string): { item?: Rec
 		for (const passage of own) {
 			const found = locate(refetch.text, String(passage.text));
 			if (found && !sameSourceSupport(context, url, findingId, found.quote)) { unsupported = true; continue; }
-			if (found) return { status: 'found', passages: passages.map((row) => String(row.text ?? '')).join('\n'), pages: items.flatMap((other) => sourcePages(context, other, recheck)).join('\n'), item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } } };
+			if (found) located.push({ description: `Re-fetch by the harness for the fact-checker of ${url} at ${refetch.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: refetch.path, line_start: found.line_start, line_end: found.line_end } });
 		}
+		if (located.length) continue;
 		statuses.push(unsupported ? `${url}: the investigation records no direct or indirect support from this source for the finding` : `${url}: re-fetched, but the supporting passage is no longer on the page`);
 	}
+	if (located.length) return { status: 'found', passages: passages.map((row) => String(row.text ?? '')).join('\n'), pages: items.flatMap((other) => sourcePages(context, other, recheck)).join('\n'), item: located[0], located };
 	if (!statuses.length) return { status: passages.length ? 'no harness re-fetch of its sources' : 'no recorded supporting passage to compare' };
 	return { status: statuses.join('; ') };
 }
@@ -2373,17 +2376,20 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 			let status = '';
 			if (input.answer === 'supports') {
 				const support = refetchedSupport(context, findingId);
-				if (support.item) evidence.unshift(support.item);
-				else status = support.status;
+				if (!support.item) status = support.status;
 				// B20b: a run with no harness re-fetch (no batch) cannot verify; "supports" must not turn a claim unverified.
 				const existing = recordRows(recordDocument(context, 'data/fact-check.json').claims).find((row) => row.finding_id === findingId);
-				if (!evidence.length && !context.env.SPOTLIGHT_TASK_RECHECK && existing) return textResult(`${findingId} keeps its ${String(existing.verdict)} claim: this run has no harness re-fetch to check it against.`);
+				if (!support.item && !context.env.SPOTLIGHT_TASK_RECHECK && existing) return textResult(`${findingId} keeps its ${String(existing.verdict)} claim: this run has no harness re-fetch to check it against.`);
 				// The claim check downgrades and never refuses: the same claim is written, unverified, with the value named.
 				const claim = recordRows(recordDocument(context, 'data/findings.json').findings).find((row) => row.id === findingId)?.claim;
 				const missing = support.item ? missingValues(String(claim ?? ''), support.passages ?? '', support.pages) : [];
-				if (missing.length) {
+				// Every person must be in what the verdict cites (D1-F5, D2-F7).
+				const cited = citedFor(String(claim ?? ''), support.located ?? []);
+				evidence.unshift(...cited);
+				const people = support.item ? missingPeople(String(claim ?? ''), cited.map((row) => String(row.quote)).join('\n')) : [];
+				if (missing.length || people.length) {
 					evidence.length = 0;
-					status = `the finding's sources do not contain ${missing.join(', ')}`;
+					status = [...(missing.length ? [`the finding's sources do not contain ${missing.join(', ')}`] : []), ...(people.length ? [`the cited passage does not name ${people.join(', ')}`] : [])].join('; ');
 				}
 			}
 			const against: RecordRow[] = [];
@@ -2404,7 +2410,7 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 				...(input.answer === 'partly' ? { flags: [{ code: 'partial_support', reason }] } : {}),
 			};
 			const result = await assess.execute(id, { assessment }, signal, ...rest);
-			const said = verdict === 'unverified' ? `${findingId} recorded as unverified${status ? `: ${status}` : ''}.` : `${findingId} recorded as ${verdict}.`;
+			const said = verdict === 'unverified' ? `${findingId} recorded as unverified${status ? `: ${status}` : ''}.${status.includes('does not name') ? ' Go on to your next finding; this one needs a passage that names them.' : ''}` : `${findingId} recorded as ${verdict}.`;
 			return { ...result, content: [...result.content, { type: 'text' as const, text: said }] };
 		},
 	};
