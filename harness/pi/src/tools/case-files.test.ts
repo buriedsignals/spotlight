@@ -986,6 +986,8 @@ test('a fact-checker changes only its own bundle items, and no role moves the fi
 	const bundle = (...items: object[]) => JSON.stringify({ items }, null, 2);
 	for (const role of ['fact-checker', 'investigator']) {
 		const { caseDir, call } = await fixture(t, undefined, role);
+		await mkdir(join(caseDir, 'research'));
+		for (const name of ['a', 'b', 'c', 'd', 'e', 'z', 'fc-recheck-E1']) await writeFile(join(caseDir, 'research', `${name}.md.raw`), 'A capture.\n');
 		await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), bundle(investigatorItem, ownItem));
 		// A rewrite that keeps every item as it was, and an appended item, are fine.
 		await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [investigatorItem, ownItem, { id: 'E3', raw_path: 'research/c.md.raw', created_by: 'fact-checker' }] }) });
@@ -1251,4 +1253,31 @@ test('a verified verdict with no case-local evidence anchor, or one anchored onl
 		/an evidence item must name one file:\nF1 evidence_for\[0\]: local_file is research\/filing\.md but source_ref\.path is research\/fc-filing\.md; set local_file to research\/fc-filing\.md/);
 	await call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, source_ref: { path: 'research/fc-filing.md', line_start: 1, line_end: 1 }, access_method: 'full_text', evidence_bundle_id: 'FC-E1' }) });
 	await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict: 'unverified', evidence_for: [{ ...cited, evidence_bundle_id: 'E1' }] }] }) });
+});
+
+// Case 275a35b6: an investigator's whole-row write dropped the claim_links record_finding had set, the correction
+// could only add a row, and it invented one (example.com, research/evidence2.md) that took over a real id.
+test('a local worker\'s write keeps the links code recorded, and a row with no capture on disk is refused by name', async (t) => {
+	const { caseDir, call } = await fixture(t, undefined, 'investigator');
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'eurostat_unemployment_article.md.raw'), 'Euro area unemployment at 6.5%\n');
+	const links = [{ finding_id: 'D1-F1', claim_text: 'The rate is 6.5%.', support_type: 'direct' }];
+	const real = { id: 'D1-E1', query_or_task: 'Fetch Eurostat unemployment article', acquisition_method: 'crawl4ai', source_url: 'https://ec.europa.eu/eurostat/web/products-euro-indicators/w/3-30102026-bp', accessed: '2026-11-06T02:10:16.713Z', raw_path: 'research/eurostat_unemployment_article.md.raw', extraction_confidence: 'high', human_verification_required: false };
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ ...real, claim_links: links }] }));
+	const stored = async () => JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).items as Array<{ id: string; claim_links?: unknown }>;
+
+	const reply = await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [real] }) });
+	assert.deepEqual((await stored())[0].claim_links, links, 'the row keeps its links');
+	assert.match(reply, /kept D1-E1's claim_links/);
+
+	const fake = { id: 'D1-E2', query_or_task: 'Search for evidence related to D1', acquisition_method: 'crawl4ai', source_url: 'https://example.com/evidence2', accessed: '2026-11-06T00:00:00Z', raw_path: 'research/evidence2.md', claim_links: links };
+	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [fake] }) }),
+		(error: Error) => error.message.startsWith('refused: data/evidence-bundle.json item D1-E2 names research/evidence2.md') && error.message.includes('claim_links'));
+	assert.deepEqual((await stored()).map((item) => item.id), ['D1-E1'], 'nothing was written');
+
+	// Continuity: the route the refusal names works, and a stated empty list still removes links.
+	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...real, claim_links: [...links, { finding_id: 'D1-F2', claim_text: 'The 6.4% claim is wrong.', support_type: 'direct' }] }] }) });
+	assert.equal(((await stored())[0].claim_links as unknown[]).length, 2);
+	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...real, claim_links: [] }] }) });
+	assert.deepEqual((await stored())[0].claim_links, []);
 });

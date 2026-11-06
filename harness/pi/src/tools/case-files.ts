@@ -606,6 +606,11 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 		const old = was.get(item.id);
 		// A fact-checker's write leaves items it did not change as stored: any repair here reads as the fact-checker changing them, and refuseBundleRewrites then refuses its add for good (gold-asf on 3767f400).
 		if (old && context.env.SPOTLIGHT_ROLE === 'fact-checker' && isDeepStrictEqual(item, old)) continue;
+		// Case 275a35b6: an investigator rewrote its row without the claim_links record_finding had set, so the finding lost its support. A row for the same file keeps them unless the write says otherwise.
+		if (local && old && item.claim_links === undefined && Array.isArray(old.claim_links) && old.claim_links.length > 0 && item.raw_path === old.raw_path) {
+			item.claim_links = old.claim_links;
+			filled.push(`Code kept ${String(item.id)}'s claim_links, the finding links already recorded.`);
+		}
 		const path = item.raw_path;
 		const fromLeads = local && typeof path === 'string' && isLeadFile(context.caseDir, path) && !!registeredCapture(context, `${path}.raw`);
 		if (fromLeads) {
@@ -637,6 +642,32 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 // its own items, as phase-investigation tells it; no role moves the files of an
 // item that active passages cite.
 const ITEM_FILES = ['raw_path', 'path', 'downloaded_document_path', 'text_derivatives'];
+
+// Case 275a35b6: a correction invented D1-E2 (example.com, research/evidence2.md) with
+// claim_links to real findings, and nothing refused a row with no capture behind it.
+// On a local tier a new or moved row must name a file in the case. Refused whole, so
+// the real rows stand, and the text names the route that does work.
+function refuseMissingCapture(caseDir: string, target: string, content: string, env: Record<string, string | undefined>): void {
+	if (!localTier(env) || caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return;
+	const rowsOf = (text: string): Array<Record<string, unknown>> => {
+		try {
+			const items = (JSON.parse(text) as { items?: unknown }).items;
+			return Array.isArray(items) ? items.filter((item) => item && typeof item === 'object') : [];
+		} catch {
+			return [];
+		}
+	};
+	let stored: Array<Record<string, unknown>> = [];
+	try { stored = rowsOf(readFileSync(target, 'utf8')); } catch { /* the first write: nothing stored yet */ }
+	const known = new Map(stored.map((item) => [item.id, item.raw_path]));
+	for (const item of rowsOf(content)) {
+		const path = item.raw_path;
+		if (typeof path !== 'string' || !path.trim() || known.get(item.id) === path) continue;
+		const file = resolve(caseDir, path);
+		if (file.startsWith(`${caseDir}${sep}`) && existsSync(file)) continue;
+		throw new FileRefused(`refused: data/evidence-bundle.json item ${String(item.id)} names ${path}, which is not a capture in this case; the file is unchanged. An evidence item records a file you fetched. To link a finding to an existing item, read data/evidence-bundle.json and write that item as it is with claim_links added. To record a new source, fetch it first.`);
+	}
+}
 
 function refuseBundleRewrites(caseDir: string, target: string, content: string, role: string | undefined): void {
 	if (caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return;
@@ -677,7 +708,7 @@ function refuseBundleRewrites(caseDir: string, target: string, content: string, 
 		return [`${String(id)} (cited by ${cited.join(', ')})`];
 	});
 	if (moved.length === 0) return;
-	throw new FileRefused(`refused: data/evidence-bundle.json changes or removes the files of ${moved.join('; ')}; the file is unchanged. Recorded passages anchor to those files, so keep them as they are, and record any other file as a new item.`);
+	throw new FileRefused(`refused: data/evidence-bundle.json changes or removes the files of ${moved.join('; ')}; the file is unchanged. Recorded passages anchor to those files, so keep them as they are. To link a finding to one of these items, read data/evidence-bundle.json and write the item as it is with claim_links added. Record a file you fetched that is not listed as a new item.`);
 }
 
 // r12 (r12-ingest-audit A2): the fact-checker appended FC-E1 for its own
@@ -1655,6 +1686,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseLeadsEvidence(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseMissingCapture(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content, context.env);
 				refuseBundleRewrites(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content, role);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
@@ -1699,6 +1731,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
 				refuseLeadsEvidence(caseDir, target, updated);
+				refuseMissingCapture(caseDir, target, updated, context.env);
 				refuseBundleRewrites(caseDir, target, updated, role);
 				refuseDriftedClaims(caseDir, target, updated);
 				refuseMissingCitedFiles(caseDir, target, updated);
