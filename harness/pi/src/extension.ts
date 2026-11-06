@@ -89,6 +89,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
 		const progress: { say?: (text: string) => void } = {};
+		let memberMessages = 0;
 		memberNotice = (text) => progress.say?.(text);
 		// What a member's message resets. A decision on a held review page counts too:
 		// its fresh run fires agent_start but not before_agent_start.
@@ -106,7 +107,10 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 		};
 		pi.on('before_agent_start', (event, ctx) => {
 			if (localTier(process.env)) progress.say = (text) => ctx.ui.notify(text, 'info');
-			if (event.messageType === 'user') memberTurn(harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim()));
+			if (event.messageType !== 'user') return;
+			const byHarness = harnessTurn(String((event as { prompt?: unknown }).prompt ?? '').trim());
+			if (!byHarness) memberMessages += 1;
+			memberTurn(byHarness);
 		});
 		const spawning = new Map<string, string>();
 		pi.on('tool_execution_start', (event) => {
@@ -121,7 +125,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			if (said.startsWith('spawn_agent') || said === FACT_CHECKERS_SPENT || said === CORRECTION_SPENT) noteRefusedSpawn(refusedSpawns, agent, said, recordsDigest(active.caseDir));
 		});
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle, progress);
-		tools.push(...spotlightTools(active, runAdapter, role, (retry, signal) => withProgress(progress.say, 'research round', requestResearchRound(retry, signal)), () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall }));
+		tools.push(...spotlightTools(active, runAdapter, role, (retry, signal) => withProgress(progress.say, 'research round', requestResearchRound(retry, signal)), () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), { ...dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context)), stall, memberTurns: () => memberMessages }));
 		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir)), localTier(process.env) ? { ms: reviewHoldMs(process.env), say: (text) => progress.say?.(text), resolved: () => resolveCase(active, runAdapter), decided: () => { log('the decision on the page counts as the member\'s turn'); memberTurn(); } } : undefined));
 		casePhase = async () => String((await resolveCase(active, runAdapter)).phase ?? '');

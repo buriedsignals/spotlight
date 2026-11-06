@@ -169,6 +169,11 @@ export const NEXT_INVESTIGATOR = 'Next: spawn the investigator in EXECUTION mode
 // invoke_skill), then brief-directions.txt written without asking the member.
 export const NEXT_BRIEF =
 	"Next: restate the lead in one sentence, propose the direction in plain words, ask the member to approve it (with up to three clarifying questions if scope, angle or priority is unclear), and end your turn (phase-methodology, Brief steps 2 to 5). Write brief-directions.txt with write_file only after the member has answered and approved (step 6). You need not read case or skill files first, and no investigator runs before the brief.";
+// Case 7656d7ba: the member answered and approved in one message, resolve repeated the
+// step above, and the model asked its questions again. Once the member has replied, the
+// next move depends on what they said, so the step says so. Local tiers only.
+export const NEXT_BRIEF_ANSWERED =
+	"Next: the member has replied to your proposal. If they approved in any words, even alongside answers: Write brief-directions.txt now with write_file, with their answers folded into the direction (step 6). If they answered without approving, restate the direction with their answers in it, do not repeat a question they answered, tell them to reply 'approve', and end your turn.";
 export const NEXT_PLANNING = 'Next: spawn the investigator with MODE: PLANNING to write data/methodology.json (phase-methodology, Methodology).';
 // While the plan fails its own check (fix6 b).
 export const NEXT_METHODOLOGY_FAILING =
@@ -438,6 +443,8 @@ export type DispatchRunner = {
 	// Consecutive watchdog-stopped dispatches of one task (STALLED_DISPATCHES);
 	// the orchestrator's extension owns it and clears it on a member turn.
 	stall?: DispatchStall;
+	// Member messages in this chat so far (the extension's memberTurn).
+	memberTurns?: () => number;
 };
 export type DispatchStall = { key: string; count: number; digest: string; repaired?: Set<string> };
 
@@ -672,7 +679,11 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.
-			if (!research || !runsResearchRound(resolved)) return jsonResult(withNextAction(resolved, active.caseDir));
+			const answered = (state: Record<string, unknown>) => {
+				const next = withNextAction(state, active.caseDir);
+				return next.next_action === NEXT_BRIEF && localTier(process.env) && (dispatch?.memberTurns?.() ?? 0) > 1 ? { ...next, next_action: NEXT_BRIEF_ANSWERED } : next;
+			};
+			if (!research || !runsResearchRound(resolved)) return jsonResult(answered(resolved));
 			const round = await research((params as { retry_research?: boolean }).retry_research === true, signal);
 			// A round that ends at the suggested marks gets their investigator in
 			// the same resolve (Codex review of simp-1b).

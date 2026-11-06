@@ -15,6 +15,7 @@ import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } 
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import { DECISION_RECORDED } from './router.ts';
+import { NEXT_BRIEF } from './tools/spotlight.ts';
 import { reviewRefusalStop } from './extension.ts';
 import { PAGE_NOT_OPENED, REVIEW_HOLD_NOTICE } from './tools/review.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
@@ -2882,6 +2883,32 @@ test('the router waits out a cold decision model, and when it fails the model ta
 		assert.ok(chat.lines.some((line) => line.includes('The model answered.')), 'and the member gets its reply');
 		assert.deepEqual(notices(chat).filter((text) => text.includes('did not answer (HTTP 503)')).length, 1, 'with one notice');
 		assert.doesNotMatch(JSON.stringify(fake.requests[0].messages), /did not answer/, 'outside the transcript');
+	}
+});
+
+// Case 7656d7ba: 'As of today. ... Approved, proceed' got the same Brief next_action as the first message, and the model asked again.
+test('at the Brief a member\'s reply changes what resolve says, and following it writes the brief and moves the case on; frontier keeps its text', async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI((request) => {
+			const last = request.messages.at(-1)!;
+			if (last.role === 'user') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
+			const said = String(last.content);
+			if (said.includes('Write brief-directions.txt now')) return { toolCalls: [{ name: 'write_file', arguments: { path: 'brief-directions.txt', content: 'Who runs the Tor Project, as of today.\n' } }] };
+			return { text: 'Here is the direction. Do you approve?' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: 'off' });
+
+		await settledPrompt(chat, 'Who runs the Tor Project?', 20_000);
+		assert.equal(lastResolution(chat).next_action, NEXT_BRIEF, 'the first message gets the proposal step');
+		await settledPrompt(chat, 'As of today. Core leadership only. Approved, proceed.', 20_000);
+		const written = existsSync(join(space.casesRoot, 'case-a', 'brief-directions.txt'));
+		assert.equal(written, tier !== 'frontier', tier);
+		if (tier !== 'frontier') {
+			assert.ok(chat.lines.some((line) => line.includes('"type":"tool_execution_end"') && line.includes('approved in any words')), 'the reply changed the step');
+			assert.doesNotMatch(execFileSync(PYTHON, [SEAM, 'status', join(space.casesRoot, 'case-a')], { encoding: 'utf8' }), /brief/, 'the case left the Brief');
+		}
 	}
 });
 
