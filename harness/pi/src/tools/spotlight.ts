@@ -18,7 +18,7 @@ const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 // decision and the ingest request or decline come from the review page.
 export const MODEL_OPERATIONS = ['recordAttempt', 'startResearchRound', 'recordAmendment', 'continueWithoutResearch'] as const;
 // The seals are mechanical: spotlight_resolve applies them at their fixed points.
-const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest'] as const;
+const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest', 'resetCorrections'] as const;
 type ModelOperation = (typeof MODEL_OPERATIONS)[number] | (typeof CODE_OPERATIONS)[number];
 type Payload = Record<string, unknown>;
 
@@ -115,6 +115,8 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 			return ['record-attempt', stringField(payload, 'kind'), '--gap', stringField(payload, 'gap'), ...boundary];
 		case 'sealInvestigationGate':
 			return ['seal-investigation-gate', ...boundary];
+		case 'resetCorrections':
+			return ['reset-corrections', ...boundary];
 		// Both read case files the model wrote and are checked in code: the
 		// round against D1, the amendment against the member's marks (D8).
 		case 'startResearchRound':

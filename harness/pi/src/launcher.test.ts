@@ -2989,6 +2989,46 @@ test('corrections of any mode, from code or the model, share one bound when noth
 	assert.equal(state.blocked.exhausted_attempt, 'structural-correction');
 });
 
+// Tom: two no-progress corrections with real progress between them must not end a long case.
+test('a correction that reduces the failures resets the count, and two in a row with no progress still stop', async (t) => {
+	let links: { finding_id: string }[] = [];
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const started = fake.requests.filter((seen) => isWorkerRequest(seen, 'investigator') && toolResults(seen).length === 0).length;
+			if (started !== 2 || toolResults(request).length) return { text: 'Done.' };
+			const row = JSON.parse(readFileSync(path, 'utf8')).items.find((item: { id: string }) => item.id === 'E1');
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...row, claim_links: links }] }) } }] };
+		}
+		return fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator')).length <= 8 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = atGate(space);
+	const path = join(caseDir, 'data', 'evidence-bundle.json');
+	const document = JSON.parse(await readFile(path, 'utf8'));
+	const row = document.items.find((item: { id: string }) => item.id === 'E1');
+	links = row.claim_links;
+	delete row.claim_links;
+	await writeFile(path, JSON.stringify(document));
+	const findingsPath = join(caseDir, 'data', 'findings.json');
+	const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+	const first = findings.findings[0];
+	findings.findings = [{ ...first, evidence_bundle_refs: ['E1'] }, { ...structuredClone(first), id: 'F2', claim: 'A second fixture claim.', evidence_bundle_refs: ['E1'] }];
+	await writeFile(findingsPath, JSON.stringify(findings));
+	const checkPath = join(caseDir, 'data', 'fact-check.json');
+	const check = JSON.parse(await readFile(checkPath, 'utf8'));
+	check.claims.push({ finding_id: 'F2', claim_text: 'A second fixture claim.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], notes: 'Fixture.' });
+	await writeFile(checkPath, JSON.stringify(check));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+	await settledPrompt(chat, 'Continue.', 90_000);
+
+	const starts = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).length;
+	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.equal(starts, 4, 'no progress, progress, then two with none');
+	assert.equal(state.blocked?.exhausted_attempt, 'structural-correction');
+});
+
 // The same case: fact-check.json stayed at 3 of 28, because a batch's check failed on investigator lines the
 // fact-checker cannot fix, and those lines also took the dispatch. The findings are judged first.
 test('unjudged findings go to the fact-checker past investigator faults, and the correction bound comes after', async (t) => {

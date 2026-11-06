@@ -270,6 +270,18 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     _publish(case, data_descriptor, state)
 
 
+def reset_corrections(case: Path, data_descriptor: int) -> None:
+    """A correction made progress: the no-progress count starts again, so it counts
+    in a row. Code's own step, never the model's; a blocked case stays blocked."""
+    state = load_state(case, data_descriptor)
+    if "blocked" in state or not state["attempts"].get("structural-correction"):
+        return
+    state["attempts"].pop("structural-correction")
+    if (state.get("open_cycle") or {}).get("kind") == "structural-correction":
+        state.pop("open_cycle")
+    _publish(case, data_descriptor, state)
+
+
 def start_research_round(case: Path, data_descriptor: int) -> None:
     """Append a stalled investigation's targeted round to research_plan.
 

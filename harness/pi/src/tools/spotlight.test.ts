@@ -7,7 +7,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
 import { FACT_CHECKERS_SPENT } from '../subagents.ts';
-import { INPUTS_REFUSED, NEXT_GATE_OWED, nextFixedStep, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { INPUTS_REFUSED, transitionArguments, NEXT_GATE_OWED, nextFixedStep, NEXT_FACT_CHECKER_SPENT, NEXT_INPUTS_HELD, NEXT_AMENDMENT, NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_RESEARCH_APPROVAL, NEXT_INGEST_BLOCKED, NEXT_REPORT_OFFER, NEXT_ROUND, NEXT_TRIAGE, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 import { batchBlockedFile, factCheckHash, missingForApproval } from './review.ts';
 
@@ -482,4 +482,10 @@ test('at Investigation a finding with no verdict goes to the fact-checker before
 	assert.deepEqual(dispatchAt(state), { agent: 'fact-checker', task: '', step: 'fact-checker' });
 	process.env.SPOTLIGHT_MODEL_TIER = 'frontier';
 	assert.equal(dispatchAt(state)?.agent, 'investigator');
+});
+
+test('only code can reset the correction count', () => {
+	const active = { casesRoot: '/cases', caseDir: '/cases/a' } as never;
+	assert.throws(() => transitionArguments('resetCorrections', {}, active, ORCHESTRATOR), /refuses "resetCorrections"/);
+	assert.deepEqual(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true).slice(0, 1), ['reset-corrections']);
 });

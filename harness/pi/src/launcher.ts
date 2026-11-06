@@ -83,6 +83,8 @@ type Harness = {
 	// The fact-check validators' last report, which a fact-checker correction
 	// repairs (roles.ts factCheckerTask); code-held, never the orchestrator's text.
 	lastFactCheckReport?: string;
+	// validate-fact-check's failures at the last counted correction, to see progress made between corrections.
+	defectsAtLastCount?: number;
 	// The analyst's last failed deliverable check outside Ingest, which its next
 	// task repairs (roles.ts analystTask), and how many checks in a row failed
 	// at that phase; code-held, cleared when the check passes or the case is at
@@ -603,9 +605,18 @@ async function countCorrection(harness: Harness, before: number, signal: AbortSi
 		const checked = await validateInvestigationInputs(checkContext(harness), signal);
 		const left = defectLines(await factCheckDefects(checkContext(harness), signal));
 		if (checked.passed && left.length === 0) return '[Harness: the errors are fixed.]';
-		if (checked.passed && left.length < before) return `[Harness: this correction made progress: ${before} failures, now ${left.length}.]`;
 		const { config, active } = harness;
 		const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
+		// The count is of corrections in a row with no progress (Tom): progress starts it again,
+		// whether this correction made it or a fact-checker's verdicts did since the last count.
+		const lowest = Math.min(before, harness.defectsAtLastCount ?? before);
+		if (checked.passed && left.length < lowest) {
+			harness.defectsAtLastCount = undefined;
+			await runAdapter(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true));
+			return `[Harness: this correction made progress: ${before} failures, now ${left.length}.]`;
+		}
+		if (checked.passed && harness.defectsAtLastCount !== undefined && before < harness.defectsAtLastCount) await runAdapter(transitionArguments('resetCorrections', {}, active, ORCHESTRATOR, true));
+		harness.defectsAtLastCount = left.length;
 		await runAdapter(transitionArguments('recordAttempt', { kind: 'structural-correction', gap: harness.redact(checked.passed ? left.join('\n') : checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
 		const after = await caseStatus(harness);
 		return after.status === 'blocked'

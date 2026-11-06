@@ -15,6 +15,7 @@ from . import (
     issue_review_nonce,
     record_amendment,
     record_attempt,
+    reset_corrections,
     request_follow_up,
     resolve,
     review_edit,
@@ -66,6 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     attempt.add_argument("kind", choices=RECORDABLE_ATTEMPTS)
     attempt.add_argument("--gap", required=True)
     add_case_boundary(attempt)
+    add_case_boundary(commands.add_parser("reset-corrections"))
     research_round = commands.add_parser("start-research-round")
     add_case_boundary(research_round)
     amendment = commands.add_parser("record-amendment")
@@ -151,6 +153,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         )
     elif args.command == "record-attempt":
         record_attempt(args.case_dir, args.kind, args.gap, **boundary)
+    elif args.command == "reset-corrections":
+        reset_corrections(args.case_dir, **boundary)
     elif args.command == "start-research-round":
         start_research_round(args.case_dir, **boundary)
     elif args.command == "record-amendment":

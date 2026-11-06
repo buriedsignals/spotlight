@@ -19,6 +19,7 @@ __all__ = [
     "issue_review_nonce",
     "record_amendment",
     "record_attempt",
+    "reset_corrections",
     "request_follow_up",
     "resolve",
     "review_edit",
@@ -72,6 +73,10 @@ def approve(
         digest,
         authorized_cases_root=authorized_cases_root,
     )
+
+
+def reset_corrections(case_dir: str | Path, *, authorized_cases_root: str | Path | None = None) -> None:
+    _transition(case_dir, transitions.reset_corrections, authorized_cases_root=authorized_cases_root)
 
 
 def record_attempt(
