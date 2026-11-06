@@ -118,6 +118,59 @@ function sourceLink(value) {
   return el("a", { href: url.href, target: "_blank", rel: "noopener noreferrer", title: url.href, text: url.hostname.replace(/^www\./, "") });
 }
 
+// Recorded evidence is a web page's text, so it is untrusted. It becomes DOM
+// nodes through el(), which only ever sets text, so HTML stays visible text.
+// Only headings, bold, italics, lists and http(s) links are formatted. Images
+// are dropped, never fetched: viewing the page must not call out.
+const EVIDENCE_LIMIT = 4000; // review.py _text
+const EVIDENCE_INLINE = /\[([^\]\n]*)\]\(((?:[^\s()]|\([^\s()]*\))*)(?:\s+"[^"\n]*")?\)|\*\*(?=\S)(.+?)(?<=\S)\*\*|(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)|(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])|(?<!\w)_(?=[^\s_])(.+?)(?<=[^\s_])_(?!\w)/g;
+
+function evidenceInline(text) {
+  const out = [];
+  let at = 0;
+  for (const match of text.matchAll(EVIDENCE_INLINE)) {
+    out.push(text.slice(at, match.index));
+    at = match.index + match[0].length;
+    const [, label, address, bold, boldUnderscore, italic, italicUnderscore] = match;
+    if (label !== undefined) {
+      const url = webUrl(address);
+      out.push(url && !url.username ? el("a", { href: url.href, target: "_blank", rel: "noopener noreferrer nofollow", title: url.href }, evidenceInline(label)) : evidenceInline(label));
+    } else if ((bold ?? boldUnderscore) !== undefined) out.push(el("strong", {}, evidenceInline(bold ?? boldUnderscore)));
+    else out.push(el("em", {}, evidenceInline(italic ?? italicUnderscore)));
+  }
+  out.push(text.slice(at));
+  return out.filter((part) => part !== "");
+}
+
+function evidenceBlocks(raw) {
+  // A cut can end inside a link or image: that tail is dropped, and the page says so.
+  let cut = raw.length >= EVIDENCE_LIMIT;
+  const whole = raw.replace(cut ? /!?\[[^\]\n]*(?:\]\([^)\n]*)?$/ : /!?\[[^\]\n]*\]\([^)\n]*$/, "");
+  cut ||= whole !== raw;
+  const text = whole
+    .replace(/!\[[^\]\n]*\](?:\((?:[^()\n]|\([^()\n]*\))*\)|\[[^\]\n]*\])/g, "")
+    .replace(/\[\s*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, "");
+  const blocks = [];
+  let list;
+  for (const line of text.split("\n").map((row) => row.trim())) {
+    const item = /^(?:([-*+])|\d+[.)])(?:\s+(.*))?$/.exec(line);
+    if (!line || (item && !item[2])) continue;
+    if (item) {
+      const tag = item[1] ? "ul" : "ol";
+      if (list?.tag !== tag) blocks.push((list = { tag, items: [] }));
+      list.items.push(el("li", {}, evidenceInline(item[2])));
+      continue;
+    }
+    list = undefined;
+    const heading = /^#{1,6}\s+(.*?)\s*#*$/.exec(line);
+    blocks.push(el("p", heading ? { className: "evidence-heading" } : {}, evidenceInline(heading ? heading[1] : line)));
+  }
+  const shown = blocks.map((block) => (block.items ? el(block.tag, {}, block.items) : block));
+  if (!shown.length) shown.push(el("p", { className: "muted", text: raw.trim() ? "This evidence held only images, which are not shown." : "No text." }));
+  if (cut) shown.push(el("p", { className: "muted", text: "The excerpt is cut here. The source file has the full passage." }));
+  return shown;
+}
+
 function sourceLinks(values) {
   const links = [...new Set(values)].map(sourceLink);
   return links.flatMap((link, index) => (index ? [" · ", link] : [link]));
@@ -298,7 +351,7 @@ function findingDetails(finding) {
   return [
     el("p", { className: "meta" }, verdictPill(finding.verdict), confidencePill(finding.confidence)),
     el("p", { className: "quote lede", text: finding.claim }),
-    finding.evidence ? el("p", { className: "quote" }, el("strong", { text: "Recorded evidence: " }), finding.evidence) : null,
+    finding.evidence ? el("div", { className: "evidence" }, el("p", {}, el("strong", { text: "Recorded evidence" })), evidenceBlocks(finding.evidence)) : null,
     finding.fact_check_notes ? el("p", { className: "quote" }, el("strong", { text: "Independent fact-check: " }), finding.fact_check_notes) : null,
     finding.sources.length
       ? el("ul", { className: "sources", "aria-label": `Sources for finding ${finding.id}` }, finding.sources.map((source) => el("li", {}, sourceLink(source.url), source.description ? ` ${source.description}` : null)))

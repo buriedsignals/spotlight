@@ -172,3 +172,59 @@ test("a lead that shares its source says so on the Research page", async (t) => 
   const page = await renderClient({ ...view, content: { ...view.content, leads } });
   assert.ok(words(page.getElementById("app")).includes("Same source as 2 other leads, counts once"));
 });
+
+// u9mac-od3b81 F1 as the page got it: the people page's raw lines, images and all. The script tag and the tracking image are added.
+const CASE_EVIDENCE = [
+  "![](https://www.torproject.org/static/images/yec/x-dark.svg?h=353e04cc) Close banner",
+  "![Illustration of a dark pink hand](https://www.torproject.org/static/images/yec/bulb-illo-yec.svg?h=9351f2c7)",
+  "# Tor: powered by you",
+  "<script>fetch('https://evil.example/x')</script>",
+  "![isabela](https://www.torproject.org/static/images/people/isabela.png?h=b116eebb) [](https://twitter.com/isa)",
+  "##### isabela",
+  "IRC: isabela",
+  "Executive Director of the Tor Project.",
+  "Leads the **Tor** team, see [the people page](https://www.torproject.org/about/people/) and [a trap](javascript:alert(1)).",
+  "- runs *the* board",
+  "- [![pixel](https://evil.example/p.png)](https://evil.example/)",
+  "![nvjacobo](https://www.torproject.org/static/images/people/jacobo.png?h=77e71d57) [](https://twitter.com/jacobonajera) [ ](https://www.torproject.org/static/keys/jac",
+].join("\n");
+
+test("recorded evidence reads as formatted text: no raw markdown, no live HTML, no image, safe links, and a cut says so", async (t) => {
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "investigation_gate") }).view("investigation_gate");
+  const nodes = (node) => [node, ...(node.children ?? []).flatMap((child) => (typeof child === "object" ? nodes(child) : []))];
+  const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+  const shown = async (evidence) => {
+    const finding = { ...view.content.findings[0], id: "F1", claim: "Isabela is Executive Director.", verdict: "verified", evidence };
+    const items = [{ key: "selection:F1", kind: "selection", target: "finding:F1", suggested: true, final: true, suggestion_source: "", suggestion_reason: "", note: "" }];
+    const page = await renderClient({ ...view, content: { ...view.content, findings: [finding] }, items, pending_gate: "investigation_gate" });
+    return nodes(page.getElementById("app")).find((node) => node.className === "evidence");
+  };
+  const block = await shown(CASE_EVIDENCE);
+  assert.ok(block, "the evidence has its own block");
+  const text = words(block);
+  const all = nodes(block);
+  for (const raw of ["![", "#####", "](", "**", "static/images", "pixel"]) assert.ok(!text.includes(raw), `${raw} is not shown: ${text}`);
+  assert.ok(!all.some((node) => ["img", "script", "iframe", "style"].includes(node.tag)));
+  assert.match(text, /<script>fetch\('https:\/\/evil\.example\/x'\)<\/script>/, "HTML is shown as text");
+  assert.ok(all.some((node) => node.className === "evidence-heading" && words(node).includes("isabela")));
+  assert.ok(all.some((node) => node.tag === "strong" && words(node).includes("Tor")));
+  assert.ok(all.some((node) => node.tag === "em" && words(node).includes("the")));
+  assert.deepEqual(all.filter((node) => node.tag === "ul").flatMap((list) => list.children.map((item) => words(item).replace(/\s+/g, " ").trim())), ["runs the board"]);
+  const links = all.filter((node) => node.tag === "a");
+  assert.deepEqual(links.map((node) => node.attributes.href), ["https://www.torproject.org/about/people/"]);
+  assert.equal(links[0].attributes.rel, "noopener noreferrer nofollow");
+  assert.equal(links[0].attributes.target, "_blank");
+  assert.match(text, /a trap/, "a link with an unsafe address keeps its words only");
+  assert.match(text, /The excerpt is cut here/);
+
+  // Cut by the page's 4,000-character limit, in plain words.
+  assert.match(words(await shown("word ".repeat(800))), /The excerpt is cut here/);
+  // Whole evidence says nothing about a cut, and evidence of images only says what happened.
+  assert.doesNotMatch(words(await shown("Plain line.")), /cut here/);
+  assert.match(words(await shown("![a](https://x.example/a.png)")), /only images/);
+  // A link that hides its host behind a user name keeps its words only.
+  assert.ok(!nodes(await shown("[torproject.org](https://www.torproject.org@evil.example/)")).some((node) => node.tag === "a"));
+  // Text a parser could trip on stays as it is.
+  assert.match(words(await shown("snake_case_name costs 2 * 3 * 4")), /snake_case_name costs 2 \* 3 \* 4/);
+});
+
