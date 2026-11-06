@@ -3,7 +3,7 @@
 // copies the member's approved brief into brief_directions, and fills, only
 // where the plan leaves them out, the direction and topic IDs, the research
 // plan's settings (mode from the edition and the Research switch, keys and
-// egress from the lane catalogue, consent, the $1/$1 budgets, the 200,000
+// egress from the lane catalogue, consent, the $1/$1 budgets, the 800,000
 // token budget), tools_required, and Navigator's skip reason from the
 // pre-planning lookup. With Research on, on the local tiers, a plan with no
 // research_plan gets a default one until the Methodology approval, unless the
@@ -20,7 +20,7 @@ import { localTier } from './case-files.ts';
 type Row = Record<string, unknown>;
 type Lane = { route: string; keys: string[]; egress: string[] };
 
-export const DEFAULT_TOKEN_BUDGET = 200_000; // lanes.ts
+export const DEFAULT_TOKEN_BUDGET = 800_000; // lanes.ts, research_checks.py
 export const DEFAULT_BUDGET_USD = 1;
 // Where the pre-planning Navigator step leaves its outcome when no lookup ran.
 export const NAVIGATOR_PRE_STEP = 'research/navigator/pre-planning.json';

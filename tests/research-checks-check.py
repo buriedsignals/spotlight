@@ -107,7 +107,7 @@ class D1LanePlan(unittest.TestCase):
             "is not in the lane catalogue": unknown_lane,
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
-            "token_budget 5000 is below one lane call; use the default 200000 (20000 is the bare floor, about one lane turn)": token_budget_below_one_call,
+            "token_budget 5000 is below one lane call; use the default 800000 (20000 is the bare floor, about one lane turn)": token_budget_below_one_call,
             'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
             "a swarm topic needs research_plan.consent.swarm set to true; write it": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
@@ -300,7 +300,7 @@ class RoundOneReplays(unittest.TestCase):
                     if "must be set to a positive amount" in line:
                         self.assertIn("at most $5 (1 is typical)", line)
                     if "needs a token budget" in line:
-                        self.assertIn("use the default 200000 (20000 is the bare floor", line)
+                        self.assertIn("use the default 800000 (20000 is the bare floor", line)
                     if "egress is not listed" in line:
                         self.assertIn("destination is one of", line)
                     if "needs a lane type" in line or "not in the lane catalogue" in line:

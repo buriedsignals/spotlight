@@ -2591,7 +2591,7 @@ test('with the Research switch off, the methodology check refuses a research pla
 			assert.deepEqual(written.tools_required, ['fetch']);
 			assert.deepEqual([written.navigator.used, written.navigator.outcome, typeof written.navigator.fallback_reason], [false, 'unavailable', 'string']);
 			const plan = written.research_plan;
-			assert.deepEqual([plan.topics[0].topic_id, plan.topics[0].token_budget, plan.mode, plan.round_budget_usd, plan.case_budget_usd], ['d1-web', 200000, 'openrouter_swarm', 1, 1]);
+			assert.deepEqual([plan.topics[0].topic_id, plan.topics[0].token_budget, plan.mode, plan.round_budget_usd, plan.case_budget_usd], ['d1-web', 800000, 'openrouter_swarm', 1, 1]);
 			assert.deepEqual(plan.egress, [{ topic_id: 'd1-web', destination: 'public_web' }]);
 			assert.deepEqual(plan.keys, [{ name: 'FIRECRAWL_API_KEY', topics: ['d1-web'] }]);
 			assert.deepEqual(plan.consent, { swarm: true });

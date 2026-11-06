@@ -45,7 +45,7 @@ import { searchTool } from './tools/search.ts';
 export const ROUND_LEDGER = 'research/rounds.json';
 // The most any case may spend on research, whatever its plan says.
 export const CASE_CEILING_USD = 5;
-const DEFAULT_TOKEN_BUDGET = 200_000;
+const DEFAULT_TOKEN_BUDGET = 800_000;
 const MAX_TURNS = 40;
 const MAX_TOOL_CALLS = 60;
 const MAX_TOKENS_PER_ANSWER = 4096;
