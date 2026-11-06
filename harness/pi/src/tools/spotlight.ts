@@ -525,8 +525,10 @@ export function dispatchAt(resolved: Record<string, unknown>, methodologyFailure
 			return undefined;
 	}
 	// A member's follow-up or a recorded cycle gap carries instructions code
-	// does not route: that cycle stays the model's (review-fix4 A1, A2).
-	if (resolved.follow_up || resolved.open_cycle) return undefined;
+	// does not route: that cycle stays the model's (review-fix4 A1, A2). A counted
+	// structural correction carries none, and code owes the second try (case 2bd8d15c).
+	const cycleKind = (resolved.open_cycle as { kind?: unknown } | undefined)?.kind;
+	if (resolved.follow_up || (resolved.open_cycle && !(cycleKind === 'structural-correction' && localTier(process.env)))) return undefined;
 	if (missing.includes('data/findings.json')) return { agent: 'investigator', task: 'MODE: EXECUTION\nWork the approved methodology.', step: 'investigator EXECUTION' };
 	// A fresh check after an update is a plain batch, never the cycle's one
 	// evidence correction (review-fix4 A3).

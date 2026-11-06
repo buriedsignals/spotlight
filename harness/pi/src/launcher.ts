@@ -592,10 +592,13 @@ async function structuralTask(harness: Harness, status: Record<string, unknown>,
 async function countStructuralCorrection(harness: Harness, signal: AbortSignal): Promise<string> {
 	try {
 		const checked = await validateInvestigationInputs(checkContext(harness), signal);
-		if (checked.passed) return '[Harness: the structural errors are fixed.]';
+		// Case 2bd8d15c: about 10 corrections with attempts {}. validate-case passed, so each read
+		// as fixed, while validate-fact-check still gave the [investigator] fault they were sent for.
+		const left = checked.passed ? (await factCheckDefects(checkContext(harness), signal)).split('\n').filter((line) => line.includes('[investigator]')).join('\n') : checked.report;
+		if (!left) return '[Harness: the structural errors are fixed.]';
 		const { config, active } = harness;
 		const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
-		await runAdapter(transitionArguments('recordAttempt', { kind: 'structural-correction', gap: harness.redact(checked.report).slice(0, 800) }, active, ORCHESTRATOR, true));
+		await runAdapter(transitionArguments('recordAttempt', { kind: 'structural-correction', gap: harness.redact(left).slice(0, 800) }, active, ORCHESTRATOR, true));
 		const after = await caseStatus(harness);
 		return after.status === 'blocked'
 			? '[Harness: the structural errors remain after the second correction, so the case is blocked. Call spotlight_resolve and present it.]'

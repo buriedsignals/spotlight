@@ -2913,6 +2913,50 @@ test('at the Brief a member\'s reply changes what resolve says, and following it
 	}
 });
 
+// Case 2bd8d15c: about 10 corrections in an hour with attempts {}: validate-case passed, so each read as fixed
+// while validate-fact-check still named the same [investigator] fault, and the resolver sent the next one.
+test('a correction that leaves validate-fact-check\'s investigator fault in place is counted, and two end in the stop; a real repair is not', async (t) => {
+	for (const repaired of [false, true]) {
+		let links: unknown;
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				if (!repaired || toolResults(request).length) return { text: 'The structural correction has been completed.' };
+				const row = JSON.parse(readFileSync(path, 'utf8')).items.find((item: { id: string }) => item.id === 'E1');
+				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ ...row, claim_links: links }] }) } }] };
+			}
+			if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+			return fake.requests.filter((seen) => !isWorkerRequest(seen, 'investigator') && !isWorkerRequest(seen, 'fact-checker')).length <= 6 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = atGate(space);
+		const path = join(caseDir, 'data', 'evidence-bundle.json');
+		const document = JSON.parse(await readFile(path, 'utf8'));
+		const row = document.items.find((item: { id: string }) => item.id === 'E1');
+		links = row.claim_links;
+		delete row.claim_links;
+		await writeFile(path, JSON.stringify(document));
+		const findingsPath = join(caseDir, 'data', 'findings.json');
+		const findings = JSON.parse(await readFile(findingsPath, 'utf8'));
+		findings.findings[0].evidence_bundle_refs = ['E1'];
+		await writeFile(findingsPath, JSON.stringify(findings));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: '12b', SPOTLIGHT_CODE_ROUTER: 'off' });
+
+		await settledPrompt(chat, 'Continue.', 60_000);
+
+		const corrections = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0 && /STRUCTURAL CORRECTION/.test(userText(request)));
+		const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+		if (repaired) {
+			assert.equal(corrections.length, 1, 'one repair, then the case moves on');
+			assert.equal(state.attempts?.['structural-correction'], undefined, 'a real repair is not counted');
+		} else {
+			assert.equal(corrections.length, 2, 'bounded');
+			assert.equal(state.attempts['structural-correction'], 2);
+			assert.match(state.blocked.gap, /no explicit finding link|not linked to finding/, 'the stop records the real fault');
+		}
+	}
+});
+
 // qwen-u9-mac.md (14 of 15 proposal writes refused): on a local tier the task
 // carries a skeleton whose placeholders the builder refuses until they are filled.
 test('a local analyst that writes the skeleton unfilled is refused, and filling only its placeholders builds the batch', async (t) => {
