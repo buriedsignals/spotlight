@@ -772,12 +772,15 @@ const CHECK_EVERY = 256;
 // base213 (Anomaly, 5ce09322): an investigator turn ran 10,240 tokens with no
 // text, reasoning or tool call left after the server stripped its special
 // tokens. Each streamed chunk is about one token, so this many chunks in a row
-// with nothing visible stop the turn too. Prompt processing sends no chunks.
+// with nothing visible stop the turn too. Osaurus's keep-alives count here, at
+// one per 2.5 s, so a stream of nothing else still ends.
 const INVISIBLE_CHUNKS = 1024;
-// A server may send nothing at all for stripped tokens while the stream stays
-// open, so a turn with nothing visible for this long after its first token
-// chunk is stopped as well. The clock starts at the first chunk after the role
-// chunk, so prompt processing (20-40 s for a 16k prompt on a Mac) never counts.
+// A server may send nothing at all while the stream stays open, so a turn with
+// no chunk of any kind for this long is stopped as well. T9 (t9ingest): Osaurus
+// sends empty keep-alives through prompt processing, which ran past 60 s on a
+// 38k-character request, and this clock used to count them as silence. It starts
+// at the first chunk after the role chunk, so a server silent through prompt
+// processing never counts.
 const INVISIBLE_MS = 60_000;
 // A turn cut at the cap after this few tokens is a full context slot, not a
 // ramble: a nudge would only overflow again.
@@ -811,7 +814,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let stalled = false;
 	let silent = false;
 	let invisible = 0;
-	let lastVisible = 0;
+	let lastChunk = 0;
 	let clock: ReturnType<typeof setInterval> | undefined;
 	const stopClock = () => {
 		if (clock) clearInterval(clock);
@@ -839,16 +842,11 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		if (stopped) return;
 		const delta = (event.data as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined)?.choices?.[0]?.delta;
 		if (delta && 'role' in delta && !visibleChunk(event.data)) return;
-		if (visibleChunk(event.data)) {
-			invisible = 0;
-			lastVisible = Date.now();
-		} else {
-			invisible += 1;
-		}
+		lastChunk = Date.now();
+		invisible = visibleChunk(event.data) ? 0 : invisible + 1;
 		if (!clock) {
-			lastVisible = Date.now();
 			clock = setInterval(() => {
-				if (!stopped && Date.now() - lastVisible >= INVISIBLE_MS) {
+				if (!stopped && Date.now() - lastChunk >= INVISIBLE_MS) {
 					silent = true;
 					stopInvisible(() => ctx.abort());
 				}

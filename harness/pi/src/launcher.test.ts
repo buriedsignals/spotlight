@@ -2998,6 +2998,31 @@ test('corrections of any mode, from code or the model, share one bound when noth
 	assert.equal(state.blocked.exhausted_attempt, 'structural-correction');
 });
 
+// T9 (t9ingest): 13 of 21 analyst calls died at 79-112 s, and a replay answered at 77.8 s. Through a long
+// prefill Osaurus sends a role chunk, then empty keep-alives: a live stream, not silence.
+test('keep-alives through a long prefill are not silence; the turn gets its answer', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: 'The answer after a long prefill.', keepAlives: { count: 28, everyMs: 2_500 } }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	chat.send({ id: 'p-prefill', type: 'prompt', message: 'Start.' });
+	await chat.waitFor((record) => record.type === 'agent_settled', 0, 100_000);
+	const settled = chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n');
+	assert.match(settled, /The answer after a long prefill\./);
+	assert.doesNotMatch(settled, /Spotlight stopped this turn/);
+});
+
+// Case 96f45e2d: the stream goes quiet after its keep-alives, as with a closed laptop.
+test('a stream that goes silent after its keep-alives is stopped as a stall', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: '', stall: true, keepAlives: { count: 3, everyMs: 1_000 } }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	chat.send({ id: 'p-silent', type: 'prompt', message: 'Start.' });
+	await chat.waitFor((record) => record.type === 'agent_settled', 0, 90_000);
+	assert.match(chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n'), /the model stopped responding/);
+});
+
 // Case 96f45e2d, 09:20: the first correction was cut by a closed laptop, the second repaired the
 // bundle, no fact-checker had run, and the missing fact-check.json read as a failed correction.
 test('a correction that leaves only the fact-checker\'s next step is not counted, clears the count and reaches the fact-checker', async (t) => {
