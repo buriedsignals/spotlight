@@ -1,0 +1,22 @@
+{
+  "id": "thinkpol",
+  "name": "ThinkPol",
+  "description": "Optional Reddit archive search through the ThinkPol API: exhaustive keyword and phrase search over Reddit submissions and comments, including content later removed or deleted, plus user histories, threads and subreddit context. Activated only when THINKPOL_API_KEY is set; the Engine injects it when ThinkPol is enabled in Indicator Labs, from-repo users export it themselves.",
+  "use_when": "A lead or claim may have been discussed on Reddit: find who said what and when by exact phrase, recover a removed or deleted post or comment, read one account's history, or pull a whole thread. Archived text is a lead to corroborate, not proof.",
+  "category": "social-osint",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["THINKPOL_API_KEY"],
+  "activation_env_vars": ["THINKPOL_API_KEY"],
+  "capabilities": [
+    "reddit-archive-search",
+    "deleted-content-recovery",
+    "reddit-user-history",
+    "reddit-thread-capture",
+    "keyword-volume-over-time"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://think-pol.com/",
+  "docs": "https://api.think-pol.com/antechamber/docs",
+  "rate_limit_note": "Every request draws on the key's query quota (`quota` reports what is left); one search returns at most 50 records, so page deliberately. Proprietary ThinkPol terms: no redistribution or resale of the data without authorization."
+}

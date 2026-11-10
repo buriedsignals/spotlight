@@ -1,0 +1,24 @@
+{
+  "id": "treg",
+  "name": "treg",
+  "description": "Optional hosted social-media collection through treg (treg.to), a pay-per-call registry of data providers: public posts, search, replies and followers on X, and profile posts on Instagram, TikTok, Facebook and LinkedIn, each through one pinned provider endpoint. Activated only when TREG_API_KEY is set; the Engine injects it when treg is enabled in Indicator Labs, from-repo users export it themselves.",
+  "use_when": "A bounded set of public posts is needed from an X, Instagram, TikTok, Facebook or LinkedIn profile, an X or LinkedIn keyword search, or the replies or followers of an X post or account, and no native platform API path fits. One request, no actor run to wait for.",
+  "category": "social-osint",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["TREG_API_KEY"],
+  "activation_env_vars": ["TREG_API_KEY"],
+  "optional_env_vars": ["TREG_ORG"],
+  "capabilities": [
+    "social-post-collection",
+    "profile-post-history",
+    "conversation-thread-capture",
+    "keyword-post-search",
+    "follower-list-collection",
+    "cross-platform-collection"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://treg.to/",
+  "docs": "https://treg.to/integrate.md",
+  "rate_limit_note": "Each call is billed from the member's own prepaid treg balance (fractions of a cent per page; the helper prints the settled cost) and fails when the balance is empty. The helper caps every call with a cost ceiling. Platform ToS caveat: X prohibits scraping even public posts, so collection on X through any provider is a ToS-violating path; record the collection authority in access_notes and prefer the official API or a licensed broker where legal scrutiny is likely."
+}

@@ -12,7 +12,6 @@ These integrations have architecture ready in Spotlight (manifest + integration 
 ## Deferred
 
 - **Serus AI** — due-diligence platform for investigative leads. Use case: corporate beneficial-ownership and adverse-media screening.
-- **Thinkpol** — grey-web intelligence. Use case: monitoring closed forums and dark-web sources for entity mentions and document leaks.
 - **Reality Defender** — deepfake detection. Use case: validating image and video evidence for synthetic-media artefacts before citation.
 - **Klarety** — disinformation detection. Use case: scoring claims and narratives for coordinated-inauthentic-behaviour signals during fact-checking.
 

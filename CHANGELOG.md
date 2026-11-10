@@ -4,6 +4,22 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — ThinkPol and treg integrations
+
+- `integrations/thinkpol/`: opt-in Reddit archive search through the ThinkPol
+  API (keyword and phrase search including removed and deleted content,
+  account histories, threads, subreddit context). Read-only documented routes;
+  parameters come from a case-local file; `THINKPOL_API_KEY`.
+- `integrations/treg/`: opt-in hosted social-media collection through treg,
+  one pinned provider endpoint per job (`endpoints.json`): X posts, search,
+  replies and followers; Instagram, TikTok, Facebook and LinkedIn profile
+  posts; LinkedIn search. Every call carries a cost ceiling; `TREG_API_KEY`.
+  Apify stays as it was.
+- Preflight offers a ready integration to the planner: an entry whose manifest
+  has `use_when` gains `use_when` and `guide` once green, with a `note` to
+  weigh it in the methodology. Unconfigured integrations add nothing. No
+  skill, agent or harness text changed.
+
 ### Added — Entity picks on the solo Ingest page
 
 - For each mention with no strong identifier, the Ingest page lists the

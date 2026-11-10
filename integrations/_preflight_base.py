@@ -106,6 +106,12 @@ def build_report(
             report["smoke_error"] = error
             return report
 
+    # A ready integration that says when it helps is offered to the planner,
+    # with the guide to read before the first call.
+    if manifest.get("use_when"):
+        report["use_when"] = manifest["use_when"]
+        if (Path(manifest.get("_dir", "")) / "integration.md").is_file():
+            report["guide"] = f"integrations/{manifest['id']}/integration.md"
     return report
 
 
@@ -204,6 +210,9 @@ def run_preflight(
 
     summary = summarize(reports)
     output = {result_key: reports, "summary": summary}
+    if any(report.get("use_when") for report in reports):
+        output["note"] = ("Entries with `use_when` are ready to use: weigh each in the methodology, "
+                          "and read its `guide` before the first call.")
 
     if args.text:
         columns = text_columns or [("id", "ID", 24), ("name", "Name", 32)]
