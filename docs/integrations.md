@@ -23,6 +23,8 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `dev-browser` | cli | browser-automation | No | Browser automation for specific investigative tasks after ordinary search/scrape is insufficient: forms, portals, JS-rendered pages, screenshots, downloads, and authenticated sessions. |
 | `browser-harness` | cli | browser-automation | No | Legacy browser fallback. Do not use as default while dev-browser is green. |
 | `browser-use` | library | browser-automation | No (optional cloud) | Legacy/adjacent browser automation. Do not use as default while dev-browser is green. |
+| `thinkpol` | api | social-osint | `THINKPOL_API_KEY` (optional; `unconfigured` until set) | Reddit archive search through the ThinkPol API: exhaustive keyword and phrase search over submissions and comments, including removed and deleted content, plus account histories and threads. Engine injects the key when ThinkPol is enabled in Indicator Labs; from-repo users export it. Archived text is a lead to corroborate. |
+| `treg` | api | social-osint | `TREG_API_KEY` (optional; `unconfigured` until set) | Hosted social-media collection through treg's pay-per-call provider endpoints, one pinned per job (`integrations/treg/endpoints.json`): X posts, search, replies and followers; Instagram, TikTok, Facebook and LinkedIn profile posts; LinkedIn search. Billed to the member's own treg balance. Same X ToS caveat as `apify`. |
 | `junkipedia` | api | social-osint | `JUNKIPEDIA_API_KEY` | Narrative / misinformation tracking across social platforms. Application-based access. |
 | `maigret` | cli | social-osint | No | Username-led account discovery. Produces unverified profile leads only, not attribution proof. |
 | `rea` | cli | technical-osint | No | Static, no-execution analysis of case files with the [REA](https://github.com/morluto/rea) CLI: Electron apps, HAR/mitmproxy captures, .NET assemblies, APKs. Runtime capture, browser, device and decompiler commands are not reachable. Reviewed release `rea-agents@6.4.0`. |
@@ -47,7 +49,6 @@ These are documented in the pitch deck and have interest from journalism orgs, b
 | ID | Status | Category | Notes |
 |---|---|---|---|
 | `serus` | Awaiting API access | due-diligence / OSINT | serus.ai — surface + dark web + public data aggregation. SaaS with enterprise API on request. |
-| `thinkpol` | Awaiting API access | grey-web-intelligence | think-pol.com — 28.5B+ data point private archive. Enterprise access. |
 | `reality-defender` | Awaiting API access | verification | Deepfake / AI-generated content detection. Has API, enterprise pricing. |
 | `klarety` | Awaiting API access | verification | Disinformation detection. |
 `vera.ai` was evaluated but excluded — it's an EU research project shipping browser plugins + platform-integrated tools, not a programmatic API. Listed in `osint` skill references as a journalist resource.

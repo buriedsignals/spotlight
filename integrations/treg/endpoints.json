@@ -1,0 +1,15 @@
+{
+  "description": "The provider endpoints Spotlight calls through treg, one per job. The helper refuses any other id: provider rows differ, so a pinned provider keeps ids, timestamps and fields stable between runs, and treg's write and account endpoints stay out of reach. `input` names where each field goes; `next` is the cursor the response returns and the input field that takes it.",
+  "endpoints": {
+    "anyapi.x.user.posts": {"platform": "X", "job": "profile posts", "method": "POST", "input": {"body": ["handle", "limit", "cursor"]}, "next": ["nextCursor", "cursor"]},
+    "anyapi.x.search.posts": {"platform": "X", "job": "keyword search", "method": "POST", "input": {"body": ["query", "queryType", "limit", "cursor"]}, "next": ["nextCursor", "cursor"]},
+    "anyapi.x.post.comments": {"platform": "X", "job": "replies to a post", "method": "POST", "input": {"body": ["url", "limit", "cursor"]}, "next": ["nextCursor", "cursor"]},
+    "scrapecreators.x.v1-twitter-tweet": {"platform": "X", "job": "one post by URL", "method": "GET", "input": {"query": ["url"]}},
+    "tikhub.x.twitter-web-fetch-user-followers": {"platform": "X", "job": "followers of an account", "method": "GET", "input": {"query": ["screen_name", "cursor"]}, "next": ["next_cursor", "cursor"]},
+    "scrapecreators.instagram.user.posts": {"platform": "Instagram", "job": "profile posts", "method": "GET", "input": {"query": ["handle", "next_max_id"]}, "next": ["next_max_id", "next_max_id"]},
+    "scrapecreators.x.v3-tiktok-profile-videos": {"platform": "TikTok", "job": "profile videos", "method": "GET", "input": {"query": ["handle", "max_cursor", "region"]}, "next": ["max_cursor", "max_cursor"]},
+    "scrapecreators.x.v1-facebook-profile-posts": {"platform": "Facebook", "job": "page or profile posts", "method": "GET", "input": {"query": ["url", "cursor"]}, "next": ["cursor", "cursor"]},
+    "fetchinio.linkedin.user.posts": {"platform": "LinkedIn", "job": "member posts", "method": "GET", "input": {"query": ["profileUrlOrUrn", "count", "paginationToken"]}, "next": ["paginationToken", "paginationToken"]},
+    "anyapi.linkedin.search.posts": {"platform": "LinkedIn", "job": "keyword search", "method": "POST", "input": {"body": ["query", "datePosted", "cursor"]}, "next": ["nextCursor", "cursor"]}
+  }
+}

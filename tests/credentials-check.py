@@ -196,6 +196,77 @@ try:
 except HTTPError:
     check("junkipedia refuses redirects", True)
 
+# 10b. ThinkPol and treg: bad input is refused offline, the key travels only
+# in its header, only documented routes and pinned endpoints are reachable,
+# and treg's balance-bearing 402 body is never echoed.
+thinkpol = load("spotlight_thinkpol_main", ROOT / "integrations" / "thinkpol" / "__main__.py")
+treg = load("spotlight_treg_main", ROOT / "integrations" / "treg" / "__main__.py")
+thinkpol.key = lambda: "thinkpol-secret"
+treg.token = lambda: "treg-secret"
+sent = {}
+
+
+class HeaderResponse(FakeResponse):
+    headers = {"X-Treg-Cost-Micro": "450", "X-Treg-Call-Id": "call-1"}
+
+
+def recording_urlopen(request, timeout):
+    sent.update(url=request.full_url, method=request.get_method(), body=request.data,
+                headers={k.lower(): v for k, v in request.header_items()})
+    return HeaderResponse(b"{}")
+
+
+thinkpol.urlopen = treg.urlopen = recording_urlopen
+(tmp / "tp.json").write_text('{"terms": ["a b", "c"], "mode": "phrase"}', encoding="utf-8")
+check("thinkpol refuses the stream routes", thinkpol.get("/v1/streams", tmp / "tp.json", tmp / "tp-out.json") == 2)
+(tmp / "tp-user.json").write_text('{"username": "../admin"}', encoding="utf-8")
+check("thinkpol refuses a path-breaking username",
+      thinkpol.get("/v2/user/{username}/posts", tmp / "tp-user.json", tmp / "tp-out.json") == 2)
+check("thinkpol search succeeds", thinkpol.get("/v3/search", tmp / "tp.json", tmp / "tp-out.json") == 0)
+check("thinkpol repeats terms and keeps a phrase whole",
+      sent["url"] == "https://api.think-pol.com/v3/search?terms=a+b&terms=c&mode=phrase")
+check("thinkpol key goes in the header", sent["headers"].get("authorization") == "Bearer thinkpol-secret")
+check("thinkpol key stays out of the URL", "thinkpol-secret" not in sent["url"])
+
+(tmp / "treg.json").write_text('{"handle": "nasa", "limit": 20}', encoding="utf-8")
+check("treg refuses an endpoint that is not pinned",
+      treg.call("x.x.post-create", tmp / "treg.json", tmp / "treg-out.json") == 2)
+(tmp / "treg-extra.json").write_text('{"handle": "nasa", "webhook": "https://evil.example"}', encoding="utf-8")
+check("treg refuses a field the endpoint does not take",
+      treg.call("anyapi.x.user.posts", tmp / "treg-extra.json", tmp / "treg-out.json") == 2)
+check("treg refuses an unbounded cost ceiling",
+      treg.call("anyapi.x.user.posts", tmp / "treg.json", tmp / "treg-out.json", max_cost=50) == 2)
+check("treg call succeeds", treg.call("anyapi.x.user.posts", tmp / "treg.json", tmp / "treg-out.json") == 0)
+check("treg posts the fields as a JSON body", sent["method"] == "POST" and json.loads(sent["body"]) == {"handle": "nasa", "limit": 20})
+check("treg token goes in its header", sent["headers"].get("x-treg-token") == "treg-secret")
+check("treg token stays out of the URL", "treg-secret" not in sent["url"])
+check("treg caps the call cost", sent["headers"].get("x-treg-route-max-cost") == "0.05")
+(tmp / "treg-get.json").write_text('{"url": "https://www.facebook.com/a b"}', encoding="utf-8")
+check("treg GET call succeeds", treg.call("scrapecreators.x.v1-facebook-profile-posts", tmp / "treg-get.json", tmp / "treg-out.json") == 0)
+check("treg sends GET fields in the query string",
+      sent["method"] == "GET" and sent["body"] is None and sent["url"].endswith("?url=https%3A%2F%2Fwww.facebook.com%2Fa+b"))
+
+
+def empty_balance(request, timeout):
+    import io
+    raise HTTPError(request.full_url, 402, "Payment Required", {}, io.BytesIO(b'{"balance_micro": 12345, "topup_url": "https://treg.to/topup/secret"}'))
+
+
+treg.urlopen = empty_balance
+import contextlib  # noqa: E402
+import io as _io  # noqa: E402
+stderr = _io.StringIO()
+with contextlib.redirect_stderr(stderr):
+    rc = treg.call("anyapi.x.user.posts", tmp / "treg.json", tmp / "treg-out.json")
+check("treg reports an empty balance without echoing the account body",
+      rc == 1 and "402" in stderr.getvalue() and "topup" not in stderr.getvalue() and "12345" not in stderr.getvalue())
+for helper, origin in ((thinkpol, "https://api.think-pol.com/v3/search"), (treg, "https://treg.to/call/x")):
+    try:
+        helper._NoRedirect().redirect_request(Request(origin), None, 302, "Found", {}, "http://evil.example/")
+        check(f"{helper.__name__} refuses redirects", False)
+    except HTTPError:
+        check(f"{helper.__name__} refuses redirects", True)
+
 # 11. A provider supplied by the caller is only a fallback to configured keys.
 client_mod.credential = lambda name: "arb-file"
 def refuse():

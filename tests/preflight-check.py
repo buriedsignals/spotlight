@@ -80,6 +80,35 @@ def run_temporary_preflight(
 
 
 def main() -> int:
+    # A ready integration that declares use_when is offered to the planner
+    # with its guide; an unconfigured one is not.
+    offered = {"id": "offered", "type": "api", "network_smoke": False, "use_when": "a need",
+               "activation_env_vars": ["OFFERED_TEST_KEY"]}
+    for configured in (True, False):
+        with tempfile.TemporaryDirectory(prefix="spotlight-preflight-") as temp_dir:
+            integrations_dir = Path(temp_dir) / "integrations"
+            (integrations_dir / "offered").mkdir(parents=True)
+            for name in ("preflight.py", "_preflight_base.py", "_credentials.py", "_cli.py"):
+                shutil.copy2(ROOT / "integrations" / name, integrations_dir / name)
+            (integrations_dir / "offered" / "manifest.json").write_text(json.dumps(offered), encoding="utf-8")
+            (integrations_dir / "offered" / "integration.md").write_text("# guide\n", encoding="utf-8")
+            env = {k: v for k, v in os.environ.items() if k != "OFFERED_TEST_KEY"}
+            if configured:
+                env["OFFERED_TEST_KEY"] = "set"
+            proc = subprocess.run([sys.executable, str(integrations_dir / "preflight.py"), "--json"],
+                                  text=True, capture_output=True, env=env, check=False)
+            out = json.loads(proc.stdout)
+            entry = out["integrations"][0]
+        if configured:
+            check("ready integration is offered with use_when and its guide",
+                  entry["status"] == "green" and entry.get("use_when") == "a need"
+                  and entry.get("guide") == "integrations/offered/integration.md" and "note" in out,
+                  json.dumps(entry))
+        else:
+            check("unconfigured integration is not offered",
+                  entry["status"] == "unconfigured" and "use_when" not in entry and "guide" not in entry
+                  and "note" not in out, json.dumps(entry))
+
     # api: no URL configured → trivially ok
     ok, err = pf.smoke_test({"type": "api"})
     check("api: no homepage/docs URL passes", ok and err is None)

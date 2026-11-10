@@ -107,6 +107,8 @@ scripts/spotlight-python integrations/preflight.py --smoke-test    # Also runs a
 
 The orchestrator runs this in Preflight step 10, alongside its local Mycroft/passive-monitor checks, so the user sees which integrations are live before starting an investigation.
 
+An integration can also offer itself to the planner. When its manifest carries `use_when` and it is green, its `--json` entry gains `use_when` and `guide` (the path of its `integration.md`), and the output gains a `note` telling the agent to weigh those entries in the methodology and read the guide before the first call. An unconfigured integration adds nothing, so an install without the key sees the same output as before. `thinkpol` and `treg` are offered this way.
+
 ## Agent-facing usage
 
 Each integration has an `integration.md` that the host runtime reads when the agent decides to use it. These docs describe:
@@ -128,7 +130,7 @@ The skill `skills/integrations/SKILL.md` is the routing layer — it tells agent
 3. **Usage instructions**: write `integration.md` — when to use, exact verb calls, output format, examples
 4. **Verify**: `scripts/spotlight-python integrations/preflight.py --text` — the new integration should appear in the status table
 
-Also register in `skills/integrations/SKILL.md`'s routing table so agents can discover it. If journalists should save a key at install time, add it to Indicator Labs.
+Add `use_when` to the manifest so a ready integration is offered to the planner through preflight, and register it in `skills/integrations/SKILL.md`'s routing table so agents can discover it. If journalists should save a key at install time, add it to Indicator Labs.
 
 No changes required to `preflight.py` itself — it discovers integrations by scanning manifests.
 
@@ -145,7 +147,6 @@ In sensitive mode (`AGENTS.md` → `sensitive: true`):
 Integrations in Tom's pitch deck awaiting API access — architecture ready to absorb them when keys arrive:
 
 - Serus AI — AI-powered due diligence (contact-based access)
-- Thinkpol (think-pol.com) — grey web intelligence (28.5B+ data points)
 - Reality Defender — deepfake / AI-generated content detection
 - Klarety — disinformation detection
 Adding any of these is a 4-step drop-in once API access is confirmed. No code changes elsewhere.

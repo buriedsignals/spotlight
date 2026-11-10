@@ -257,6 +257,8 @@ important integrations are:
 | Mycroft | Passive signals, vault memory, and the optional handoff into durable monitoring. |
 | Junkipedia | Narrative and misinformation tracking when the newsroom has access. |
 | Apify | Optional hosted social-media collection (X, Instagram, TikTok, Facebook, LinkedIn) when `APIFY_API_TOKEN` is set. Collection on X violates the platform ToS even for public posts; record the collection authority per capture. |
+| treg | Optional hosted social-media collection through pay-per-call provider endpoints (X, Instagram, TikTok, Facebook, LinkedIn) when `TREG_API_KEY` is set. Billed to the member's own treg balance. Same X ToS caveat as Apify. |
+| ThinkPol | Optional Reddit archive search, including removed and deleted posts and comments, when `THINKPOL_API_KEY` is set. |
 | Unpaywall | Legal open-access lookup for academic papers. |
 | Noosphere C2PA | Optional provenance signing for case-level packages. |
 | Decision checks (OpenRouter) | **Opt-in.** A decision model on OpenRouter (default `typesafe/jev-1.13`) flags findings their stored sources do not support, report prose that overstates its findings, and knowledge-base records that drift from their findings. Flags can only lower confidence. See [Opt-in decision checks](#opt-in-decision-checks). |
