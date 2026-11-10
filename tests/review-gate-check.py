@@ -286,6 +286,14 @@ class ReviewGate(CaseFixture):
         ingest = self.build("tagged-ingest", "ingest", "--clean", "--activated", "--prefixed", "--proposal")
         self.assertIn("D2-F1", (ingest / "data/knowledge-ids.json").read_text(encoding="utf-8"))
 
+    def test_gate_page_says_a_finding_with_no_recorded_evidence_was_not_checked(self) -> None:
+        # The offline fixture's fact-check records no evidence: the member must
+        # not read that as "checked and unsupported".
+        case = self.build("basis", "investigation_gate")
+        finding = self.view(case, "investigation_gate")["content"]["findings"][0]
+        self.assertEqual(finding["verdict"], "unverified")
+        self.assertTrue(finding["basis"].startswith("Not checked:"), finding["basis"])
+
     def test_report_page_shows_the_draft_and_its_digest_binds_it(self) -> None:
         case = self.build("draft", "report")
         draft = {
@@ -302,6 +310,7 @@ class ReviewGate(CaseFixture):
         content = view["content"]
         self.assertEqual(content["deck"], "What the fixture shows.")
         self.assertEqual(content["treatments"][0]["headline"], "The filing <b>names</b> the payer")
+        self.assertTrue(content["treatments"][0]["basis"].startswith("Not checked:"), content["treatments"][0])
         self.assertEqual(content["caveats"], ["Only one filing."])
         self.assertEqual(content["next_steps"], ["Ask the payer."])
         # A draft changed after the page loaded is not what the member saw.

@@ -4,6 +4,30 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — What a fact-check verdict rests on
+
+- The Investigation gate and Report pages show one line under each finding's
+  verdict, counted from `data/fact-check.json`
+  (`scripts/spotlight_orchestration/claim_basis.py`): a government source, N
+  independent sources, one source, or no source URL for a verified claim; for
+  any other verdict, whether the fact-check recorded no evidence at all ("Not
+  checked"), evidence against, or supporting evidence it did not verify. Sources
+  are counted by site, so two pages of one site, or a page and its Wayback
+  Machine copy, are one source. A claim of 40 words or more also carries a note
+  that it may bundle several assertions. The line informs; it adds nothing to
+  decide. No schema, validator or typed-tool change.
+- The source rule now reads the same everywhere: one official record, or 2+
+  independent sources, per key claim (`docs/fact-checking.md`,
+  `docs/investigating.md`, `skills/spotlight/references/pipeline.md`,
+  `skills/phase-investigation`, `DISCLAIMER.md`). The fact-checker's scoring
+  indicators count sources by site; the investigator is told to write a
+  finding's claim as one assertion a single quoted passage can support.
+- Credits, with the measurement on Spotlight's own run logs, are in
+  `docs/fact-checking.md` ("What a verdict rests on"): NewsBench
+  (<https://arxiv.org/html/2610.33240v1>), Qazi, McCrae and Nasir on evidence
+  contamination (<https://arxiv.org/html/2611.02139v1>) and AttriSwarm
+  (<https://arxiv.org/html/2611.04504v1>).
+
 ### Added — ThinkPol and treg integrations
 
 - `integrations/thinkpol/`: opt-in Reddit archive search through the ThinkPol

@@ -112,7 +112,7 @@ Every claim gets one of five verdicts (fact-check contract `1.1`, the same five 
 
 | Verdict | Definition | Required evidence |
 |---|---|---|
-| `verified` | True per the available evidence | 2+ independent reliable sources with no credible contradicting evidence |
+| `verified` | True per the available evidence | Every material element is supported by one official record (a register, filing, court or statistical record) or by 2+ independent reliable sources, with no credible contradicting evidence. Sources are counted by site: two pages of one site, or a page and its archived copy, are one source |
 | `unverified` | Evidence is silent | Thorough search produced neither supporting nor contradicting reliable sources. **This is not "false."** It means the evidentiary record does not speak to the claim |
 | `disputed` | Reliable evidence exists both for and against | Document both sides with equal weight |
 | `false` | Evidence actively contradicts the claim | Strong evidence from reliable sources directly contradicts what was claimed |
@@ -274,6 +274,42 @@ After the fact-checker writes `fact-check.json`, the orchestrator runs an editor
 4. Are there findings with no fact-check verdict?
 
 If any fail, the responsible agent is re-spawned with specific fix instructions. This counts as a cycle.
+
+## What a verdict rests on
+
+The review pages add one line under each finding's verdict, counted from
+`data/fact-check.json` by `scripts/spotlight_orchestration/claim_basis.py`. The
+fact-checker still makes the judgment; code only counts what it recorded, and
+the line is information, never an item to decide.
+
+| Line | Meaning |
+|---|---|
+| Rests on a government source | A supporting source is on a government or intergovernmental host |
+| Rests on N independent sources | Supporting sources come from N different sites |
+| Rests on one source | Every supporting source is the same site, including its archived copies |
+| Not checked | The fact-check recorded no evidence for or against the claim |
+| Checked: evidence against | The fact-check recorded contradicting evidence |
+| Checked: not verified | Supporting evidence is on record, but the verdict is not `verified` |
+| Long claim | The claim has 40 words or more and may bundle several assertions |
+
+These rules follow three papers and a measurement on Spotlight's own run logs:
+
+- Claims are checked one assertion at a time, and source quality is judged
+  separately from factual accuracy: Wilde, Fisher, Hall, Salam and Goldfarb,
+  *NewsBench: Expert-Grounded Evaluation of Epistemic Quality in AI News
+  Reporting* (<https://arxiv.org/html/2610.33240v1>).
+- Corroboration has to be independent to count, because fluent planted
+  evidence passes for the real thing: Qazi, McCrae and Nasir, *Adversarial
+  Robustness of Retrieval-Based Fact-Checking: Detecting and Mitigating
+  Evidence Contamination* (<https://arxiv.org/html/2611.02139v1>).
+- Each assertion is tied to its own piece of evidence, judged apart from the
+  rest: Zhao, Liu, Sun, Wang, Zeng, Gao and Li, *AttriSwarm: Orchestrating
+  Agent Swarms for Cross-Page Visual Attribution*
+  (<https://arxiv.org/html/2611.04504v1>).
+- On 219 claims from local runs, labelled blind by two models against the
+  stored source text (2026-11-10), verified claims were not fully supported
+  19% of the time under 40 words and 41% of the time from 40 words up, and
+  78% of verified claims cited a single site. No human reviewed those labels.
 
 ## Sensitive mode
 

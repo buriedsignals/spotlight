@@ -391,7 +391,7 @@ Apply only the specific fixes required by these gaps.",
      | Criterion | Threshold |
      |-----------|-----------|
      | Minimum findings | 3+ at high confidence |
-     | Source independence | 2+ independent sources per key claim |
+     | Source independence | One official record, or 2+ independent sources, per key claim (count by site, not by page) |
      | No unresolved disputes | 0 claims with "disputed" verdict and no resolution path |
      | Affected perspective | At least 1 finding from affected community/person |
      | Document trail | Primary source documents cited (not just news reports) |

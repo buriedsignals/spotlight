@@ -23,7 +23,7 @@ work must be named for the member to assess, never represented as completed.
 | Criterion | Threshold | How to Check |
 |-----------|-----------|-------------|
 | Minimum findings | 3+ at high confidence | Count findings where confidence == "high" |
-| Source independence | 2+ independent sources per key claim | Check `data/fact-check.json` `evidence_for` arrays |
+| Source independence | One official record, or 2+ independent sources, per key claim. Count sources by site: two pages of one site, or a page and its archived copy, are one source | Check `data/fact-check.json` `evidence_for` arrays |
 | No unresolved disputes | 0 claims with "disputed" verdict and no resolution path | Check `data/fact-check.json` for disputed verdicts |
 | Affected perspective | At least 1 finding from affected community/person | Check `data/findings.json` `perspective` field |
 | Document trail | Primary source documents cited (not just news reports) | Check source types include court_filing, registry, government |
