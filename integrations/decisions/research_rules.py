@@ -167,16 +167,22 @@ def snippet_only(lead: TriageLead) -> bool:
 _SECOND_LEVEL = {"co", "com", "org", "net", "gov", "ac", "edu", "gv", "or", "ne"}
 
 
-def source_family(lead: TriageLead) -> str:
-    """The family a lead's source belongs to: its registrable domain (a
-    two-label approximation, three labels under a country's second level such
-    as co.uk). Material without a URL is its own family, by content."""
-    host = (urlparse(lead.source_url).hostname or "").lower().removeprefix("www.")
+def registrable_family(url: str) -> str:
+    """The registrable domain of a URL (a two-label approximation, three
+    labels under a country's second level such as co.uk), or "" without a
+    host. Pages of one family are one source, however many URLs they have."""
+    host = (urlparse(url).hostname or "").lower().removeprefix("www.")
     if not host:
-        return "local:" + (lead.content_sha256 or lead.lead_id)
+        return ""
     labels = host.split(".")
     keep = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL else 2
     return ".".join(labels[-keep:])
+
+
+def source_family(lead: TriageLead) -> str:
+    """The family a lead's source belongs to: its registrable domain.
+    Material without a URL is its own family, by content."""
+    return registrable_family(lead.source_url) or "local:" + (lead.content_sha256 or lead.lead_id)
 
 
 def source_families(leads: Iterable[TriageLead]) -> int:

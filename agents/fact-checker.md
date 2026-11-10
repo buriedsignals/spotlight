@@ -254,6 +254,9 @@ Handle what they covered this way:
 - **Part of a claim is supported, part is not.** Split the finding into
   separate claims, one per element, and give each its own verdict. If it
   cannot be split, the verdict is `unverified` with a `partial_support` flag.
+  A long claim that bundles several assertions is where this happens most:
+  check each assertion against its own quoted passage before you call the
+  whole claim `verified`.
 - **The finding misstates what its source says** (wrong framing, a wider
   scope, an added cause, a changed amount or date). Add a flag with the
   narrowest code that names the problem: `amount_mismatch`, `date_mismatch`,
@@ -280,7 +283,7 @@ Structure all verdicts into the output format below. Include the full evidence t
 
 Apply to each claim:
 
-- **Source depth** — How many independent sources support the verdict? (1 = weak, 3+ = strong)
+- **Source depth** — How many independent sources support the verdict? Count by site, not by page: two pages of one site, or a page and its archived copy, are one source. One official record (a register, filing, court or statistical record) can carry a claim; any other single source is weak, 3+ is strong.
 - **Source type** — Primary (documents, records, testimony) vs. secondary (reporting, analysis)
 - **Verifiability** — Could a third party independently verify this with the sources provided?
 - **Temporal reliability** — Is the evidence current or could it be outdated?

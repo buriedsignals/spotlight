@@ -279,7 +279,7 @@ All must pass for the Investigation gate to open:
 | # | Criterion | Threshold | Check |
 |---|---|---|---|
 | 1 | Minimum findings | 3+ at high confidence | Count `findings[].confidence == "high"` |
-| 2 | Source independence | 2+ independent sources per key claim | `fact-check.json` `evidence_for[]`, verify sources don't cite each other |
+| 2 | Source independence | One official record, or 2+ independent sources, per key claim | `fact-check.json` `evidence_for[]`: count sources by site, and verify they don't cite each other |
 | 3 | No unresolved disputes | 0 disputed claims with no resolution path | Filter `verdict == "disputed"` |
 | 4 | Affected perspective | ≥1 finding from affected community/person | `findings.json` `perspective` includes a non-official/affected source |
 | 5 | Document trail | Primary sources cited, not just news | Source types include `court_filing`, `registry`, `government` |

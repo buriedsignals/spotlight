@@ -346,10 +346,20 @@ function researchPlanContent(plan) {
   ];
 }
 
+// What the verdict rests on, counted from the fact-check record. It informs
+// the member's reading; it is never an item to decide.
+function basisLines(record) {
+  return [
+    record.basis ? el("p", { className: "muted basis", text: record.basis }) : null,
+    record.claim_note ? el("p", { className: "muted basis", text: record.claim_note }) : null,
+  ];
+}
+
 function findingDetails(finding) {
   if (!finding) return null;
   return [
     el("p", { className: "meta" }, verdictPill(finding.verdict), confidencePill(finding.confidence)),
+    basisLines(finding),
     el("p", { className: "quote lede", text: finding.claim }),
     finding.evidence ? el("div", { className: "evidence" }, el("p", {}, el("strong", { text: "Recorded evidence" })), evidenceBlocks(finding.evidence)) : null,
     finding.fact_check_notes ? el("p", { className: "quote" }, el("strong", { text: "Independent fact-check: " }), finding.fact_check_notes) : null,
@@ -529,7 +539,7 @@ function investigationContent(content, items) {
       { "aria-labelledby": "findings-heading" },
       el("h2", { id: "findings-heading", text: `Verified findings (${verified.length})` }),
       verified.length
-        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Fact-checker's note", "Sources"], verified.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
+        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Basis", "Fact-checker's note", "Sources"], verified.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.basis || finding.claim_note ? el("span", {}, basisLines(finding)) : "", finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
         : el("p", { className: "muted", text: content.findings.length ? "No finding is verified." : "The case records no findings." }),
     ),
     el(
@@ -648,6 +658,7 @@ function treatmentCard(treatment) {
       treatment.quotes ? el("span", { className: "tag", text: `Quoted passages: ${treatment.quotes}` }) : null,
     ),
     el("h3", { text: treatment.headline || `Finding ${treatment.finding_id}` }),
+    basisLines(treatment),
     treatment.summary ? el("p", { className: "quote lede", text: treatment.summary }) : null,
     treatment.why_it_matters ? el("p", { className: "quote" }, el("strong", { text: "Why it matters: " }), treatment.why_it_matters) : null,
   );

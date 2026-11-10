@@ -9,7 +9,7 @@ Spotlight is an investigation assistant. It produces findings, fact-check verdic
 Specifically:
 
 - Agent outputs can be wrong. LLMs hallucinate, miss context, conflate entities, and mis-quote sources. Spotlight's evidence grounding rules reduce this (every finding must have a scraped `local_file` and archive URL) but they don't eliminate it.
-- Fact-check verdicts are AI-generated, not a professional fact-checking service. Treat `verified` as "our automated pass found 2+ independent sources", not as "this is true".
+- Fact-check verdicts are AI-generated, not a professional fact-checking service. Treat `verified` as "our automated pass found an official record or 2+ independent sources", not as "this is true".
 - Confidence levels reflect the tool's internal assessment. A `high confidence` finding can still be wrong. Open every source; read the primary document.
 
 **If you publish something sourced through Spotlight, you — not Buried Signals, not the model provider, not the upstream data sources — are responsible for its accuracy.**

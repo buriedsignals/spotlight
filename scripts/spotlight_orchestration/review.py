@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from .case_writer import atomic_write_files
+from .claim_basis import claim_basis
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
 from .dependencies import _optional_hash, current_hashes, investigation_gate_dependencies
 from . import research_view
@@ -772,6 +773,7 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
         finding_id = finding["id"]
         claim = verdicts.get(finding_id, {})
         verdict = _verdict(claim)
+        basis = claim_basis(claim, _text(finding.get("claim")))
         sources = finding.get("sources") if isinstance(finding.get("sources"), list) else []
         findings.append(
             {
@@ -781,6 +783,8 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
                 "confidence": _text(finding.get("confidence"), 40),
                 "verdict": verdict or "not checked",
                 "fact_check_notes": _text(claim.get("notes"), 2000),
+                "basis": basis["label"],
+                "claim_note": basis["note"],
                 "sources": [
                     {
                         "url": _text(source.get("url"), 2000),
@@ -976,20 +980,25 @@ def _report_treatments(case: Path, draft: dict[str, Any]) -> list[dict[str, Any]
     verdicts = _fact_check_claims(case)
     findings_doc = _read_case_json(case, "data/findings.json")
     raw_findings = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
-    confidence = {
-        f["id"]: _text(f.get("confidence"), 40)
+    recorded = {
+        f["id"]: f
         for f in (raw_findings if isinstance(raw_findings, list) else [])
         if isinstance(f, dict) and isinstance(f.get("id"), str)
     }
     result = []
     for t in treatments[:60]:
         finding_id = t.get("finding_id")
-        verdict = _verdict(verdicts.get(finding_id, {})) if isinstance(finding_id, str) else None
+        claim = verdicts.get(finding_id, {}) if isinstance(finding_id, str) else {}
+        finding = recorded.get(finding_id, {}) if isinstance(finding_id, str) else {}
+        verdict = _verdict(claim)
+        basis = claim_basis(claim, _text(finding.get("claim")))
         result.append({
             "finding_id": _text(finding_id, 200),
             "verdict": _text(verdict, 80) if verdict else "not checked",
             "verified": verdict == "verified",
-            "confidence": confidence.get(finding_id, "") if isinstance(finding_id, str) else "",
+            "confidence": _text(finding.get("confidence"), 40),
+            "basis": basis["label"],
+            "claim_note": basis["note"],
             "headline": _text(t.get("headline"), 1000),
             "summary": _text(t.get("summary")),
             "why_it_matters": _text(t.get("why_it_matters")),

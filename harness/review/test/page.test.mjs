@@ -160,6 +160,25 @@ test("the gate page lists verified findings first and the rest under a clear war
   assert.ok(doubtful?.includes("An invented name."), doubtful);
 });
 
+// The basis is counted by code from the fact-check record. The page shows it next to the verdict and adds nothing to decide.
+test("the gate page shows what each verdict rests on, and a view without it shows no empty line", async (t) => {
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "investigation_gate") }).view("investigation_gate");
+  const finding = (id, verdict, basis, claim_note) => ({ ...view.content.findings[0], id, claim: `Claim ${id}.`, verdict, basis, claim_note });
+  const findings = [
+    finding("F1", "verified", "Rests on one source (example.org).", "Long claim (52 words): it may bundle several assertions that need separate checks."),
+    finding("F2", "unverified", "Not checked: the fact-check recorded no evidence for or against this claim.", ""),
+    finding("F3", "verified", undefined, undefined),
+  ];
+  const items = [{ key: "disposition:F2", kind: "disposition", target: "finding:F2", suggested: null, final: null, suggestion_reason: "" }];
+  const page = await renderClient({ ...view, content: { ...view.content, findings }, items, pending_gate: "investigation_gate" });
+  const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+  const text = words(page.getElementById("app"));
+  assert.ok(text.includes("Rests on one source (example.org)."), text);
+  assert.ok(text.includes("Long claim (52 words)"), text);
+  assert.ok(text.includes("Not checked: the fact-check recorded no evidence"), text);
+  assert.ok(!text.includes("undefined"), text);
+});
+
 test("the methodology page offers the drop for a plan code added, and says when it is dropped", async (t) => {
   const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "methodology") }).view("methodology");
   const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");

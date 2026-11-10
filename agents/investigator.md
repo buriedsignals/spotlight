@@ -195,7 +195,7 @@ When the approved brief needs relationship analysis, identify the relevant relat
 
 ### 6. Compile Findings
 
-Each finding should answer a distinct, substantive question in the approved brief. Keep supporting table locators, publication details and capture metadata with the evidence rather than making them separate findings, unless they establish an independently material proposition.
+Each finding should answer a distinct, substantive question in the approved brief. Write its claim as one assertion that a single quoted passage can support; when a claim needs "and" to join facts from different passages, record them as separate findings. Keep supporting table locators, publication details and capture metadata with the evidence rather than making them separate findings, unless they establish an independently material proposition.
 
 Structure everything into the output format for your current mode. Be explicit about confidence levels and gaps.
 
