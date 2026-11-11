@@ -1,46 +1,36 @@
 #!/usr/bin/env python3
-"""Build the newsroom Submit package, and record what the Editorial MCP answered.
+"""Prepare a newsroom case's approved batch, and record what the Editorial MCP answered.
 
-  python3 scripts/newsroom-package.py build {CASE_DIR} --out FILE      (the package goes to FILE)
   python3 scripts/newsroom-package.py register {CASE_DIR}          < reference JSON
-  python3 scripts/newsroom-package.py checks {CASE_DIR}            < check record JSON
-  python3 scripts/newsroom-package.py begin {CASE_DIR} --package-sha256 SHA
-  python3 scripts/newsroom-package.py blocked {CASE_DIR} --package-sha256 SHA  < failures JSON
-  python3 scripts/newsroom-package.py complete {CASE_DIR} --package-sha256 SHA \
-      --submission-id ID --review-id ID                            < receipts JSON
+  python3 scripts/newsroom-package.py request {CASE_DIR} --case-id ID --batch-id ID --out FILE
+  python3 scripts/newsroom-package.py begin {CASE_DIR} --package-sha256 SHA --batch-id ID
+  python3 scripts/newsroom-package.py pending {CASE_DIR}
+  python3 scripts/newsroom-package.py blocked {CASE_DIR} --package-sha256 SHA  < errors JSON
+  python3 scripts/newsroom-package.py complete {CASE_DIR} --package-sha256 SHA --batch-id ID  < receipts JSON
 
 Newsroom edition only (``knowledge_destination.mode`` is ``newsroom``), for an
 activated case whose ingestion was requested on the ingest page. The Pi
-harness runs both steps itself around the Editorial MCP's
-``start_case_review``; the contract is docs/newsroom-editorial-mcp.md.
+launcher and harness/pi/src/newsroom-submit.ts run these around the Editorial
+MCP's ``start_case_review``; the contract is docs/newsroom-editorial-mcp.md.
 
-``build`` prints one JSON object: ``package`` (the structured case), ``files``
-(the cited evidence files, base64) and ``package_sha256`` (the idempotency
-key). The package holds the findings, the fact-check, the passages, the
-source positions, the evidence manifest with hashes, the decision flags and
-dispositions so far, and the journalist-input units. Only cited evidence
-files travel: those a passage linked to a finding anchors in, and the
-original artifacts and text derivatives of their evidence items, each with
-its role (supporting, contradicting, contextual). Raw research stays behind:
-nothing uncited, nothing under research/swarm/, no leads or clues. A cited
-file that cannot travel is a declared omission with its reason. A file whose
-bytes no longer match a declared hash stops the build.
+``request`` writes one JSON object to FILE: ``request`` (the approved batch as
+the service's input, scripts/newsroom_batch.py) and ``request_sha256``.
 
 Every other command is the only writer of a newsroom case file the model may
-not write (data/editorial-case.json, data/newsroom-checks.json,
-data/newsroom-submission.json, receipts/, and the ingest marker), and writes
-it under the case lock. The Pi launcher calls them with what the Editorial MCP
-answered, already cleared of the sign-in token and of the review address.
+not write (data/editorial-case.json, data/newsroom-submission.json,
+data/newsroom-ids.json, receipts/, and the ingest marker), and writes it
+under the case lock, with what the Editorial MCP answered already cleared of
+the sign-in token and of the review address.
 
 Submit is three steps so a crash can neither lose nor repeat a submission:
-``begin`` records the intent (the package sha256, which is also the
-idempotency key) before start_case_review is called, and refuses unless the
+``begin`` records the intent (the batch id the service issued and the sha256
+of the request) before start_case_review is called, and refuses unless the
 member requested ingestion on the ingest page; ``blocked`` or ``complete``
-then resolves that intent. A pending intent left by a crash is resubmitted
-with the same key, which the Editorial MCP answers with the submission it
-already staged. ``complete`` writes the receipts, the submission state and
-the completed ingest marker (destination ``newsroom``); the phase then seals
-it.
+then resolves that intent. The service stores a batch id at most once, so a
+pending intent left by a crash is resolved by asking the service whether it
+holds that batch. ``complete`` writes the receipts, the ids the service
+assigned, the submission state and the completed ingest marker (destination
+``newsroom``); the phase then seals it.
 
 Exit codes: 0 = done; 2 = refused (the reason is on stderr).
 """
@@ -48,10 +38,8 @@ Exit codes: 0 = done; 2 = refused (the reason is on stderr).
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
-import mimetypes
 import os
 import re
 import sys
@@ -63,31 +51,19 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 import newsroom_batch  # noqa: E402
-from evidence_anchors import case_evidence_path, rlm_lead_failure  # noqa: E402
-from source_expression_contract import lifecycle_state  # noqa: E402
 from spotlight_orchestration import review  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.resolver import load_ingestion_marker, status_for  # noqa: E402
 from spotlight_orchestration.storage import load_state, read_data_bytes, transaction  # noqa: E402
 
-PACKAGE_VERSION = "spotlight-case-package/1.0"
-ROLES = {"supports": "supporting", "contradicts": "contradicting", "context": "contextual"}
-DIRECT_PATHS = ("raw_path", "downloaded_document_path", "screenshot_path")
-DIRECT_PATHS_BY_PRECEDENCE = ("downloaded_document_path", "raw_path", "screenshot_path")
 CASE_REFERENCE = "data/editorial-case.json"
-CHECKS = "data/newsroom-checks.json"
 SUBMISSION = "data/newsroom-submission.json"
 SERVER_IDS = "data/newsroom-ids.json"
 RECEIPTS = "receipts"
 SAFE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
 RECEIPT_NAME = re.compile(r"^(submission|review-status|review)-[A-Za-z0-9._-]{1,200}\.json$")
-# Research-phase material never travels, even when something cites it.
-STAYS_BEHIND = ("research/swarm/",)
-MAX_FILE_BYTES = 25 * 1024 * 1024
-MAX_PACKAGE_BYTES = 200 * 1024 * 1024
-
 
 class Refused(Exception):
     pass
@@ -121,174 +97,6 @@ def _load(case: Path, rel: str, required: bool = True) -> Any:
     if not isinstance(value, dict):
         raise Refused(f"{rel} is not a JSON object")
     return value
-
-
-def journalist_input_units(case: Path) -> list[dict[str, Any]]:
-    """Extension point for the newsroom edition's journalist input.
-
-    The newsroom edition records interviews, source emails, notes and
-    documents at case intake (kind, source or protected pseudonym,
-    attribution, consent, rights, sensitivity) and contributes the units a
-    journalist marked for review here. Open-source Spotlight has no
-    journalist-input intake, so it contributes none. Whatever an edition
-    returns travels only to the newsroom's own Editorial MCP, never to a
-    third-party model route.
-    """
-    return []
-
-
-def _case_file(case: Path, rel: object) -> tuple[str, Path | None, str | None]:
-    """The case-relative path, its real file, or why it cannot travel."""
-    if not isinstance(rel, str) or not rel:
-        return str(rel), None, "no path recorded"
-    text = rel.replace("\\", "/").removeprefix("{CASE_DIR}/")
-    if text.startswith("/") or re.match(r"[A-Za-z]:", text) or ".." in text.split("/"):
-        return text, None, "the path leads outside the case"
-    # No component may be a symlink: a linked research/ or evidence/ (or a
-    # folder in them) would lead into data/ or out of the case.
-    parts = text.split("/")
-    if any(case.joinpath(*parts[: i + 1]).is_symlink() for i in range(len(parts))):
-        return text, None, "the path passes through a symlink"
-    # Only evidence locations travel (research/ and evidence/, on the real
-    # path); data/, receipts/ and review state never do. Compared without
-    # case, so a case variant cannot slip past on a case-insensitive disk.
-    path = case_evidence_path(case, text)
-    if path is None:
-        return text, None, "the file is missing or is not in an evidence location"
-    rlm = rlm_lead_failure(path)
-    if rlm:
-        return text, None, rlm
-    real = path.relative_to(case.resolve()).as_posix().lower()
-    if any(real.startswith(p) or text.lower().startswith(p) for p in STAYS_BEHIND):
-        return text, None, "research-phase material stays on this computer"
-    if path.stat().st_size > MAX_FILE_BYTES:
-        return text, None, f"the file is larger than {MAX_FILE_BYTES} bytes"
-    return text, path, None
-
-
-def build(case: Path) -> dict[str, Any]:
-    if not review.activated_case(case):
-        raise Refused("only an activated case (findings 1.1) is submitted to the newsroom")
-    if review.ingest_mode() != "newsroom":
-        raise Refused("this install is not in newsroom mode (knowledge_destination.mode)")
-    findings = _load(case, "data/findings.json")
-    fact_check = _load(case, "data/fact-check.json")
-    bundle = _load(case, "data/evidence-bundle.json")
-    passages = _load(case, "data/source-expressions.json")  # an activated case has its passages
-    positions = _load(case, "data/source-positions.json", required=False)
-    checks = _load(case, CHECKS, required=False)
-    items = {str(item.get("id")): item for item in bundle.get("items", []) if isinstance(item, dict)}
-
-    entries: dict[str, dict[str, Any]] = {}
-    contents: dict[str, bytes] = {}  # each cited file's bytes, read once from its validated path
-    omissions: list[dict[str, Any]] = []
-    problems: list[str] = []
-    shipped: list[dict[str, Any]] = []
-
-    def cite(rel: object, role: str, expression_id: str, finding_id: str, evidence_id: str | None,
-             kind: str, declared: str | None) -> bool:
-        """True when the file travels."""
-        text, path, why = _case_file(case, rel)
-        if path is None:
-            omissions.append({"path": text, "expression_id": expression_id, "reason": why})
-            return False
-        data = contents.get(text)
-        if data is None:
-            # The cap holds before a file is buffered, not only after all are.
-            if sum(map(len, contents.values())) + path.stat().st_size > MAX_PACKAGE_BYTES:
-                raise Refused(f"the cited evidence is larger than {MAX_PACKAGE_BYTES} bytes")
-            data = contents[text] = path.read_bytes()
-        digest = _sha(data)
-        if declared and declared.lower() != digest:
-            problems.append(f"{text} no longer matches its declared sha256 ({kind})")
-            return False
-        entry = entries.setdefault(text, {
-            "path": text, "sha256": digest, "bytes": len(data),
-            "media_type": mimetypes.guess_type(text)[0] or "application/octet-stream",
-            "kinds": [], "roles": [], "finding_ids": [], "expression_ids": [], "evidence_ids": [],
-        })
-        for key, value in (("kinds", kind), ("roles", role), ("finding_ids", finding_id),
-                           ("expression_ids", expression_id), ("evidence_ids", evidence_id)):
-            if value and value not in entry[key]:
-                entry[key].append(value)
-        return True
-
-    for expression in passages.get("expressions", []):
-        if not isinstance(expression, dict) or lifecycle_state(expression) != "activated":
-            continue
-        expression_id = str(expression.get("id"))
-        item = items.get(str(expression.get("original_evidence_bundle_id")))
-        anchor = (expression.get("anchor_ref") or {}).get("path")
-        anchored = False
-        for link in expression.get("finding_links", []) or []:
-            role = ROLES.get(link.get("relation"), "contextual")
-            finding_id = str(link.get("finding_id"))
-            if not cite(anchor, role, expression_id, finding_id,
-                        item.get("id") if item else None, "anchor", expression.get("anchor_sha256")):
-                continue  # without its anchor, the passage's evidence stays behind with it
-            anchored = True
-            if item is None:
-                omissions.append({"path": None, "expression_id": expression_id,
-                                  "reason": "its evidence item is not in the evidence bundle"})
-                continue
-            original = expression.get("original_artifact_sha256")
-            for key in DIRECT_PATHS:
-                if item.get(key):
-                    # The passage declares its original artifact's hash: the
-                    # downloaded document, else the raw capture, else (when it
-                    # is the only artifact) the screenshot. A screenshot beside
-                    # another original is a capture and is hashed as found.
-                    declared = original if _first_original(case, item) == key else None
-                    cite(item[key], role, expression_id, finding_id, item.get("id"), key, declared)
-            for derivative in item.get("text_derivatives", []) or []:
-                if isinstance(derivative, dict) and derivative.get("path"):
-                    cite(derivative["path"], role, expression_id, finding_id, item.get("id"),
-                         "text_derivative", derivative.get("sha256"))
-        # A passage travels only with its anchor: its text quotes that file.
-        if anchored:
-            shipped.append(expression)
-        else:
-            omissions.append({"path": anchor if isinstance(anchor, str) else None, "expression_id": expression_id,
-                              "reason": "the passage and its evidence stay behind: its anchor file did not travel"})
-    if problems:
-        raise Refused("; ".join(sorted(set(problems))[:10]))
-
-    manifest = sorted(entries.values(), key=lambda entry: entry["path"])
-    reviews = {}
-    for gate in ("investigation_gate", "report"):
-        record = _load(case, f"data/{review.review_file(gate)}", required=False)
-        if record is not None:
-            reviews[gate] = record
-    package = {
-        "package_version": PACKAGE_VERSION,
-        "case_id": case.name,
-        "findings": findings,
-        "fact_check": fact_check,
-        "passages": {**passages, "expressions": shipped},
-        "source_positions": positions,
-        "evidence_manifest": {"files": manifest, "omissions": omissions},
-        # Checks on another version of their inputs travel as not run.
-        "decision_flags": {kind: record if review.check_is_current(case, record) else review.NOT_RUN
-                           for kind, record in ((checks or {}).get("checks") or {}).items()},
-        "dispositions": reviews,
-        "journalist_input_units": journalist_input_units(case),
-    }
-    files = []
-    for entry in manifest:
-        data = contents[entry["path"]]  # within MAX_PACKAGE_BYTES: cite() checks before each read
-        files.append({"path": entry["path"], "sha256": entry["sha256"], "media_type": entry["media_type"],
-                      "content_base64": base64.b64encode(data).decode("ascii")})
-    return {"package": package, "files": files,
-            "package_sha256": _sha(_canonical({"package": package, "file_sha256": [f["sha256"] for f in files]}))}
-
-
-def _first_original(case: Path, item: dict[str, Any]) -> str | None:
-    """The first recorded original that resolves: one recorded but missing
-    hands the declared hash on to the next."""
-    for key in DIRECT_PATHS_BY_PRECEDENCE:
-        if item.get(key) and _case_file(case, item[key])[1] is not None:
-            return key
-    return None
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -379,21 +187,6 @@ def request(case: Path, case_id: str, batch_id: str) -> dict[str, Any]:
     except newsroom_batch.Refused as exc:
         raise Refused(str(exc)) from None
     return {"request": converted, "request_sha256": _sha(_canonical(converted))}
-
-
-def record_checks(case: Path, record: dict[str, Any]) -> dict[str, Any]:
-    kind = record.get("kind")
-    if kind not in ("findings", "report"):
-        raise Refused("a check record's kind must be findings or report")
-    if record.get("state") not in ("done", "failed", "unavailable"):
-        raise Refused("a check record's state must be done, failed or unavailable")
-    with transaction(case) as descriptor:
-        existing = _read_data(case, descriptor, CHECKS) or {}
-        checks = existing.get("checks") if isinstance(existing.get("checks"), dict) else {}
-        checks = {**checks, kind: record}
-        atomic_write_files(case, {CHECKS: _json_bytes({"schema_version": "1.0", "checks": checks})},
-                           data_descriptor=descriptor)
-    return {"ok": True}
 
 
 def _require_key(package_sha256: str) -> None:
@@ -522,13 +315,10 @@ def complete(case: Path, package_sha256: str, batch_id: str, payload: dict[str, 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("build", "register", "checks", "pending", "request"):
+    for name in ("register", "pending", "request"):
         sub.add_parser(name).add_argument("case_dir")
     for flag in ("--case-id", "--batch-id", "--out"):
         sub.choices["request"].add_argument(flag, required=True)
-    # The package (up to MAX_PACKAGE_BYTES, as base64) goes to a file: it is
-    # larger than a program's output the harness reads.
-    sub.choices["build"].add_argument("--out", required=True)
     for name in ("begin", "blocked", "complete"):
         command = sub.add_parser(name)
         command.add_argument("case_dir")
@@ -538,16 +328,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     case = Path(args.case_dir).resolve()
     try:
-        if args.command == "build":
-            Path(args.out).write_text(json.dumps(build(case)), encoding="utf-8")
-            result = {"written": args.out}
-        elif args.command == "request":
+        if args.command == "request":
             Path(args.out).write_text(json.dumps(request(case, args.case_id, args.batch_id)), encoding="utf-8")
             result = {"written": args.out}
         elif args.command == "register":
             result = register(case, _object(sys.stdin.read(), "the case reference"))
-        elif args.command == "checks":
-            result = record_checks(case, _object(sys.stdin.read(), "the check record"))
         elif args.command == "pending":
             result = pending(case)
         elif args.command == "begin":

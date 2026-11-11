@@ -497,23 +497,6 @@ function anomalySignalsSection(signals, items) {
   );
 }
 
-// Newsroom edition: the newsroom's decision-check flags. They never block;
-// "unavailable" is not "no flags".
-function newsroomChecks(checks) {
-  if (!checks) return null;
-  const state = {
-    done: checks.flags.length ? "The newsroom's decision checks flagged:" : "The newsroom's decision checks raised no flags. That is not a verification.",
-    not_run: "The newsroom's decision checks have not run on this version.",
-  }[checks.state] ?? `The newsroom's decision checks are unavailable${checks.reason ? `: ${checks.reason}` : ""}. That does not mean there is nothing to flag.`;
-  return el(
-    "section",
-    { "aria-labelledby": "newsroom-checks-heading" },
-    el("h2", { id: "newsroom-checks-heading", text: "Newsroom decision checks" }),
-    el("p", { text: state }),
-    checks.flags.length ? list(checks.flags.map((flag) => `${flag.target}: ${flag.reason}${flag.question ? ` (${words(flag.question)})` : ""}`), "") : null,
-  );
-}
-
 function newsroomSubmission(submission) {
   if (!submission) return null;
   return el(
@@ -521,7 +504,7 @@ function newsroomSubmission(submission) {
     { "aria-labelledby": "submission-heading" },
     el("h2", { id: "submission-heading", text: "Submission to the newsroom" }),
     submission.state === "blocked"
-      ? [el("p", { text: "The newsroom refused the package: its integrity checks failed. The case stays at Ingest." }), list(submission.reasons, "No reason was given.")]
+      ? [el("p", { text: "The newsroom refused the batch. The case stays at Ingest." }), list(submission.reasons, "No reason was given.")]
       : el("p", { text: `Submitted. Review status: ${submission.review_state || "pending"}. The receipts are in the case's receipts folder.` }),
   );
 }
@@ -563,7 +546,6 @@ function investigationContent(content, items) {
     ),
     indicatorFrameworkSection(content.indicator_framework, items),
     anomalySignalsSection(content.anomaly_signals, items),
-    newsroomChecks(content.newsroom_checks),
   ];
 }
 
@@ -693,7 +675,6 @@ function reportContent(content) {
         ? [el("p", { text: "This is the draft that publishing renders. Read it before you decide." }), reportDraft(content)]
         : el("p", { text: "No report draft exists yet. Ask the agent to draft the report first, or decline it." }),
     ),
-    newsroomChecks(content.newsroom_checks),
   ];
 }
 
@@ -706,7 +687,6 @@ function ingestContent(content, items) {
   const stateLine = {
     final: `The final batch is built. Approving binds batch ${batch.batch_sha256 ?? ""} through the digest below.`,
     draft: "This is a draft: some flags still need a disposition.",
-    newsroom: "Newsroom cases are reviewed in the newsroom's own system; nothing is written to this computer's wiki.",
   }[batch.state];
   return [
     el(

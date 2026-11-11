@@ -21,7 +21,7 @@ test('without the launcher, one command registers the case, sends the approved b
 	const newsroom = await startFakeEditorial();
 	t.after(() => newsroom.close());
 	const env = newsroomEnv(space, [], newsroom);
-	const caseDir = await caseAtIngest(space, {}, ['--proposal']);
+	const caseDir = await caseAtIngest(space, ['--proposal']);
 	await requestNewsroomIngest(caseDir, env);
 
 	const sent = await submit(caseDir, env);

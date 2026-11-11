@@ -226,12 +226,12 @@ test('a knowledge answer reaches the model without any review capability: no rev
 	assert.match(answer, /registry\.example\.org\/company\/42/, 'a source address on another host stays');
 });
 
-async function submittable(t: { after(fn: () => unknown): void }, handlers: Parameters<typeof startFakeEditorial>[0]['handlers'], fixtureEnv: Record<string, string> = {}) {
+async function submittable(t: { after(fn: () => unknown): void }, handlers: Parameters<typeof startFakeEditorial>[0]['handlers']) {
 	const space = await workspace(t);
 	const newsroom = await startFakeEditorial({ handlers });
 	t.after(() => newsroom.close());
 	const env = newsroomEnv(space, [], newsroom);
-	const caseDir = await caseAtIngest(space, fixtureEnv, ['--proposal']);
+	const caseDir = await caseAtIngest(space, ['--proposal']);
 	await requestNewsroomIngest(caseDir, env);
 	// Run as the launcher runs it (runFixed, with its output limit).
 	const runPackage: RunPackage = (args, input) =>
