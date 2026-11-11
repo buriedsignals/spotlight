@@ -23,7 +23,7 @@ from typing import Any
 from .case_writer import atomic_write_files
 from .claim_basis import claim_basis
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
-from .dependencies import _optional_hash, current_hashes, investigation_gate_dependencies
+from .dependencies import current_hashes, investigation_gate_dependencies
 from . import research_view
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, load_state, read_data_bytes
 
@@ -828,9 +828,6 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
         "summary": _text(summary.get("summary")) if isinstance(summary, dict) else "",
         "findings": findings,
     }
-    checks = _newsroom_checks(case, "findings")
-    if checks is not None:
-        content["newsroom_checks"] = checks
     framework, framework_items = _indicator_framework_content(case)
     if framework is not None:
         blocking += _run_check([str(SCRIPT_DIR / "validate-indicator-framework.py"), str(case)])
@@ -1007,38 +1004,7 @@ def _report_treatments(case: Path, draft: dict[str, Any]) -> list[dict[str, Any]
     return result
 
 
-NEWSROOM_CHECKS = "data/newsroom-checks.json"
 NEWSROOM_SUBMISSION = "data/newsroom-submission.json"
-
-
-NOT_RUN = {"state": "not_run", "flags": []}
-
-
-def check_is_current(case: Path, record: object) -> bool:
-    """A check record counts only for the exact case files it ran on (the
-    sha256 the harness kept for each, null for an absent one)."""
-    inputs = record.get("inputs") if isinstance(record, dict) else None
-    return isinstance(inputs, dict) and bool(inputs) and all(_optional_hash(case, path) == digest for path, digest in inputs.items())
-
-
-def _newsroom_checks(case: Path, kind: str) -> dict[str, Any] | None:
-    """The newsroom's decision-check flags for this page (newsroom edition):
-    shown, never blocking. "Unavailable" is shown as such, never as no flags."""
-    if ingest_mode() != "newsroom":
-        return None
-    recorded = _read_case_json(case, NEWSROOM_CHECKS)
-    record = (recorded.get("checks") or {}).get(kind) if isinstance(recorded, dict) else None
-    if not check_is_current(case, record):
-        return NOT_RUN
-    flags = record.get("flags") if isinstance(record.get("flags"), list) else []
-    return {
-        "state": _text(record.get("state"), 40),
-        "reason": _text(record.get("reason"), 1000),
-        "flags": [
-            {"target": _text(f.get("target"), 200), "question": _text(f.get("question"), 200), "reason": _text(f.get("reason"), 2000)}
-            for f in flags[:200] if isinstance(f, dict)
-        ],
-    }
 
 
 REPORT_PROSE = ("headline", "summary", "why_it_matters")
@@ -1141,9 +1107,6 @@ def _report_content(case: Path) -> dict[str, Any]:
             "caveats": _items_text(draft.get("caveats")),
             "next_steps": _items_text(draft.get("next_steps")),
         })
-    checks = _newsroom_checks(case, "report")
-    if checks is not None:
-        content["newsroom_checks"] = checks
     return content
 
 

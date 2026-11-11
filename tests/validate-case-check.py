@@ -280,8 +280,7 @@ def activated_documents(case: Path) -> tuple[dict, dict, dict, dict]:
     research = case / "research"
     research.mkdir(parents=True, exist_ok=True)
     original = research / "filing.bin"
-    # SPOTLIGHT_FIXTURE_ORIGINAL_BYTES pads the original (a package near its size cap).
-    original.write_bytes(b"original filing bytes\n".ljust(int(os.environ.get("SPOTLIGHT_FIXTURE_ORIGINAL_BYTES", "0")), b"."))
+    original.write_bytes(b"original filing bytes\n")
     anchor = research / "filing.txt"
     anchor.write_text("heading\nAcme paid Doe.\n", encoding="utf-8")
     finding_fp = canonical_fingerprint({"claim": "Acme paid Doe."})

@@ -4849,7 +4849,7 @@ test('newsroom Submit: a batch the newsroom refuses leaves the case at Ingest wi
 	t.after(() => Promise.all([fake.close(), rejecting.close(), staging.close()]));
 
 	const blocked = await workspace(t);
-	const blockedCase = await caseAtIngest(blocked, {}, ['--proposal']);
+	const blockedCase = await caseAtIngest(blocked, ['--proposal']);
 	const blockedEnv = newsroomEnv(blocked, newsroomRoute(fake.baseURL), rejecting);
 	await requestNewsroomIngest(blockedCase, blockedEnv);
 	const first = launch(t, blockedEnv);
@@ -4865,7 +4865,7 @@ test('newsroom Submit: a batch the newsroom refuses leaves the case at Ingest wi
 	await assert.rejects(readdir(join(blockedCase, 'receipts')), { code: 'ENOENT' });
 
 	const staged = await workspace(t);
-	const stagedCase = await caseAtIngest(staged, {}, ['--proposal']);
+	const stagedCase = await caseAtIngest(staged, ['--proposal']);
 	const route = [{ ...newsroomRoute(fake.baseURL)[0], key_env: 'ROUTE_AUTH' }];
 	const stagedEnv = newsroomEnv(staged, route, staging, { ROUTE_AUTH: 'route-auth-token-0123456789' });
 	await requestNewsroomIngest(stagedCase, stagedEnv);
@@ -4900,7 +4900,7 @@ test('newsroom Submit: a case phase the resolver cannot read is an error, never 
 	const editorial = await startFakeEditorial();
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	const caseDir = await caseAtIngest(space, {}, ['--proposal']);
+	const caseDir = await caseAtIngest(space, ['--proposal']);
 	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
 	await requestNewsroomIngest(caseDir, env);
 	// The resolver (the adapter's `status`) fails; everything else runs on the real interpreter.
@@ -4926,7 +4926,7 @@ test('a revoked newsroom token stops the harness with a plain message and exit c
 	const editorial = await startFakeEditorial();
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	const caseDir = await caseAtIngest(space, {}, ['--proposal']);
+	const caseDir = await caseAtIngest(space, ['--proposal']);
 	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
 	await requestNewsroomIngest(caseDir, env);
 
@@ -4982,7 +4982,7 @@ test('newsroom Submit: a crash after the newsroom stored the batch resumes on th
 	});
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	const caseDir = await caseAtIngest(space, {}, ['--proposal']);
+	const caseDir = await caseAtIngest(space, ['--proposal']);
 	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
 	await requestNewsroomIngest(caseDir, env);
 
