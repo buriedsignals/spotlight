@@ -3548,7 +3548,7 @@ test('an analyst fold continues with the canonical task, not the parent instruct
 	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')));
 });
 
-test('the analyst is not started before Ingest or in the newsroom edition', async (t) => {
+test('the analyst is not started before Ingest, and at Ingest it runs in the newsroom edition as in the solo one', async (t) => {
 	const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Proposed.' })));
 	const editorial = await startFakeEditorial();
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
@@ -3559,22 +3559,21 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	early.process.stdin.end();
 	await early.exited;
 
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
+	// Distinct results: at Investigation the text-turn nudge asks once more,
+	// carrying the same refusal. Only the analyst's refusals are this test's.
+	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))].filter((text) => /the analyst/.test(text));
+	// U3 census (84674fd9): the refusal carries the step the case waits on.
+	assert.equal(refusals.length, 1);
+	assert.match(refusals[0], /the analyst runs only at investigation_gate_approval, report, ingest; the case is at investigation\. Next: /);
+
+	// The newsroom edition drafts its batch on the journalist's computer too.
 	const newsroom = await workspace(t);
 	await caseAtIngest(newsroom);
 	const routed = launch(t, newsroomEnv(newsroom, [{ name: 'newsroom-model', base_url: fake.baseURL, model: 'stub-model', inference: 'own' }], editorial));
 	await settledPrompt(routed, 'Continue.');
 
-	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
-	// Distinct results: at Investigation the text-turn nudge asks once more,
-	// carrying the same refusal.
-	// Only the analyst's refusals are this test's; other results at
-	// Investigation are filtered out.
-	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))].filter((text) => /the analyst/.test(text));
-	assert.equal(refusals.length, 2);
-	// U3 census (84674fd9): the refusal carries the step the case waits on.
-	assert.match(refusals[0], /the analyst runs only at investigation_gate_approval, report, ingest; the case is at investigation\. Next: /);
-	assert.match(refusals[1], /the analyst does not run at Ingest in the newsroom edition/);
-	await assert.rejects(readFile(join(newsroom.casesRoot, 'case-a', 'data', 'knowledge-proposal.json')), { code: 'ENOENT' });
+	assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'analyst')), 'the analyst was started at Ingest');
 });
 
 // E2E D15: a fact-checker respawned at Ingest rewrote files the Investigation
