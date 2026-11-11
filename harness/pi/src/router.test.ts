@@ -1,5 +1,5 @@
 // Plan step 4 (reports/step4-routing-design.md): the code router's rule at its
-// edges. The end-to-end route is in launcher.test.ts ("with the code router, a
+// edges. The end-to-end route is in the launcher tests ("with the code router, a
 // model that only writes text does too").
 import assert from 'node:assert/strict';
 import test from 'node:test';

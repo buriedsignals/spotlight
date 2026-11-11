@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stand-in for Engine's `bsig --json wiki case-search`, shared by
-tests/case-search-check.py, harness/pi/src/launcher.test.ts and
+tests/case-search-check.py, the launcher tests (harness/pi/src/launcher.part*.test.ts) and
 harness/review/test. It prints the NDJSON contract of Engine's wiki verb
 (progress events, then one `result` event whose data.result carries claim,
 ranking, embeddings, note and passages of path, chunk, text, score; or one

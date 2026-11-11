@@ -153,7 +153,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 // and its finalization bind (the rest are in its denyWrites), nor anything in
 // the folders the evidence bundle's files live in, which the gate's dependency
 // digest hashes too. A follow-up returns the case to Investigation, where it
-// may again. launcher.test.ts checks the list against the provenance builder's
+// may again. The launcher tests check the list against the provenance builder's
 // gate dependencies.
 export const GATE_BOUND = new Set(['summary.md', 'data/summary.json', 'data/case-contract.json', 'data/provenance-manifest.json', 'review.html']);
 const GATE_BOUND_FOLDERS = ['research/', 'evidence/'];

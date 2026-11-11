@@ -242,6 +242,15 @@ npm test
 
 The tests run the real launcher and real pi processes against a scripted OpenAI-compatible server on 127.0.0.1. They need no network and no model.
 
+`npm test` runs four test files at a time. The launcher tests are one suite cut into `src/launcher.part*.test.ts` so they run in parallel; what they share is in `src/launcher-cases.ts`. While building, run what the change touches:
+
+```bash
+node --test src/editorial.test.ts                                              # one file
+node --test --test-name-pattern='newsroom' "src/launcher.part*.test.ts"       # one area of the launcher tests
+```
+
+The full suite is the gate before a merge, not the loop while building.
+
 ## Worker control and recovery
 
 Worker admission uses a valid resolved phase inside the queue and again before each process starts. Resolver errors or malformed status refuse admission. Investigators cannot run during approved Investigation-gate finalization, Report, Ingest or completion; reopening is the member's action on the review page, including from finalization or Report. The model cannot record that decision.
