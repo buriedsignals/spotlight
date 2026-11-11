@@ -87,8 +87,6 @@ An open-source install without the analyst declines solo Ingest
   and returns the outcome to the orchestrator.
 - **Solo edition, Subscription mode:** the ingest skill hands the case to the
   analyst persona under this same contract.
-- **Newsroom edition:** there is no local analyst; the newsroom's service
-  drafts the batch from the submitted case.
 
 ## Inputs
 

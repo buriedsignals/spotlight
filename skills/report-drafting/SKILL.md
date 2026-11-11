@@ -104,8 +104,7 @@ The renderer places this at the top of the page. Do not soften:
    relation, and lifecycle in `evidence-map.json`. Legacy `1.0` reports do not
    accept expression selections.
 
-3. **Decision check (optional).** Pi harness: not in this runtime (the newsroom edition's `run_checks` below is the newsroom's own service). Newsroom edition: call `run_checks` with kind
-   `report` instead; its flags appear on the Report page. Otherwise, if this case ran decision checks at the Investigation gate
+3. **Decision check (optional).** Pi harness: not in this runtime. Otherwise, if this case ran decision checks at the Investigation gate
    (`data/decision-signals.json` exists), check the prose before finalizing:
 
    ```
