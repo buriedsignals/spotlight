@@ -25,8 +25,8 @@ export const PROTOCOL_VERSION = '2025-11-25';
 export const CASE_REFERENCE_FILE = 'data/editorial-case.json';
 const RECEIPTS_DIR = 'receipts';
 
-// The Editorial MCP tools the harness calls. Approval is not among them: no
-// agent tool approves anything.
+// The Editorial MCP's read tools, which agents call. Approval is not among
+// the service's tools: no agent tool approves anything.
 export const KNOWLEDGE_TOOLS = ['search_knowledge', 'get_record', 'traverse', 'coverage'] as const;
 export type KnowledgeTool = (typeof KNOWLEDGE_TOOLS)[number];
 
@@ -314,6 +314,22 @@ export class EditorialClient {
 		return this.#initialize(signal);
 	}
 
+	// The tools the service lists. The harness calls no other: the service
+	// builds its tools one at a time.
+	#tools: Promise<Set<string>> | undefined;
+	async offers(tool: string, signal?: AbortSignal): Promise<boolean> {
+		await this.#initialize(signal);
+		this.#tools ??= this.#request('tools/list', {}).then((result) => {
+			const tools = (result as { tools?: unknown }).tools;
+			if (!Array.isArray(tools)) throw new EditorialError('the Editorial MCP did not list its tools');
+			return new Set(tools.map((entry) => String((entry as { name?: unknown })?.name ?? '')));
+		}).catch((error) => {
+			this.#tools = undefined;
+			throw error;
+		});
+		return (await untilAborted(this.#tools, signal)).has(tool);
+	}
+
 	// One tools/call. The answer is the tool's structuredContent (or its text
 	// content parsed as JSON) with the token scrubbed out; a tool error becomes
 	// an EditorialToolError.
@@ -333,32 +349,31 @@ export class EditorialClient {
 		const text = (result.content ?? []).filter((part) => part.type === 'text').map((part) => String(part.text ?? '')).join('\n');
 		// Error text reaches the model: no address in it, since one may be a
 		// review page's capability.
+		if (result.isError && tool === 'start_case_review' && isObject(result.structuredContent) && Array.isArray(result.structuredContent.errors)) {
+			// The service refused the batch and stored nothing; the reasons are the answer.
+			return this.sanitize({ rejected: true, errors: result.structuredContent.errors.slice(0, 200).map(String) }) as Record<string, unknown>;
+		}
 		if (result.isError) {
 			throw new EditorialToolError(`${tool}: ${this.#said(text || 'the Editorial MCP reported an error').replace(/(?:\bhttps?:)?\/\/\S+/gi, '[address removed]')}`);
 		}
 		const answer = (value: Record<string, unknown>) => {
 			const nonEmpty = (field: unknown) => typeof field === 'string' && field.length > 0;
+			const uuidOf = (field: unknown) => typeof field === 'string' && SAFE_ID.test(field);
 			const malformed =
-				(tool === 'run_checks' &&
-					(!JOB_STATES.has(String(value.state)) ||
-						!(typeof value.job_id === 'string' && SAFE_ID.test(value.job_id)) ||
-						(value.input_sha256 !== undefined && !(typeof value.input_sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.input_sha256))) ||
-						(value.flags !== undefined &&
-							!(Array.isArray(value.flags) && value.flags.every((flag) => isObject(flag) && nonEmpty(flag.target) && nonEmpty(flag.reason) && ['string', 'undefined'].includes(typeof flag.question)))))) ||
-				(tool === 'submit_case_review' &&
-					(value.status === 'staged'
-						? !(typeof value.submission_id === 'string' && SAFE_ID.test(value.submission_id) && typeof value.review_id === 'string' && SAFE_ID.test(value.review_id)) ||
-							(value.review_url !== undefined && !(typeof value.review_url === 'string' && /^https?:$/.test(URL.parse(value.review_url)?.protocol ?? '')))
-						: value.status !== 'rejected' ||
-							!(Array.isArray(value.integrity_failures) && value.integrity_failures.length > 0 && value.integrity_failures.every((failure) => isObject(failure) && typeof failure.check === 'string' && nonEmpty(failure.reason))))) ||
+				(tool === 'create_id' && !uuidOf(value.result)) ||
+				((tool === 'register_case' || tool === 'get_case_info') && !uuidOf(value.id)) ||
+				(tool === 'get_knowledge_batch_info' && !(uuidOf(value.id) && nonEmpty(value.status))) ||
+				(tool === 'start_case_review' && value.rejected !== true &&
+					(!(isObject(value.batch) && isObject(value.batch.batch_info) && uuidOf(value.batch.batch_info.id)) ||
+						!(Array.isArray(value.assigned_ids) && value.assigned_ids.every((entry) => isObject(entry) && nonEmpty(entry.type) && nonEmpty(entry.client_id) && uuidOf(entry.uuid))) ||
+						(value.review_url !== undefined && !(typeof value.review_url === 'string' && /^https?:$/.test(URL.parse(value.review_url)?.protocol ?? ''))))) ||
 				// Knowledge answers: the top-level shapes of schemas/editorial-mcp.
 				(tool === 'search_knowledge' && !(Array.isArray(value.records) && value.records.every(isObject))) ||
 				(tool === 'get_record' && !isObject(value.record)) ||
 				(tool === 'traverse' && !(typeof value.root === 'string' && Array.isArray(value.nodes) && Array.isArray(value.edges))) ||
-				(tool === 'coverage' && !(typeof value.record_id === 'string' && isObject(value.coverage))) ||
-				(tool === 'get_review_status' && value.receipt !== undefined && !isObject(value.receipt));
+				(tool === 'coverage' && !(typeof value.record_id === 'string' && isObject(value.coverage)));
 			if (malformed) throw new EditorialError(`${tool}: the Editorial MCP answered outside the contract`);
-			return this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
+			return this.sanitize(value, { keepReview: tool === 'start_case_review' }) as Record<string, unknown>;
 		};
 		if (isObject(result.structuredContent)) {
 			return answer(result.structuredContent);
@@ -429,11 +444,28 @@ function recordInCase(runPackage: RunPackage, args: string[], input?: unknown): 
 
 // ── Step 1: case start ───────────────────────────────────────────────────────
 
-export type CaseReference = { case_ref: string; title: string; custody_mode: string; editorial_origin: string; client_case_id: string };
+// `case_ref` is the case id the service issued (create_id). `confirmed` is
+// false between keeping the id and the service's answer to register_case.
+export type CaseReference = { case_ref: string; title: string; editorial_origin: string; client_case_id: string; confirmed: boolean };
 
-// register_case once per case: the reference is stored in the case, and a
-// resumed case reuses it without calling the Editorial MCP again. Owner and
-// organization come from the sign-in, never from here.
+const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
+const fileSafe = (id: string) => id.replace(/[^A-Za-z0-9._-]/g, '_');
+
+// A read the service answers with a tool error when it holds no such record.
+async function held(client: EditorialClient, tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
+	try {
+		return await client.call(tool, args, signal);
+	} catch (error) {
+		if (error instanceof EditorialToolError) return undefined;
+		throw error;
+	}
+}
+
+// Registers the case once. Every id is the service's: create_id issues it,
+// the case keeps it before register_case uses it, and a resumed case whose
+// registration was never confirmed asks get_case_info first, because the
+// service refuses an id it already holds. Owner and organization come from
+// the sign-in, never from here.
 export async function ensureCaseRegistered(
 	client: EditorialClient,
 	config: HarnessConfig,
@@ -443,6 +475,7 @@ export async function ensureCaseRegistered(
 	const editorial = config.editorial!;
 	const origin = new URL(editorial.url).origin;
 	const stored = readCaseJson(config.caseDir, CASE_REFERENCE_FILE);
+	let reference: CaseReference;
 	if (stored) {
 		const complete = typeof stored.case_ref === 'string' && SAFE_ID.test(stored.case_ref) && typeof stored.client_case_id === 'string' && stored.client_case_id
 			&& typeof stored.editorial_origin === 'string' && URL.parse(stored.editorial_origin)?.origin === stored.editorial_origin;
@@ -457,124 +490,22 @@ export async function ensureCaseRegistered(
 		if (stored.client_case_id !== config.caseId) {
 			throw new Error(`this case folder holds the newsroom reference of another case (${String(stored.client_case_id)}), so it was not started; start it as a new case instead`);
 		}
-		return { reference: stored as unknown as CaseReference, registered: false };
+		reference = { ...(stored as unknown as CaseReference), confirmed: stored.confirmed === true };
+		if (reference.confirmed) return { reference, registered: false };
+	} else {
+		const issued = await client.call('create_id', {}, signal);
+		reference = { case_ref: issued.result as string, title: editorial.caseTitle, editorial_origin: origin, client_case_id: config.caseId, confirmed: false };
+		await recordInCase(runPackage, ['register', config.caseDir], reference);
 	}
-	const answer = await client.call('register_case', {
-		title: editorial.caseTitle,
-		custody_mode: editorial.custodyMode,
-		client_case_id: config.caseId,
-	}, signal);
-	const caseRef = answer.case_ref;
-	if (typeof caseRef !== 'string' || !SAFE_ID.test(caseRef)) {
-		throw new EditorialError('register_case returned no usable case_ref');
-	}
-	const reference: CaseReference = { case_ref: caseRef, title: editorial.caseTitle, custody_mode: editorial.custodyMode, editorial_origin: origin, client_case_id: config.caseId };
+	const known = stored ? await held(client, 'get_case_info', { case_id: reference.case_ref }, signal) : undefined;
+	const answer = known ?? (await client.call('register_case', { case_id: reference.case_ref, case_name: reference.title }, signal));
+	if (answer.id !== reference.case_ref) throw new EditorialError('the newsroom answered for another case than the one registered');
+	reference = { ...reference, confirmed: true };
 	await recordInCase(runPackage, ['register', config.caseDir], reference);
-	return { reference, registered: true };
+	return { reference, registered: !known };
 }
 
-// ── Step 3: decision checks at the Investigation gate and the Report ─────────
-
-export type CheckKind = 'findings' | 'report';
-const CHECK_INPUTS: Record<CheckKind, Array<[string, string, boolean]>> = {
-	// [field, case file, required]
-	findings: [['findings', 'data/findings.json', true], ['passages', 'data/source-expressions.json', false], ['fact_check', 'data/fact-check.json', false]],
-	report: [['report', 'data/report-draft.json', true], ['findings', 'data/findings.json', true]],
-};
-const JOB_STATES = new Set(['queued', 'running', 'done', 'failed', 'unavailable']);
-const REVIEW_STATES = new Set(['pending', 'approved', 'rejected', 'expired']);
-
-export type CheckRecord = {
-	kind: CheckKind;
-	state: 'done' | 'failed' | 'unavailable';
-	job_id?: string;
-	input_sha256: string;
-	inputs: Record<string, string | null>;
-	flags: Array<{ target: string; question: string; reason: string }>;
-	reason?: string;
-	checked_at: string;
-};
-
-// The artifact sent, and the sha256 of each case file it was read from (null
-// when an optional one is absent): the review pages show the checks only
-// while those files are unchanged.
-function checkArtifact(caseDir: string, kind: CheckKind): { artifact: Record<string, unknown>; inputs: Record<string, string | null> } {
-	const artifact: Record<string, unknown> = {};
-	const inputs: Record<string, string | null> = {};
-	for (const [field, path, required] of CHECK_INPUTS[kind]) {
-		const value = readCaseJson(caseDir, path);
-		inputs[path] = value ? sha256(readFileSync(resolve(caseDir, path))) : null;
-		if (!value) {
-			if (required) throw new Error(`run_checks: ${path} is missing or unreadable, so there is nothing to check`);
-			continue;
-		}
-		artifact[field] = value;
-	}
-	return { artifact, inputs };
-}
-
-// The client checked each flag against the contract.
-function flagsOf(value: unknown): CheckRecord['flags'] {
-	return ((value ?? []) as Array<Record<string, string>>)
-		.map((flag) => ({ target: flag.target, question: flag.question ?? '', reason: flag.reason }))
-		.slice(0, 500);
-}
-
-// run_checks returns a job; the harness polls it with the job id until the
-// flags arrive. A flag never blocks. "Unavailable" is recorded as such and
-// never read as "no flags".
-// `caseRef`: the reference ensureCaseRegistered validated at the start.
-export async function runChecks(
-	client: EditorialClient,
-	caseRef: string,
-	caseDir: string,
-	kind: CheckKind,
-	runPackage: RunPackage,
-	options: { signal?: AbortSignal; pollMs?: number; deadlineMs?: number } = {},
-): Promise<CheckRecord> {
-	const { artifact, inputs } = checkArtifact(caseDir, kind);
-	const inputSha = sha256(JSON.stringify(artifact));
-	let answer = await client.call('run_checks', { case_ref: caseRef, kind, artifact, artifact_sha256: inputSha }, options.signal);
-	const jobId = typeof answer.job_id === 'string' ? answer.job_id : undefined;
-	const deadline = Date.now() + (options.deadlineMs ?? 600_000);
-	while (jobId && (answer.state === 'queued' || answer.state === 'running')) {
-		if (Date.now() > deadline) {
-			answer = { state: 'unavailable', reason: 'the decision checks did not finish in time' };
-			break;
-		}
-		await new Promise((done) => setTimeout(done, options.pollMs ?? 1000));
-		options.signal?.throwIfAborted();
-		answer = await client.call('run_checks', { case_ref: caseRef, job_id: jobId }, options.signal);
-		if (answer.job_id !== jobId) throw new EditorialError('run_checks answered a poll with another job\'s result');
-	}
-	const state = String(answer.state);
-	const record: CheckRecord = {
-		kind,
-		state: state === 'done' ? 'done' : state === 'failed' ? 'failed' : 'unavailable',
-		input_sha256: inputSha,
-		inputs,
-		flags: state === 'done' ? flagsOf(answer.flags) : [],
-		checked_at: now(),
-	};
-	if (jobId) record.job_id = jobId;
-	if (state === 'done' && typeof answer.input_sha256 === 'string' && answer.input_sha256 !== inputSha) {
-		record.state = 'failed';
-		record.flags = [];
-		record.reason = 'the service checked a different input than the one sent';
-	} else if (state !== 'done') {
-		record.reason = String(answer.reason ?? answer.error ?? `the decision checks ended ${state}`);
-	}
-	await recordInCase(runPackage, ['checks', caseDir], record);
-	return record;
-}
-
-// ── Step 5: Submit ───────────────────────────────────────────────────────────
-
-export type PackageBuild = {
-	package: Record<string, unknown>;
-	files: Array<Record<string, unknown>>;
-	package_sha256: string;
-};
+// ── Step 2: Submit ───────────────────────────────────────────────────────────
 
 export type SubmitDeps = {
 	client: EditorialClient;
@@ -592,88 +523,93 @@ export type SubmitDeps = {
 };
 
 export type SubmitOutcome =
-	| { state: 'blocked'; integrity_failures: Array<Record<string, unknown>> }
-	| { state: 'submitted'; submission_id: string; review_id: string; review_state: string; review_opened: boolean; notice?: string; receipts: string[] };
+	| { state: 'blocked'; errors: string[] }
+	| { state: 'submitted'; batch_id: string; review_state: string; review_opened: boolean; notice?: string; receipts: string[] };
 
 const REVIEW_ADDRESS_REFUSED =
 	'the case was submitted, but the newsroom returned a review address outside the newsroom\'s allowed endpoints, so Spotlight did not open it. Open the review in the newsroom\'s own tool.';
-
-const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
-const fileSafe = (id: string) => id.replace(/[^A-Za-z0-9._-]/g, '_');
+const REVIEW_ADDRESS_LOST =
+	'the case was submitted before Spotlight last stopped, so the review address is no longer available. Open the review in the newsroom\'s own tool.';
 
 // A submission a crash left between its recorded intent and its outcome.
 export async function pendingSubmission(runPackage: RunPackage, caseDir: string): Promise<boolean> {
 	return (await recordInCase(runPackage, ['pending', caseDir])).pending === true;
 }
 
-// Builds the Submit package (scripts/newsroom-package.py), sends it with
-// submit_case_review and reads the review status. The intent is recorded
-// first, under the case lock, and only once the member requested ingestion
-// on the ingest page: from then on a crash leaves a pending submission that
-// resumes with the same idempotency key (the package sha256), which the
-// Editorial MCP answers with the submission it already staged. A failed
-// integrity check leaves the case at Ingest with the reasons recorded;
-// otherwise the receipts, the submission and the completed ingest marker are
-// recorded together, and the phase seals them.
+// Sends the approved batch with start_case_review (scripts/newsroom-package.py
+// turns it into the service's input) and reads the batch's review status.
+// The batch id is the service's (create_id) and the service stores an id at
+// most once, so the intent is recorded first, with that id, under the case
+// lock and only once the member requested ingestion on the ingest page. A
+// crash then leaves a pending submission: the next start asks the service
+// whether it holds the batch and sends it only if not. A refused batch leaves
+// the case at Ingest with the reasons recorded; otherwise the receipts, the
+// ids the service assigned and the completed ingest marker are recorded
+// together, and the phase seals them.
 export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
-	const { client, caseRef, caseDir, runPackage } = deps;
-	const scratch = mkdtempSync(join(tmpdir(), 'spotlight-package-'));
-	let build: PackageBuild;
+	const { client, caseRef, caseDir, runPackage, signal } = deps;
+	const pending = await recordInCase(runPackage, ['pending', caseDir]);
+	const resumed = pending.pending === true;
+	const batchId = resumed ? String(pending.batch_id) : ((await client.call('create_id', {}, signal)).result as string);
+	const scratch = mkdtempSync(join(tmpdir(), 'spotlight-batch-'));
+	let build: { request: Record<string, unknown>; request_sha256: string };
 	try {
-		const out = join(scratch, 'package.json');
-		build = await packageScript(runPackage, ['build', caseDir, '--out', out], undefined, () => JSON.parse(readFileSync(out, 'utf8')) as PackageBuild, 'the Submit package could not be built');
+		const out = join(scratch, 'request.json');
+		build = await packageScript(runPackage, ['request', caseDir, '--case-id', caseRef, '--batch-id', batchId, '--out', out], undefined,
+			() => JSON.parse(readFileSync(out, 'utf8')) as typeof build, 'the batch could not be prepared for the newsroom');
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
 	}
-	const key = build.package_sha256;
-	await recordInCase(runPackage, ['begin', caseDir, '--package-sha256', key]);
-	const answer = await client.call('submit_case_review', { case_ref: caseRef, idempotency_key: key, package: build.package, files: build.files }, deps.signal);
-	if (answer.status === 'rejected') {
-		const reasons = client.sanitize((answer.integrity_failures as unknown[]).slice(0, 200)) as Array<Record<string, unknown>>;
-		await recordInCase(runPackage, ['blocked', caseDir, '--package-sha256', key], { integrity_failures: reasons });
-		return { state: 'blocked', integrity_failures: reasons };
+	const key = build.request_sha256;
+	await recordInCase(runPackage, ['begin', caseDir, '--package-sha256', key, '--batch-id', batchId]);
+	const info = () => held(client, 'get_knowledge_batch_info', { batch_id: batchId }, signal);
+	let stored = resumed ? await info() : undefined;
+	let answer = stored ? undefined : await client.call('start_case_review', { request: build.request }, signal);
+	if (answer?.rejected === true) {
+		// A resumed batch id the service refuses may be one it already stored
+		// while its status could not be read: ask again before calling it refused.
+		stored = resumed ? await info() : undefined;
+		if (!stored) {
+			const errors = answer.errors as string[];
+			await recordInCase(runPackage, ['blocked', caseDir, '--package-sha256', key], { errors });
+			return { state: 'blocked', errors };
+		}
+		answer = undefined;
 	}
-	// call() checked the staged answer's ids against the contract.
-	const submissionId = answer.submission_id as string;
-	const reviewId = answer.review_id as string;
-	const address = typeof answer.review_url === 'string' ? answer.review_url : undefined;
-	const status = await client.call('get_review_status', { review_id: reviewId }, deps.signal);
-	// The status must be this review's, in a state the contract names, before
-	// the submission is marked complete; otherwise the intent stays pending.
-	if (status.review_id !== reviewId || !REVIEW_STATES.has(String(status.state))) {
-		throw new EditorialError('get_review_status answered for another review or without a valid state');
-	}
-	const reviewState = String(status.state);
+	const address = typeof answer?.review_url === 'string' ? answer.review_url : undefined;
+	const status = stored ?? (await client.call('get_knowledge_batch_info', { batch_id: batchId }, signal));
+	// The status must be this batch's before the submission is marked
+	// complete; otherwise the intent stays pending.
+	if (status.id !== batchId) throw new EditorialError('get_knowledge_batch_info answered for another batch');
+	const reviewState = String(status.status);
 	// The address is kept nowhere, so the page opens before the submission is
-	// marked complete: if opening fails, the intent stays pending and a retry
-	// with the same key gets the address again. An address off the newsroom's
-	// endpoints is refused for good, so it completes (pending would hold the
-	// case forever) and the member is told where the review is.
+	// marked complete: if opening fails, the intent stays pending. An address
+	// off the newsroom's endpoints is refused for good, so it completes
+	// (pending would hold the case forever) and the member is told where the
+	// review is.
 	const opened = address ? await deps.openReview(address) : false;
-	const refused = address !== undefined && !opened;
+	const notice = opened ? undefined : address ? REVIEW_ADDRESS_REFUSED : REVIEW_ADDRESS_LOST;
 	const receipts: Record<string, unknown> = {
-		[`submission-${fileSafe(submissionId)}.json`]: {
-			tool: 'submit_case_review',
+		[`submission-${fileSafe(batchId)}.json`]: {
+			tool: 'start_case_review',
 			received_at: now(),
 			package_sha256: key,
-			response: client.sanitize(answer, { address }),
-			...(refused ? { review_address: 'refused: outside the newsroom\'s allowed endpoints, not opened' } : {}),
+			response: answer ? client.sanitize(answer, { address }) : { recovered: 'the service already held this batch when Spotlight restarted' },
+			...(address && !opened ? { review_address: 'refused: outside the newsroom\'s allowed endpoints, not opened' } : {}),
 		},
-		[`review-status-${fileSafe(reviewId)}.json`]: { tool: 'get_review_status', received_at: now(), response: client.sanitize(status, { address }) },
+		[`review-status-${fileSafe(batchId)}.json`]: { tool: 'get_knowledge_batch_info', received_at: now(), response: client.sanitize(status, { address }) },
 	};
-	if (status.receipt && typeof status.receipt === 'object') receipts[`review-${fileSafe(reviewId)}.json`] = client.sanitize(status.receipt, { address });
 	await recordInCase(
 		runPackage,
-		['complete', caseDir, '--package-sha256', key, '--submission-id', submissionId, '--review-id', reviewId],
-		{ receipts, review_state: reviewState },
+		['complete', caseDir, '--package-sha256', key, '--batch-id', batchId],
+		{ receipts, review_state: reviewState, assigned_ids: answer ? client.sanitize(answer.assigned_ids) : null },
 	);
 	return {
 		state: 'submitted',
-		submission_id: submissionId,
-		review_id: reviewId,
+		batch_id: batchId,
 		review_state: reviewState,
 		review_opened: opened,
-		...(refused ? { notice: REVIEW_ADDRESS_REFUSED } : {}),
+		...(notice ? { notice } : {}),
 		receipts: Object.keys(receipts).map((name) => `${RECEIPTS_DIR}/${name}`).sort(),
 	};
 }

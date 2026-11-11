@@ -312,7 +312,7 @@ def rebuild_ingest_batch(case: Path) -> None:
     """Rebuild the draft and, when nothing is pending, the final batch, after
     a page edit. Runs outside the edit's lock: the builder takes it itself.
     A refusal is recorded in the draft, which the page shows as blocking."""
-    if not activated_case(case) or ingest_mode() != "solo" or not case_path(case, INGEST_PROPOSAL).is_file():
+    if not activated_case(case) or not case_path(case, INGEST_PROPOSAL).is_file():
         return
     done = subprocess.run([sys.executable, str(SCRIPT_DIR / "build-knowledge-batch.py"), str(case), "--review"],
                           capture_output=True, text=True, check=False)
@@ -1153,18 +1153,6 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
     their own ingest flow and show no batch."""
     if not activated_case(case):
         return {"batch": {"state": "empty", "records": []}}, [], []
-    if ingest_mode() == "newsroom":
-        # Newsroom cases write nothing locally; the package goes to the newsroom.
-        content: dict[str, Any] = {"batch": {"state": "newsroom", "records": []}}
-        submission = _read_case_json(case, NEWSROOM_SUBMISSION)
-        if isinstance(submission, dict) and submission.get("state") in ("blocked", "submitted"):
-            failures = submission.get("integrity_failures") if isinstance(submission.get("integrity_failures"), list) else []
-            content["submission"] = {
-                "state": submission["state"],
-                "reasons": [_text(f.get("reason"), 1000) for f in failures[:50] if isinstance(f, dict)],
-                "review_state": _text(submission.get("review_state"), 40),
-            }
-        return content, [], []
     proposal = _read_case_json(case, INGEST_PROPOSAL)
     draft = _read_case_json(case, INGEST_DRAFT)
     final = _read_case_json(case, INGEST_BATCH)
@@ -1208,8 +1196,18 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
                           "required": True})
     items += _unresolved_mentions(case, batch)
     state = "final" if isinstance(final, dict) else "draft" if isinstance(batch, dict) else "empty"
-    content = {"batch": {"state": state, "records": records,
-                         "batch_sha256": _batch_sha256(case) if state == "final" else None}}
+    content: dict[str, Any] = {"batch": {"state": state, "records": records,
+                                         "batch_sha256": _batch_sha256(case) if state == "final" else None}}
+    if ingest_mode() == "newsroom":
+        # The approved batch goes to the newsroom; the page shows how that went.
+        submission = _read_case_json(case, NEWSROOM_SUBMISSION)
+        if isinstance(submission, dict) and submission.get("state") in ("blocked", "submitted"):
+            failures = submission.get("integrity_failures") if isinstance(submission.get("integrity_failures"), list) else []
+            content["submission"] = {
+                "state": submission["state"],
+                "reasons": [_text(f.get("reason"), 1000) for f in failures[:50] if isinstance(f, dict)],
+                "review_state": _text(submission.get("review_state"), 40),
+            }
     return content, blocking, items
 
 

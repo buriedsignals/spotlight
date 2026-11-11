@@ -57,7 +57,6 @@
         "brief-directions.txt"
       ],
       "newsroomTools": [
-        "run_checks",
         "newsroom_submit"
       ]
     },

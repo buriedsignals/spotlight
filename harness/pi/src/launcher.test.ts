@@ -4741,7 +4741,7 @@ function orchestratorScript(calls: Array<{ name: string; arguments: Record<strin
 	};
 }
 
-test('newsroom edition: register_case runs once per case, and a resumed chat reuses the stored reference', async (t) => {
+test('newsroom edition: the case is registered once, under an id the service issued, and a resumed chat reuses the stored reference', async (t) => {
 	const fake = await startFakeOpenAI(resolveThenStop);
 	const editorial = await startFakeEditorial();
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
@@ -4755,9 +4755,9 @@ test('newsroom edition: register_case runs once per case, and a resumed chat reu
 		assert.equal((await session.exited).code, 0);
 	}
 
-	assert.deepEqual(editorial.callsOf('register_case'), [{ title: 'Acme payments', custody_mode: 'hosted', client_case_id: 'case-a' }]);
-	const stored = JSON.parse(await readFile(join(space.casesRoot, 'case-a', 'data', 'editorial-case.json'), 'utf8')) as { case_ref: string };
-	assert.equal(stored.case_ref, 'nr-case-1');
+	const stored = JSON.parse(await readFile(join(space.casesRoot, 'case-a', 'data', 'editorial-case.json'), 'utf8')) as { case_ref: string; confirmed: boolean };
+	assert.equal(stored.confirmed, true);
+	assert.deepEqual(editorial.calls.map((call) => [call.tool, call.args]), [['create_id', {}], ['register_case', { case_id: stored.case_ref, case_name: 'Acme payments' }]]);
 
 	// The same case started as a solo case would split custody: refused.
 	const solo = launch(t, baseEnv(space, fake.baseURL));
@@ -4767,28 +4767,29 @@ test('newsroom edition: register_case runs once per case, and a resumed chat reu
 	assert.deepEqual(solo.lines, []);
 });
 
-test('newsroom edition: prior knowledge and decision checks go to the Editorial MCP; no query_vault or local decision check runs, and no pi process sees the token', async (t) => {
+test('newsroom edition: prior knowledge goes to the Editorial MCP, a read tool the service does not list is never called, no query_vault or decision check runs, and no pi process sees the token', async (t) => {
 	const fake = await startFakeOpenAI(
 		orchestratorScript(
 			[
 				{ name: 'decision_signals', arguments: { phase: 'investigation_gate' } },
 				{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Look for prior reporting on Acme.' } },
-				{ name: 'run_checks', arguments: { kind: 'findings' } },
 			],
 			(request) =>
 				toolResults(request).length === 0
 					? { toolCalls: [{ name: 'search_knowledge', arguments: { query: 'Acme payments' } }] }
 					: toolResults(request).length === 1
 						? { toolCalls: [{ name: 'get_record', arguments: { record_id: 'claim:gone' } }] }
-						: { text: 'Found prior reporting.' },
+						: toolResults(request).length === 2
+							? { toolCalls: [{ name: 'traverse', arguments: { record_id: 'claim:prior-1' } }] }
+							: { text: 'Found prior reporting.' },
 		),
 	);
 	// The newsroom's own error text is long: the worker gets it capped.
-	const editorial = await startFakeEditorial({ handlers: { get_record: () => ({ isError: true, text: `no such record ${'z'.repeat(30_000)}` }) } });
+	const editorial = await startFakeEditorial({ handlers: { get_record: () => ({ isError: true, text: `no such record ${'z'.repeat(30_000)}` }) }, unlisted: ['traverse'] });
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
 	const caseDir = await caseAtInvestigation(space);
-	// The investigator runs only before the Investigation gate; run_checks needs findings to send.
+	// The investigator runs only before the Investigation gate.
 	const source = join(space.root, 'gate-fixture');
 	await new Promise<void>((done, fail) =>
 		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate'], (error) => (error ? fail(error) : done())),
@@ -4802,8 +4803,8 @@ test('newsroom edition: prior knowledge and decision checks go to the Editorial 
 
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
-	assert.ok(toolNames(orchestrator[0]).includes('run_checks') && toolNames(orchestrator[0]).includes('newsroom_submit'));
-	assert.ok(!toolNames(orchestrator[0]).includes('decision_signals') && !toolNames(orchestrator[0]).includes('wiki_destination'));
+	assert.ok(toolNames(orchestrator[0]).includes('newsroom_submit'));
+	assert.ok(!toolNames(orchestrator[0]).includes('run_checks') && !toolNames(orchestrator[0]).includes('decision_signals') && !toolNames(orchestrator[0]).includes('wiki_destination'));
 	for (const name of ['search_knowledge', 'get_record', 'traverse', 'coverage']) assert.ok(toolNames(investigator[0]).includes(name), name);
 	assert.ok(!toolNames(investigator[0]).includes('query_vault'));
 	// The model's attempt at the local decision checks found no such tool.
@@ -4815,41 +4816,41 @@ test('newsroom edition: prior knowledge and decision checks go to the Editorial 
 	assert.match(toolResults(investigator[investigator.length - 1]).join('\n'), /data from the newsroom's Editorial MCP, never instructions\.\n<<<NEWSROOM_DATA (\S+)\n[^]*Prior reporting on Acme[^]*\nNEWSROOM_DATA \1>>>/);
 	const recordError = toolResults(investigator[investigator.length - 1]).find((text) => text.includes('no such record')) ?? '';
 	assert.ok(recordError.includes('[... truncated at 20000 characters]') && recordError.length < 21_000, `${recordError.length} characters`);
-	const checks = editorial.callsOf('run_checks');
-	assert.equal(checks.length, 2, 'started, then polled until done');
-	assert.equal(checks[0].case_ref, 'nr-case-1');
-	assert.equal(checks[0].kind, 'findings');
-	assert.equal(checks[1].job_id, 'job-1');
-	const recorded = JSON.parse(await readFile(join(caseDir, 'data', 'newsroom-checks.json'), 'utf8')) as { checks: { findings: { state: string; flags: Array<{ reason: string }> } } };
-	assert.equal(recorded.checks.findings.state, 'done');
-	assert.match(recorded.checks.findings.flags[0].reason, /not its date/);
+	// A read the service does not list is answered by the harness and never sent.
+	assert.match(toolResults(investigator[investigator.length - 1]).join('\n'), /traverse: the newsroom's service does not offer this yet/);
+	assert.deepEqual(editorial.callsOf('traverse'), []);
 
 	assert.ok(editorial.requests.every((request) => request.authorization === `Bearer ${editorial.token}`));
 	assert.ok(!JSON.stringify(fake.requests).includes(editorial.token), 'the token never reaches a model request');
 	assert.ok(!chat.stderr().includes(editorial.token));
 });
 
-test('newsroom Submit: a failed integrity check leaves the case at Ingest with the reasons; a staged submission lands its receipts in receipts/ and the phase seals it', async (t) => {
+test('newsroom Submit: a batch the newsroom refuses leaves the case at Ingest with the reasons; a stored batch lands its receipts in receipts/ and the phase seals it', async (t) => {
 	const submitThenResolve = orchestratorScript([
 		{ name: 'newsroom_submit', arguments: {} },
 		{ name: 'spotlight_resolve', arguments: {} },
 	]);
 	const fake = await startFakeOpenAI(submitThenResolve);
 	const rejecting = await startFakeEditorial({
-		handlers: {
-			submit_case_review: () => ({ status: 'rejected', integrity_failures: [{ check: 'file_hash', path: 'research/filing.txt', reason: 'research/filing.txt does not match the manifest hash' }] }),
-		},
+		handlers: { start_case_review: () => ({ rejected: ['evidence[0].content_sha256: research/filing.txt does not match the manifest hash'] }) },
 	});
 	let stagingOrigin = '';
 	const staging = await startFakeEditorial({
 		// It echoes the model route's token: no receipt keeps it.
-		handlers: { submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: `${stagingOrigin}/review/rev-1`, note: 'route-auth-token-0123456789' }) },
+		handlers: {
+			start_case_review: (args) => ({
+				batch: { batch_info: { id: (args.request as { batch_id: string }).batch_id, status: 'submitted' }, records: {} },
+				assigned_ids: [],
+				review_url: `${stagingOrigin}/review/rev-1`,
+				note: 'route-auth-token-0123456789',
+			}),
+		},
 	});
 	stagingOrigin = new URL(staging.url).origin;
 	t.after(() => Promise.all([fake.close(), rejecting.close(), staging.close()]));
 
 	const blocked = await workspace(t);
-	const blockedCase = await caseAtIngest(blocked);
+	const blockedCase = await caseAtIngest(blocked, {}, ['--proposal']);
 	const blockedEnv = newsroomEnv(blocked, newsroomRoute(fake.baseURL), rejecting);
 	await requestNewsroomIngest(blockedCase, blockedEnv);
 	const first = launch(t, blockedEnv);
@@ -4865,7 +4866,7 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 	await assert.rejects(readdir(join(blockedCase, 'receipts')), { code: 'ENOENT' });
 
 	const staged = await workspace(t);
-	const stagedCase = await caseAtIngest(staged);
+	const stagedCase = await caseAtIngest(staged, {}, ['--proposal']);
 	const route = [{ ...newsroomRoute(fake.baseURL)[0], key_env: 'ROUTE_AUTH' }];
 	const stagedEnv = newsroomEnv(staged, route, staging, { ROUTE_AUTH: 'route-auth-token-0123456789' });
 	await requestNewsroomIngest(stagedCase, stagedEnv);
@@ -4874,8 +4875,9 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 	second.process.stdin.end();
 	await second.exited;
 
-	assert.deepEqual((await readdir(join(stagedCase, 'receipts'))).sort(), ['review-rev-1.json', 'review-status-rev-1.json', 'submission-sub-1.json']);
-	const receipt = await readFile(join(stagedCase, 'receipts', 'submission-sub-1.json'), 'utf8');
+	const [batchId] = staging.staged;
+	assert.deepEqual((await readdir(join(stagedCase, 'receipts'))).sort(), [`review-status-${batchId}.json`, `submission-${batchId}.json`]);
+	const receipt = await readFile(join(stagedCase, 'receipts', `submission-${batchId}.json`), 'utf8');
 	assert.ok(receipt.includes('[redacted]') && !receipt.includes('route-auth-token'), receipt);
 	// The review address is the member's: no model request carries it.
 	assert.ok(!JSON.stringify(fake.requests).includes('/review/rev-1'), 'the review address never reaches a model');
@@ -4884,12 +4886,14 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 		assert.ok(!openerEnv.includes('route-auth-token') && !openerEnv.includes(staging.token), 'the opener gets no token');
 	}
 	assert.equal((JSON.parse(await readFile(join(stagedCase, 'data', 'newsroom-submission.json'), 'utf8')) as { state: string }).state, 'submitted');
-	assert.deepEqual(staging.callsOf('get_review_status'), [{ review_id: 'rev-1' }]);
+	assert.deepEqual(staging.callsOf('get_knowledge_batch_info'), [{ batch_id: batchId }]);
 	// The resolve after the submission seals the completed ingest itself (fixed step).
 	assert.deepEqual((lastResolution(second) as { ingest?: unknown }).ingest, { state: 'completed', resume_at: 'complete' });
-	const [sent] = staging.callsOf('submit_case_review') as Array<{ case_ref: string; package: { evidence_manifest: { files: Array<{ path: string; sha256: string }> } }; files: Array<{ path: string; sha256: string; content_base64: string }> }>;
-	assert.equal(sent.case_ref, 'nr-case-1');
-	assert.deepEqual(sent.files.map((file) => [file.path, file.sha256]), sent.package.evidence_manifest.files.map((file) => [file.path, file.sha256]));
+	// What travelled is the approved batch, under the registered case and the batch id the service issued.
+	const [{ request: sent }] = staging.callsOf('start_case_review') as Array<{ request: { case_id: string; batch_id: string; claims: Array<{ client_id: string }> } }>;
+	const registered = JSON.parse(await readFile(join(stagedCase, 'data', 'editorial-case.json'), 'utf8')) as { case_ref: string };
+	const approved = JSON.parse(await readFile(join(stagedCase, 'data', 'knowledge-batch.json'), 'utf8')) as { claims: Array<{ id: string }> };
+	assert.deepEqual([sent.case_id, sent.batch_id, sent.claims.map((claim) => claim.client_id)], [registered.case_ref, batchId, approved.claims.map((claim) => claim.id)]);
 });
 
 test('newsroom Submit: a case phase the resolver cannot read is an error, never a skip, and nothing is sent', async (t) => {
@@ -4897,7 +4901,7 @@ test('newsroom Submit: a case phase the resolver cannot read is an error, never 
 	const editorial = await startFakeEditorial();
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	const caseDir = await caseAtIngest(space);
+	const caseDir = await caseAtIngest(space, {}, ['--proposal']);
 	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
 	await requestNewsroomIngest(caseDir, env);
 	// The resolver (the adapter's `status`) fails; everything else runs on the real interpreter.
@@ -4913,18 +4917,19 @@ test('newsroom Submit: a case phase the resolver cannot read is an error, never 
 	const shown = fake.requests.map((request) => toolResults(request).join('\n')).join('\n');
 	assert.match(shown, /could not resolve the case phase/);
 	assert.doesNotMatch(shown, /skipped/);
-	assert.deepEqual(editorial.callsOf('submit_case_review'), []);
+	assert.deepEqual(editorial.callsOf('start_case_review'), []);
 	// The resolver the launcher runs never gets the Editorial token.
 	assert.ok(!(await readFile(seen, 'utf8')).includes(editorial.token), 'the resolver saw the Editorial token');
 });
 
 test('a revoked newsroom token stops the harness with a plain message and exit code 4, and the token never appears in the logs', async (t) => {
-	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'run_checks', arguments: { kind: 'findings' } }]));
+	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'newsroom_submit', arguments: {} }]));
 	const editorial = await startFakeEditorial();
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	await caseAtIngest(space);
+	const caseDir = await caseAtIngest(space, {}, ['--proposal']);
 	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
+	await requestNewsroomIngest(caseDir, env);
 
 	const chat = launch(t, env);
 	await waitUntil(() => editorial.callsOf('register_case').length === 1);
@@ -4968,46 +4973,44 @@ test('an Editorial MCP that cannot be used stops the newsroom case with a plain 
 	await assert.rejects(lockRecord(space), 'the case lock is released');
 });
 
-test('newsroom Submit: a crash after the newsroom staged the package resumes on the next start with the same key; a resume that fails stops the case; nothing is lost or sent twice', { timeout: 90_000 }, async (t) => {
+test('newsroom Submit: a crash after the newsroom stored the batch resumes on the next start under the same batch id; a resume that fails stops the case; nothing is lost or sent twice', { timeout: 90_000 }, async (t) => {
 	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'newsroom_submit', arguments: {} }, { name: 'spotlight_resolve', arguments: {} }]));
-	// The review status is unreadable once: the harness stops between the
-	// staged submission and recording it, as a crash there would. On the next
-	// start it answers with an error once, then normally.
+	// The batch status is unreadable twice: the harness stops between the
+	// stored batch and recording it, as a crash there would, and the next
+	// start cannot resume. Then it answers normally.
 	const editorial = await startFakeEditorial({
-		handlers: {
-			get_review_status: (args, index) =>
-				index === 0 ? { unstructured: 'not json' } : index === 1 ? { isError: true, text: 'review store busy' } : { review_id: args.review_id, state: 'pending' },
-		},
+		handlers: { get_knowledge_batch_info: (args, index) => (index < 2 ? { unstructured: 'not json' } : { id: args.batch_id, status: 'submitted' }) },
 	});
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	const caseDir = await caseAtIngest(space);
+	const caseDir = await caseAtIngest(space, {}, ['--proposal']);
 	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
 	await requestNewsroomIngest(caseDir, env);
 
 	const first = launch(t, env);
 	first.send({ id: 'p', type: 'prompt', message: 'Continue.' });
 	assert.equal((await first.exited).code, 5);
-	await assert.rejects(readFile(join(caseDir, 'receipts', 'submission-sub-1.json')), { code: 'ENOENT' });
+	await assert.rejects(readdir(join(caseDir, 'receipts')), { code: 'ENOENT' });
 
 	// A resume that fails stops the case before any work starts.
 	const failed = launch(t, env);
-	assert.equal((await failed.exited).code, 1);
-	assert.match(failed.stderr(), /cannot start: the submission that was pending could not be resumed, so the case did not start: get_review_status: review store busy/);
+	assert.equal((await failed.exited).code, 5);
+	assert.match(failed.stderr(), /cannot start: the newsroom service could not be used/);
 	assert.deepEqual(failed.lines, []);
 
 	const second = launch(t, env);
-	await waitUntil(() => second.stderr().includes('submitted the case to the newsroom'), 30_000);
+	await waitUntil(() => second.stderr().includes('submitted the batch to the newsroom'), 30_000);
 	second.process.stdin.end();
 	assert.equal((await second.exited).code, 0);
 
-	const keys = editorial.callsOf('submit_case_review').map((call) => call.idempotency_key);
-	assert.equal(keys.length, 3);
-	assert.ok(keys.every((key) => key === keys[0]), 'every resumed submission carries the same idempotency key');
-	assert.equal(editorial.staged.length, 1, 'the newsroom staged one revision');
-	assert.deepEqual((await readdir(join(caseDir, 'receipts'))).sort(), ['review-status-rev-1.json', 'submission-sub-1.json']);
-	const marker = JSON.parse(await readFile(join(caseDir, 'data', 'ingestion.json'), 'utf8')) as { status: string; submission_id: string };
-	assert.deepEqual([marker.status, marker.submission_id], ['completed', 'sub-1']);
+	// One batch id, issued once and sent once: the resumed starts asked whether the service held it.
+	const [batchId] = editorial.staged;
+	assert.equal(editorial.staged.length, 1, 'the newsroom stored one batch');
+	assert.deepEqual((editorial.callsOf('start_case_review') as Array<{ request: { batch_id: string } }>).map((call) => call.request.batch_id), [batchId]);
+	assert.equal(editorial.callsOf('create_id').length, 2, 'one id for the case, one for the batch');
+	assert.deepEqual((await readdir(join(caseDir, 'receipts'))).sort(), [`review-status-${batchId}.json`, `submission-${batchId}.json`]);
+	const marker = JSON.parse(await readFile(join(caseDir, 'data', 'ingestion.json'), 'utf8')) as { status: string; batch_id: string };
+	assert.deepEqual([marker.status, marker.batch_id], ['completed', batchId]);
 });
 
 // Osaurus `pi_rpc` runtime: argv, chat-to-case binding, the appended system

@@ -163,7 +163,7 @@ export const EGRESS_TOOLS = ['fetch', 'search', 'http_get', 'browse', 'navigator
 // The newsroom edition runs the same roles; only where prior knowledge,
 // decision checks and Ingest go differs. Its Editorial MCP replaces the
 // member wiki (query_vault); the orchestrator's `newsroomTools` add the
-// newsroom's decision checks and the Submit step; the solo edition has no
+// Submit step; the solo edition has no
 // decision checks, and code runs its wiki write
 // (tools/spotlight.ts, fixed steps). These tools call the newsroom's own
 // service through the launcher; they stay in sensitive mode, which keeps the
@@ -345,8 +345,9 @@ export function skillAdapterNote(skill: string, tools: string[], orchestrator: b
 // The newsroom edition's differences, appended to every role's adapter.
 const NEWSROOM_ADAPTER = `## Newsroom edition
 This case belongs to a newsroom. Prior reporting comes from the newsroom's knowledge base, not a member wiki: query-vault -> \`search_knowledge\` (then \`get_record\`, \`traverse\`, \`coverage\` on a record id it returns); there is no \`query_vault\`. Approved records are leads to re-check, never confirmed facts.
-- Orchestrator only: the decision checks run in the newsroom's service. Where a skill runs \`scripts/decision-signals.py\` at the Investigation gate or the Report, call \`run_checks\` with kind \`findings\` or \`report\` instead; the flags appear on the review page. A flag never blocks.
-- Orchestrator only, Ingest: there is no analyst and no local batch. Once the member has requested ingestion on the page (\`resume_at\` \`ingest\`), call \`newsroom_submit\`. If it reports failed integrity checks, tell the member the reasons and stop; the case stays at Ingest. If it reports the submission, resolve again: \`spotlight_resolve\` seals the ingest itself.
+- A read tool the newsroom's service does not offer yet answers that it is unavailable: carry on without it.
+- Orchestrator only: the newsroom's service runs its decision checks when the case is submitted; there is nothing to call for them before.
+- Orchestrator only, Ingest: the batch is drafted here, as in the solo edition, whatever the ingest skill says about the newsroom: \`spawn_agent\` with agent \`analyst\`, then \`open_review\` for the member to review the batch. Nothing is written to a member wiki. Once the member has requested ingestion on the page (\`resume_at\` \`ingest\`), call \`newsroom_submit\`. If it reports that the newsroom refused the batch, tell the member the reasons and stop; the case stays at Ingest. If it reports the submission, resolve again: \`spotlight_resolve\` seals the ingest itself.
 - Journalist input never goes to a third-party model; the harness enforces this.`;
 
 // The Research switch (HarnessConfig.research). Preflight, where the skills

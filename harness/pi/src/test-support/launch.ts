@@ -178,10 +178,12 @@ function python(args: string[], env: Record<string, string> = {}): Promise<strin
 }
 
 // A case at Ingest (tests/fixtures/review_case.py): activated and clean.
-export async function caseAtIngest(space: Workspace, fixtureEnv: Record<string, string> = {}): Promise<string> {
+// `flags`: more of the fixture's flags, such as `--proposal` (the analyst's
+// proposal and a built batch).
+export async function caseAtIngest(space: Workspace, fixtureEnv: Record<string, string> = {}, flags: string[] = []): Promise<string> {
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(space.casesRoot, { recursive: true });
-	await python([join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'ingest', '--activated', '--clean'], fixtureEnv);
+	await python([join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'ingest', '--activated', '--clean', ...flags], fixtureEnv);
 	return caseDir;
 }
 

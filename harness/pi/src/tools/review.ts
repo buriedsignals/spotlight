@@ -116,8 +116,7 @@ export async function missingForApproval(caseDir: string, resolved: Record<strin
 	if (resolved.phase === 'ingest' && ingest?.resume_at === 'decision' && !has('data/knowledge-batch.json') && blocked) {
 		return `No knowledge batch can be built for this case, and no analyst can change that: ${blocked} The member can decline ingestion on the page, or request a follow-up to reopen Investigation so the fact-check can be corrected. Do not spawn the analyst; tell the member this.`;
 	}
-	// The newsroom edition has no local batch and no analyst; its page is the decision (Codex review of simp-next).
-	if (resolved.phase === 'ingest' && ingest?.resume_at === 'decision' && process.env.SPOTLIGHT_EDITION !== 'newsroom' && !has('data/knowledge-batch.json') && !has('data/knowledge-batch-draft.json')) {
+	if (resolved.phase === 'ingest' && ingest?.resume_at === 'decision' && !has('data/knowledge-batch.json') && !has('data/knowledge-batch-draft.json')) {
 		return 'No knowledge batch exists, so the member can only decline ingestion on the page. If the member wants to ingest, call spawn_agent with agent analyst (phase-ingest step 1); the harness builds the batch when the analyst finishes. Then call open_review again.';
 	}
 	return undefined;

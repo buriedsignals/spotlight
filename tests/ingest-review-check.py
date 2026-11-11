@@ -163,9 +163,13 @@ class SoloIngest(SoloCase):
             return subprocess.run([sys.executable, str(GATES.SEAM), "review-view", "ingest", str(case)],
                                   capture_output=True, text=True, env={**os.environ, "SPOTLIGHT_CONFIG": value})
 
+        # Only a newsroom-mode install shows how the submission to the newsroom went.
+        (case / "data" / "newsroom-submission.json").write_text(json.dumps({"state": "blocked", "integrity_failures": [
+            {"check": "service", "reason": "claims[0]: no such record"}]}), encoding="utf-8")
         shown = view(str(config))
         self.assertEqual(shown.returncode, 0, shown.stderr)
-        self.assertEqual(json.loads(shown.stdout)["content"]["batch"]["state"], "newsroom")
+        self.assertEqual(json.loads(shown.stdout)["content"]["submission"]["reasons"], ["claims[0]: no such record"])
+        self.assertNotIn("submission", self.view(case, "ingest")["content"])
         # A relative path is refused, as the harness refuses it, rather than read from wherever the page runs.
         refused = view("spotlight-config.json")
         self.assertNotEqual(refused.returncode, 0)
