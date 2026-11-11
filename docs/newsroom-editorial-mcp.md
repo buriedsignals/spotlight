@@ -166,6 +166,35 @@ phase seals. `scripts/newsroom-package.py` writes all of these under the
 case lock; no model process can write `receipts/`, `data/editorial-case.json`
 or `data/newsroom-*.json`.
 
+## A runtime without the Pi launcher
+
+A subscription desktop app that runs the skills can work a newsroom case
+too. Its install config says `knowledge_destination.mode: "newsroom"`, and
+two things change at Ingest:
+
+- The resolver's status carries the newsroom steps in a `newsroom_edition`
+  field. It appears only on a newsroom-mode install, so the skills stay the
+  solo steps and a solo install reads nothing more.
+- After the member requested ingestion, the agent runs
+  `node harness/pi/src/newsroom-submit.ts {CASE_DIR}`. It registers the case
+  if needed, sends the approved batch and records the receipts with the same
+  code the launcher runs. The batch goes from the journalist's computer to
+  the newsroom's service and does not pass through a model.
+
+The command reads `SPOTLIGHT_EDITORIAL_MCP_URL` and
+`SPOTLIGHT_EDITORIAL_MCP_TOKEN`. It prints the outcome without the review
+address, and exits 0 (submitted), 3 (the newsroom refused the batch), 4 (the
+sign-in is no longer valid), 5 (the service could not be used) or 2.
+
+The limits of this runtime are its own. The investigation and the analyst's
+proposal run on the app's model, which the newsroom does not operate. An
+agent with a shell can read what a shell can read, the sign-in token
+included, so the token and the review address are kept from the model by
+convention there, not by construction. The Pi harness, where no model
+process has a shell or the token, is the runtime for a case that needs
+those guarantees. The read tools (`search_knowledge` and the others) are
+not wired into this runtime.
+
 ## What stays out of open-source Spotlight
 
 - **Journalist input.** Intake of interviews, source emails, notes and

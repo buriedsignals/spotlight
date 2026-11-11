@@ -266,6 +266,19 @@ class NewsroomPackage(GATES.CaseFixture):
         # Recording the same outcome again changes nothing.
         self.assertTrue(json.loads(self.run_with(*complete, payload=receipts).stdout)["already_recorded"])
 
+    def test_only_a_newsroom_install_gets_the_newsroom_ingest_steps_with_its_status(self) -> None:
+        case = self.build("note", "ingest", "--clean", "--activated")
+        seam = ROOT / "scripts" / "spotlight-orchestration.py"
+        status = json.loads(self.run_seam("status", "--json", str(case), script=seam).stdout)
+        # The steps name the command a runtime without the harness submits with.
+        self.assertIn("node harness/pi/src/newsroom-submit.ts {CASE_DIR}", status["newsroom_edition"])
+        solo = self.root / "solo-config.json"
+        solo.write_text(json.dumps({"knowledge_destination": {"mode": "solo"}}), encoding="utf-8")
+        plain = subprocess.run([sys.executable, str(seam), "status", "--json", str(case)], capture_output=True, text=True,
+                               env={**os.environ, "SPOTLIGHT_CONFIG": str(solo)})
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        self.assertNotIn("newsroom_edition", json.loads(plain.stdout))
+
     def test_the_approved_batch_is_prepared_under_the_services_case_and_batch_ids(self) -> None:
         case = self.build("request", "ingest", "--clean", "--activated", "--proposal")
         approved = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))

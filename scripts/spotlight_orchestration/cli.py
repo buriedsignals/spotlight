@@ -29,6 +29,7 @@ from . import (
     report_quotes,
 )
 from .contract import RECORDABLE_ATTEMPTS
+from . import review
 from .review import REVIEW_GATES, ReviewDigestChanged
 
 # Exit code the review server reads as "the record changed; reload the page".
@@ -121,10 +122,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# The newsroom edition's Ingest steps reach the agent here, with the resolved
+# state, and only on a newsroom-mode install: the skills stay the solo steps,
+# and a solo install's status carries nothing more.
+NEWSROOM_INGEST = (
+    "Newsroom edition. This replaces what the ingest skill says about newsroom mode. "
+    "Draft and review the batch as an activated solo case does: the analyst's proposal, the built batch, the ingest page. "
+    "Nothing is written to a member wiki. Once the member has requested ingestion (resume_at \"ingest\"), "
+    "submit the approved batch by code: the newsroom_submit tool in the Pi harness, "
+    "or in any other runtime `node harness/pi/src/newsroom-submit.ts {CASE_DIR}`. "
+    "Never type the batch into a tool call yourself. If the newsroom refuses the batch, "
+    "give the member its reasons and stop; the case stays at Ingest. Then resolve again."
+)
+
+
+def _with_newsroom_note(status: dict[str, object]) -> dict[str, object]:
+    if status.get("next_phase") != "ingest":
+        return status
+    try:
+        newsroom = review.ingest_mode() == "newsroom"
+    except OrchestrationError:
+        return status
+    return {**status, "newsroom_edition": NEWSROOM_INGEST} if newsroom else status
+
+
 def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     boundary = {"authorized_cases_root": args.authorized_cases_root}
     if args.command == "status":
-        return resolve(args.case_dir, **boundary)
+        return _with_newsroom_note(resolve(args.case_dir, **boundary))
     if args.command == "review-view":
         return review_view(args.case_dir, args.gate, **boundary)
     if args.command == "review-passages":
