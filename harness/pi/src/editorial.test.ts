@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { EditorialClient, EditorialCredentialError, EditorialRefused, editorialClient, ensureCaseRegistered, pendingSubmission, runChecks, stopsTheNewsroomCase, submitCase } from './editorial.ts';
+import { EditorialClient, EditorialCredentialError, EditorialRefused, editorialClient, ensureCaseRegistered, pendingSubmission, stopsTheNewsroomCase, submitCase } from './editorial.ts';
 import type { RunPackage } from './editorial.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { editorialTools } from './tools/editorial.ts';
@@ -18,6 +18,15 @@ import { readConfig } from './config.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const origin = (url: string) => new URL(url).origin;
+const CASE = '00000000-0000-4000-8000-00000000ca5e';
+const BATCH = '00000000-0000-4000-8000-0000000ba7c4';
+const REVIEW_PAGE = 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability';
+// The service's answer to a stored batch, for the batch the harness sent.
+const stored = (args: Record<string, unknown>, more: Record<string, unknown> = {}) => ({
+	batch: { batch_info: { id: (args.request as { batch_id: string }).batch_id, status: 'submitted' }, records: {} },
+	assigned_ids: [],
+	...more,
+});
 
 // An Editorial MCP that sends its headers and part of an answer, then breaks
 // the connection (`cut`), or that never answers.
@@ -76,12 +85,12 @@ test('a revoked token stops with a plain sign-in message that never shows the to
 
 test('a tool error reaches the caller without any address in it', async (t) => {
 	const newsroom = await startFakeEditorial({
-		handlers: { submit_case_review: () => ({ isError: true, text: 'already staged, see https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }) },
+		handlers: { get_record: () => ({ isError: true, text: 'no such record, see https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }) },
 	});
 	t.after(() => newsroom.close());
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
-	const error = await client.call('submit_case_review', {}).then(() => assert.fail('a tool error was accepted'), (caught: Error) => caught);
-	assert.equal(error.message, 'submit_case_review: already staged, see [address removed]');
+	const error = await client.call('get_record', {}).then(() => assert.fail('a tool error was accepted'), (caught: Error) => caught);
+	assert.equal(error.message, 'get_record: no such record, see [address removed]');
 });
 
 test('an HTTP or protocol error from the server reaches no log or case file with a review capability in it', async () => {
@@ -118,7 +127,7 @@ test('newsroom data handed to a model is capped, with a marker saying so', async
 	assert.match(text, /\[\.\.\. truncated at 20000 characters\]\nNEWSROOM_DATA \S+>>>$/);
 });
 
-test('a successful but malformed tool result stops the newsroom case: a run_checks state or flag outside the contract, a review address that is not an http(s) URL', async () => {
+test('a successful but malformed tool result stops the newsroom case: an id the service did not issue, a stored batch without its ids, a review address that is not an http(s) URL', async () => {
 	const url = 'https://editorial.newsroom.example/mcp';
 	for (const [tool, result] of [
 		['get_record', { content: 'not a list' }],
@@ -128,19 +137,13 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 		['get_record', { structuredContent: { record: [] } }],
 		['traverse', { structuredContent: { root: 'claim:1', nodes: [] } }],
 		['get_record', `{"structuredContent":${'{"a":'.repeat(100_000)}1${'}'.repeat(100_000)}}`],
-		['run_checks', { structuredContent: { job_id: 'job-1', state: 'finished' } }],
-		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', reason: 'ok' }, { target: 'finding:F2' }] } }],
-		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: 'none' } }],
-		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [], input_sha256: 'not-a-digest' } }],
-		['run_checks', { structuredContent: { state: 'running' } }],
-		['run_checks', { structuredContent: { state: 'done', flags: [] } }],
-		['run_checks', { structuredContent: { job_id: 'job 1/../x', state: 'done', flags: [] } }],
-		['get_review_status', { structuredContent: { review_id: 'rev-1', state: 'pending', receipt: 'stored' } }],
-		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 42, review_id: 'rev-1' } }],
-		['submit_case_review', { structuredContent: { status: 'rejected' } }],
-		['submit_case_review', { structuredContent: { status: 'rejected', integrity_failures: [{ check: 'file_hash' }] } }],
-		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 42 } }],
-		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'not-a-url' } }],
+		['create_id', { structuredContent: { result: 42 } }],
+		['register_case', { structuredContent: { name: 'case-a' } }],
+		['get_knowledge_batch_info', { structuredContent: { id: BATCH } }],
+		['start_case_review', { structuredContent: { batch: { batch_info: {} }, assigned_ids: [] } }],
+		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, assigned_ids: [{ type: 'claim', client_id: 'claim:1' }] } }],
+		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, assigned_ids: [], review_url: 42 } }],
+		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, assigned_ids: [], review_url: 'not-a-url' } }],
 	] as const) {
 		const fetchImpl: typeof fetch = async (_url, init) => {
 			const message = JSON.parse(String(init?.body)) as { id?: string; method: string };
@@ -228,7 +231,7 @@ async function submittable(t: { after(fn: () => unknown): void }, handlers: Para
 	const newsroom = await startFakeEditorial({ handlers });
 	t.after(() => newsroom.close());
 	const env = newsroomEnv(space, [], newsroom);
-	const caseDir = await caseAtIngest(space, fixtureEnv);
+	const caseDir = await caseAtIngest(space, fixtureEnv, ['--proposal']);
 	await requestNewsroomIngest(caseDir, env);
 	// Run as the launcher runs it (runFixed, with its output limit).
 	const runPackage: RunPackage = (args, input) =>
@@ -238,22 +241,28 @@ async function submittable(t: { after(fn: () => unknown): void }, handlers: Para
 			input: input === undefined ? '' : JSON.stringify(input),
 		});
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
-	await runPackage(['register', caseDir], { case_ref: 'nr-case-1', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' });
-	return { caseDir, runPackage, client, caseRef: 'nr-case-1', newsroom, newsroomOrigin: origin(newsroom.url) };
+	await runPackage(['register', caseDir], { case_ref: CASE, title: 'case-a', editorial_origin: origin(newsroom.url), client_case_id: 'case-a', confirmed: true });
+	return { caseDir, runPackage, client, caseRef: CASE, newsroom, newsroomOrigin: origin(newsroom.url) };
 }
 
-test('Submit opens the newsroom review page in the member\'s browser and keeps its address out of the outcome, the receipts and the case', async (t) => {
-	const { caseDir, runPackage, client, caseRef } = await submittable(t, {
-		submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
-		get_review_status: (args) => ({ review_id: args.review_id, state: 'pending', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
+test('Submit sends the approved batch under the service\'s ids, opens the newsroom review page in the member\'s browser and keeps its address out of the outcome, the receipts and the case', async (t) => {
+	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, {
+		start_case_review: (args) => stored(args, { review_url: REVIEW_PAGE, assigned_ids: [{ type: 'claim', client_id: 'claim:from-the-batch', uuid: BATCH }] }),
+		get_knowledge_batch_info: (args) => ({ id: args.batch_id, status: 'submitted', review_url: REVIEW_PAGE }),
 	});
 	const opened: string[] = [];
 
 	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
 
-	assert.deepEqual(opened, ['https://editorial.newsroom.example/review/rev-1?cap=secret-capability']);
+	assert.deepEqual(opened, [REVIEW_PAGE]);
 	assert.equal(outcome.state, 'submitted');
 	assert.equal((outcome as { review_opened: boolean }).review_opened, true);
+	// The batch travels as the service's input: the registered case, the batch id it issued, records by client id.
+	const [{ request }] = newsroom.callsOf('start_case_review') as Array<{ request: { case_id: string; batch_id: string; claims: Array<{ client_id: string }> } }>;
+	const approved = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-batch.json'), 'utf8')) as { claims: Array<{ id: string }> };
+	assert.deepEqual([request.case_id, request.batch_id, request.claims.map((claim) => claim.client_id)], [caseRef, newsroom.staged[0], approved.claims.map((claim) => claim.id)]);
+	// The ids the service assigned are kept for this case's next batch.
+	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'newsroom-ids.json'), 'utf8')).assigned_ids, [{ type: 'claim', client_id: 'claim:from-the-batch', uuid: BATCH }]);
 	const written = [JSON.stringify(outcome)];
 	for (const entry of await readdir(caseDir, { recursive: true, withFileTypes: true })) {
 		if (entry.isFile()) written.push(await readFile(join(entry.parentPath, entry.name), 'utf8').catch(() => ''));
@@ -262,75 +271,74 @@ test('Submit opens the newsroom review page in the member\'s browser and keeps i
 	assert.ok(!written.join('\n').includes('review_url'));
 });
 
-test('a package near the size cap reaches the newsroom whole: its base64 is larger than a program\'s output limit', { timeout: 120_000 }, async (t) => {
-	// The cited original, 24.5 MiB: under the 25 MB file cap, over 32 MiB as base64.
-	const { caseDir, runPackage, client, caseRef } = await submittable(t, {}, { SPOTLIGHT_FIXTURE_ORIGINAL_BYTES: String(24.5 * 1024 * 1024) });
-
-	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => false });
-
-	assert.equal(outcome.state, 'submitted');
-});
-
-test('a check or submission the case cannot use stops the newsroom case: a record it cannot write, a poll for another job, a package the script cannot build', async (t) => {
-	let otherJob = false;
-	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, {
-		run_checks: (args) => (args.job_id ? { job_id: otherJob ? 'job-other' : args.job_id, state: 'done', flags: [] } : { job_id: 'job-1', state: 'running' }),
-	});
-	const failing: RunPackage = (args, input) => (args[0] === 'checks' ? Promise.resolve({ code: 2, stdout: '', stderr: 'disk full' }) : runPackage(args, input));
-	const error = await runChecks(client, caseRef, caseDir, 'findings', failing, { pollMs: 1 }).then(() => assert.fail('the check was taken as recorded'), (caught: Error) => caught);
-	assert.ok(stopsTheNewsroomCase(error), String(error));
-	assert.match(error.message, /disk full/);
-
-	otherJob = true;
-	await assert.rejects(runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /another job/.test(caught.message));
-
-	// A Submit package the script cannot build (a refusal, a crash) stops the case too.
-	const refusing: RunPackage = (args, input) => (args[0] === 'build' ? Promise.resolve({ code: 2, stdout: '', stderr: 'newsroom-package: refused: too large' }) : runPackage(args, input));
-	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage: refusing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /too large/.test(caught.message));
-	const crashing: RunPackage = (args, input) => (args[0] === 'build' ? Promise.reject(new Error('python3 could not run: timed out')) : runPackage(args, input));
+test('a batch the case cannot prepare stops the newsroom case, and every call names the case validated at the start', async (t) => {
+	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, {});
+	const refusing: RunPackage = (args, input) => (args[0] === 'request' ? Promise.resolve({ code: 2, stdout: '', stderr: 'newsroom-package: refused: no approved batch' }) : runPackage(args, input));
+	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage: refusing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /no approved batch/.test(caught.message));
+	const crashing: RunPackage = (args, input) => (args[0] === 'request' ? Promise.reject(new Error('python3 could not run: timed out')) : runPackage(args, input));
 	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage: crashing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /timed out/.test(caught.message));
+	assert.deepEqual(newsroom.callsOf('start_case_review'), []);
 
 	// The case reference is the one validated at the start, not whatever the file now says.
-	await writeFile(join(caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-other', title: 'x', custody_mode: 'hosted', editorial_origin: 'http://127.0.0.1:9', client_case_id: 'case-a' }));
-	otherJob = false;
-	await runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 });
-	assert.ok(newsroom.callsOf('run_checks').every((call) => call.case_ref === 'nr-case-1'));
-
-	// An optional input that exists but cannot be read is not sent as absent.
-	await writeFile(join(caseDir, 'data', 'fact-check.json'), '{not json');
-	await assert.rejects(runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /fact-check\.json/.test(caught.message));
+	await writeFile(join(caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: BATCH, title: 'x', editorial_origin: 'http://127.0.0.1:9', client_case_id: 'case-a', confirmed: true }));
+	await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true });
+	assert.deepEqual((newsroom.callsOf('start_case_review') as Array<{ request: { case_id: string } }>).map((call) => call.request.case_id), [caseRef]);
 });
 
-test('a review page that does not open leaves the submission pending, and a retry with the same key opens it and completes', async (t) => {
-	const { caseDir, runPackage, client, caseRef } = await submittable(t, {
-		submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
-		get_review_status: (args) => ({ review_id: args.review_id, state: 'pending' }),
-	});
+test('a review page that does not open leaves the submission pending; the retry finds the batch stored, sends nothing again and tells the member where the review is', async (t) => {
+	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, { start_case_review: (args) => stored(args, { review_url: REVIEW_PAGE }) });
 	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => { throw new Error('no browser'); } }), /no browser/);
 	assert.equal(await pendingSubmission(runPackage, caseDir), true);
 
-	const opened: string[] = [];
-	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => assert.fail('no address is left to open') });
 	assert.equal(outcome.state, 'submitted');
-	assert.deepEqual(opened, ['https://editorial.newsroom.example/review/rev-1?cap=secret-capability']);
+	assert.match((outcome as { notice?: string }).notice ?? '', /review address is no longer available.*newsroom's own tool/);
+	assert.equal(newsroom.callsOf('start_case_review').length, 1, 'a batch id is sent once');
 	assert.equal(await pendingSubmission(runPackage, caseDir), false);
 });
 
-test('decision-check flags and integrity failures carry no review capability into the case or the outcome', async (t) => {
-	let page = '';
-	const { caseDir, runPackage, client, caseRef, newsroomOrigin } = await submittable(t, {
-		run_checks: () => ({ job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', question: 'partial_support', reason: `compare ${page}` }] }),
-		submit_case_review: () => ({ status: 'rejected', integrity_failures: [{ check: 'file_hash', reason: `see ${page}`, review_url: page }] }),
-	});
-	page = `${newsroomOrigin}/review/rev-1?cap=secret-capability`;
+test('a submission cut off before the service stored the batch is sent again under the same batch id', async (t) => {
+	let down = true;
+	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, { start_case_review: (args) => (down ? { httpStatus: 503 } : stored(args)) });
+	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught));
+	assert.equal(await pendingSubmission(runPackage, caseDir), true);
+	down = false;
 
-	const checks = await runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 });
 	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true });
 
-	const written = [JSON.stringify(checks), JSON.stringify(outcome)];
-	for (const name of ['newsroom-checks.json', 'newsroom-submission.json']) written.push(await readFile(join(caseDir, 'data', name), 'utf8'));
-	assert.match(written.join('\n'), /compare \[address removed\]/);
-	assert.ok(!written.join('\n').includes('secret-capability') && !written.join('\n').includes('review_url'), written.join('\n'));
+	assert.equal(outcome.state, 'submitted');
+	const sent = (newsroom.callsOf('start_case_review') as Array<{ request: { batch_id: string } }>).map((call) => call.request.batch_id);
+	assert.equal(sent.length, 2);
+	assert.equal(sent[0], sent[1]);
+	assert.equal(newsroom.callsOf('create_id').length, 1, 'the retry reuses the batch id it kept');
+});
+
+test('a resumed batch the service refuses as already submitted is taken as stored, not as refused', async (t) => {
+	// The status read fails twice: once after the batch was stored, once when the next start asks whether it was.
+	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, {
+		get_knowledge_batch_info: (args, index) => (index < 2 ? { isError: true, text: 'status store busy' } : { id: args.batch_id, status: 'submitted' }),
+	});
+	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true }), /status store busy/);
+	assert.equal(await pendingSubmission(runPackage, caseDir), true);
+
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true });
+
+	assert.equal(outcome.state, 'submitted');
+	assert.equal(newsroom.staged.length, 1, 'the service holds one batch');
+	assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'newsroom-submission.json'), 'utf8')).state, 'submitted');
+});
+
+test('the reasons a refused batch comes back with carry no review capability into the case or the outcome', async (t) => {
+	let page = '';
+	const { caseDir, runPackage, client, caseRef, newsroomOrigin } = await submittable(t, { start_case_review: () => ({ rejected: [`claims[0].claim_ref: see ${page}`] }) });
+	page = `${newsroomOrigin}/review/rev-1?cap=secret-capability`;
+
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true });
+
+	assert.deepEqual(outcome, { state: 'blocked', errors: ['claims[0].claim_ref: see [address removed]'] });
+	const recorded = await readFile(join(caseDir, 'data', 'newsroom-submission.json'), 'utf8');
+	assert.match(recorded, /claims\[0\]\.claim_ref: see \[address removed\]/);
+	assert.ok(!recorded.includes('secret-capability'), recorded);
 });
 
 test('a review address outside the newsroom\'s endpoints is not opened, and the member and the receipt are told so', async (t) => {
@@ -338,7 +346,8 @@ test('a review address outside the newsroom\'s endpoints is not opened, and the 
 	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => false });
 	assert.equal(outcome.state, 'submitted');
 	assert.match((outcome as { notice?: string }).notice ?? '', /outside the newsroom's allowed endpoints.*newsroom's own tool/);
-	const receipt = JSON.parse(await readFile(join(caseDir, 'receipts', 'submission-sub-1.json'), 'utf8')) as { review_address?: string };
+	const [name] = (await readdir(join(caseDir, 'receipts'))).filter((file) => file.startsWith('submission-'));
+	const receipt = JSON.parse(await readFile(join(caseDir, 'receipts', name), 'utf8')) as { review_address?: string };
 	assert.match(receipt.review_address ?? '', /^refused/);
 	assert.equal(await pendingSubmission(runPackage, caseDir), false);
 });
@@ -359,12 +368,10 @@ test('a call the caller cancels is a cancellation, not a newsroom outage', async
 	assert.ok(!stopsTheNewsroomCase(error));
 });
 
-test('a review status for another review, or without a valid state, leaves the submission pending', async (t) => {
-	for (const status of [{ review_id: 'rev-other', state: 'approved' }, { review_id: 'rev-1' }]) {
-		const { caseDir, runPackage, client, caseRef } = await submittable(t, { get_review_status: () => status });
-		await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true }), /another review or without a valid state/);
-		assert.equal(await pendingSubmission(runPackage, caseDir), true);
-	}
+test('a batch status for another batch leaves the submission pending', async (t) => {
+	const { caseDir, runPackage, client, caseRef } = await submittable(t, { get_knowledge_batch_info: () => ({ id: CASE, status: 'approved' }) });
+	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true }), /answered for another batch/);
+	assert.equal(await pendingSubmission(runPackage, caseDir), true);
 });
 
 test('an answer carrying another request\'s id is not taken as this request\'s answer', async (t) => {
@@ -380,18 +387,63 @@ test('a case folder holding another case\'s or another endpoint\'s newsroom refe
 	t.after(() => newsroom.close());
 	const config = readConfig(newsroomEnv(space, [{ name: 'model', base_url: 'http://127.0.0.1:9/v1', model: 'm', inference: 'own' }], newsroom, { SPOTLIGHT_CASE_ID: 'case-b' }));
 	await mkdir(join(config.caseDir, 'data'), { recursive: true });
-	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-a', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' }));
+	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-a', title: 'case-a', editorial_origin: origin(newsroom.url), client_case_id: 'case-a', confirmed: true }));
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
 	await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), /reference of another case \(case-a\)/);
 	// A reference from another Editorial endpoint is not replaced by a new registration.
-	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-b', title: 'case-b', custody_mode: 'hosted', editorial_origin: 'https://old.newsroom.example', client_case_id: 'case-b' }));
+	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-b', title: 'case-b', editorial_origin: 'https://old.newsroom.example', client_case_id: 'case-b', confirmed: true }));
 	await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), /registered with another newsroom endpoint \(https:\/\/old\.newsroom\.example\)/);
 	// An incomplete stored reference stops the case before any call.
 	for (const stored of [{ case_ref: 'nr case b', editorial_origin: origin(newsroom.url), client_case_id: 'case-b' }, { case_ref: 'nr-case-b', client_case_id: 'case-b' }]) {
 		await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify(stored));
 		await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), (caught: Error) => stopsTheNewsroomCase(caught) && /not a complete case reference/.test(caught.message));
 	}
-	assert.deepEqual(newsroom.callsOf('register_case'), []);
+	assert.deepEqual(newsroom.calls, []);
+});
+
+test('a case is registered under an id the service issued and the case kept first; a registration whose answer was lost is confirmed, not repeated', async (t) => {
+	const space = await workspace(t);
+	const newsroom = await startFakeEditorial();
+	t.after(() => newsroom.close());
+	const env = newsroomEnv(space, [{ name: 'model', base_url: 'http://127.0.0.1:9/v1', model: 'm', inference: 'own' }], newsroom, { SPOTLIGHT_CASE_ID: 'case-a', SPOTLIGHT_CASE_TITLE: 'Acme payments' });
+	const config = readConfig(env);
+	await mkdir(join(config.caseDir, 'data'), { recursive: true });
+	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
+	const kept: Array<Record<string, unknown>> = [];
+	const runPackage: RunPackage = async (args, input) => {
+		if (args[0] === 'register') {
+			kept.push(input as Record<string, unknown>);
+			await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify(input));
+		}
+		return { code: 0, stdout: '{}', stderr: '' };
+	};
+
+	const first = await ensureCaseRegistered(client, config, runPackage);
+
+	const id = first.reference.case_ref;
+	assert.deepEqual(newsroom.calls.map((call) => [call.tool, call.args]), [['create_id', {}], ['register_case', { case_id: id, case_name: 'Acme payments' }]]);
+	// Kept before the service was asked to register it, then confirmed.
+	assert.deepEqual(kept.map((reference) => [reference.case_ref, reference.confirmed]), [[id, false], [id, true]]);
+	assert.equal(first.registered, true);
+
+	// The answer to register_case was lost: the case holds the id, unconfirmed.
+	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ ...kept[0] }));
+	const resumed = await ensureCaseRegistered(client, config, runPackage);
+	assert.deepEqual([resumed.reference.case_ref, resumed.reference.confirmed, resumed.registered], [id, true, false]);
+	assert.equal(newsroom.callsOf('register_case').length, 1);
+
+	// A confirmed case calls nothing.
+	const before = newsroom.calls.length;
+	await ensureCaseRegistered(client, config, runPackage);
+	assert.equal(newsroom.calls.length, before);
+});
+
+test('the harness learns which tools the service offers from its list', async (t) => {
+	const newsroom = await startFakeEditorial({ unlisted: ['traverse', 'coverage'] });
+	t.after(() => newsroom.close());
+	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
+	assert.deepEqual([await client.offers('search_knowledge'), await client.offers('traverse')], [true, false]);
+	assert.equal(newsroom.requests.filter((request) => request.method === 'tools/list').length, 1);
 });
 
 test('a token copied with surrounding whitespace is sent trimmed, as it was validated', async (t) => {

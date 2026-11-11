@@ -12,7 +12,7 @@
 Newsroom edition only (``knowledge_destination.mode`` is ``newsroom``), for an
 activated case whose ingestion was requested on the ingest page. The Pi
 harness runs both steps itself around the Editorial MCP's
-``submit_case_review``; the contract is docs/newsroom-editorial-mcp.md.
+``start_case_review``; the contract is docs/newsroom-editorial-mcp.md.
 
 ``build`` prints one JSON object: ``package`` (the structured case), ``files``
 (the cited evidence files, base64) and ``package_sha256`` (the idempotency
@@ -34,7 +34,7 @@ answered, already cleared of the sign-in token and of the review address.
 
 Submit is three steps so a crash can neither lose nor repeat a submission:
 ``begin`` records the intent (the package sha256, which is also the
-idempotency key) before submit_case_review is called, and refuses unless the
+idempotency key) before start_case_review is called, and refuses unless the
 member requested ingestion on the ingest page; ``blocked`` or ``complete``
 then resolves that intent. A pending intent left by a crash is resubmitted
 with the same key, which the Editorial MCP answers with the submission it
@@ -62,6 +62,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
+import newsroom_batch  # noqa: E402
 from evidence_anchors import case_evidence_path, rlm_lead_failure  # noqa: E402
 from source_expression_contract import lifecycle_state  # noqa: E402
 from spotlight_orchestration import review  # noqa: E402
@@ -77,6 +78,7 @@ DIRECT_PATHS_BY_PRECEDENCE = ("downloaded_document_path", "raw_path", "screensho
 CASE_REFERENCE = "data/editorial-case.json"
 CHECKS = "data/newsroom-checks.json"
 SUBMISSION = "data/newsroom-submission.json"
+SERVER_IDS = "data/newsroom-ids.json"
 RECEIPTS = "receipts"
 SAFE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
@@ -331,20 +333,52 @@ def _object(raw: str, what: str) -> dict[str, Any]:
 
 
 def register(case: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    """Stores the Editorial MCP's case reference once; a stored one stands."""
+    """Keeps the case id the service issued, then marks it confirmed once the
+    service answered register_case. A stored reference stands; only its
+    ``confirmed`` mark changes."""
     case_ref = payload.get("case_ref")
     if not isinstance(case_ref, str) or not SAFE_ID.match(case_ref):
-        raise Refused("register_case returned no usable case_ref")
-    reference = {key: payload.get(key) for key in ("case_ref", "title", "custody_mode", "editorial_origin", "client_case_id")}
+        raise Refused("the newsroom issued no usable case id")
+    reference = {key: payload.get(key) for key in ("case_ref", "title", "editorial_origin", "client_case_id")}
     if not all(isinstance(value, str) and value for value in reference.values()):
-        raise Refused("the case reference needs case_ref, title, custody_mode, editorial_origin and client_case_id")
+        raise Refused("the case reference needs case_ref, title, editorial_origin and client_case_id")
+    confirmed = payload.get("confirmed") is True
     with transaction(case) as descriptor:
         stored = _read_data(case, descriptor, CASE_REFERENCE)
-        if stored and stored.get("case_ref") and stored.get("editorial_origin") == reference["editorial_origin"]:
-            return {"ok": True, "already_recorded": True, "case_ref": stored["case_ref"]}
-        record = {"schema_version": "1.0", **reference, "registered_at": _now()}
+        if stored and stored.get("case_ref"):
+            if stored.get("case_ref") != case_ref or stored.get("editorial_origin") != reference["editorial_origin"]:
+                raise Refused("this case already holds another newsroom reference")
+            if stored.get("confirmed") is True or not confirmed:
+                return {"ok": True, "already_recorded": True, "case_ref": case_ref}
+            record = {**stored, "confirmed": True, "registered_at": _now()}
+        else:
+            record = {"schema_version": "1.1", **reference, "confirmed": confirmed, "kept_at": _now()}
+            if confirmed:
+                record["registered_at"] = _now()
         atomic_write_files(case, {CASE_REFERENCE: _json_bytes(record)}, data_descriptor=descriptor)
     return {"ok": True, "already_recorded": False, "case_ref": case_ref}
+
+
+def _server_ids(case: Path, descriptor: int) -> list[dict[str, Any]]:
+    """The ids the service assigned in this case's earlier submissions."""
+    stored = _read_data(case, descriptor, SERVER_IDS) or {}
+    return [entry for entry in stored.get("assigned_ids") or [] if isinstance(entry, dict)]
+
+
+def request(case: Path, case_id: str, batch_id: str) -> dict[str, Any]:
+    """The approved batch as the service's start_case_review input."""
+    _require_newsroom()
+    if not SAFE_ID.match(case_id) or not SAFE_ID.match(batch_id):
+        raise Refused("the case and batch ids must be the service's ids")
+    batch = _load(case, review.INGEST_BATCH)
+    with transaction(case) as descriptor:
+        known = {(str(entry.get("type")), str(entry.get("client_id"))): str(entry.get("uuid"))
+                 for entry in _server_ids(case, descriptor)}
+    try:
+        converted = newsroom_batch.start_case_review_input(batch, case_id, batch_id, known)
+    except newsroom_batch.Refused as exc:
+        raise Refused(str(exc)) from None
+    return {"request": converted, "request_sha256": _sha(_canonical(converted))}
 
 
 def record_checks(case: Path, record: dict[str, Any]) -> dict[str, Any]:
@@ -367,20 +401,23 @@ def _require_key(package_sha256: str) -> None:
         raise Refused("the package sha256 must be 64 lower-case hex characters")
 
 
-def begin(case: Path, package_sha256: str) -> dict[str, Any]:
-    """Records the submission intent before submit_case_review is called."""
+def begin(case: Path, package_sha256: str, batch_id: str) -> dict[str, Any]:
+    """Records the submission intent, with the batch id the service issued,
+    before start_case_review is called."""
     _require_newsroom()
     _require_key(package_sha256)
+    if not SAFE_ID.match(batch_id):
+        raise Refused("the batch id must be the service's id")
     with transaction(case) as descriptor:
         _require_requested(case, descriptor)
         current = _read_data(case, descriptor, SUBMISSION) or {}
         if current.get("state") == "pending":
-            if current.get("idempotency_key") != package_sha256:
+            if current.get("idempotency_key") != package_sha256 or current.get("batch_id") != batch_id:
                 raise Refused("a submission of a different version of this case is pending; it must be "
                               "resolved before another is sent")
             return {"ok": True, "resumed": True}
-        intent = {"schema_version": "1.0", "state": "pending", "idempotency_key": package_sha256,
-                  "package_sha256": package_sha256, "at": _now()}
+        intent = {"schema_version": "1.1", "state": "pending", "idempotency_key": package_sha256,
+                  "package_sha256": package_sha256, "batch_id": batch_id, "at": _now()}
         atomic_write_files(case, {SUBMISSION: _json_bytes(intent)}, data_descriptor=descriptor)
     return {"ok": True, "resumed": False}
 
@@ -394,7 +431,10 @@ def pending(case: Path) -> dict[str, Any]:
     key = current.get("idempotency_key")
     if not (isinstance(key, str) and SHA256.match(key) and current.get("package_sha256") == key):
         raise Refused(f"{SUBMISSION} records a pending submission without a valid key")
-    return {"pending": True, "idempotency_key": key}
+    batch_id = current.get("batch_id")
+    if not (isinstance(batch_id, str) and SAFE_ID.match(batch_id)):
+        raise Refused(f"{SUBMISSION} records a pending submission without a batch id")
+    return {"pending": True, "idempotency_key": key, "batch_id": batch_id}
 
 
 def _require_intent(case: Path, descriptor: int, package_sha256: str) -> None:
@@ -406,11 +446,11 @@ def _require_intent(case: Path, descriptor: int, package_sha256: str) -> None:
 def blocked(case: Path, package_sha256: str, payload: dict[str, Any]) -> dict[str, Any]:
     _require_newsroom()
     _require_key(package_sha256)
-    failures = payload.get("integrity_failures")
-    if not isinstance(failures, list):
-        raise Refused("integrity_failures must be a list")
-    reasons = [failure for failure in failures if isinstance(failure, dict)][:200] or [
-        {"check": "unknown", "reason": "the service rejected the package without a reason"}]
+    errors = payload.get("errors")
+    if not isinstance(errors, list):
+        raise Refused("errors must be a list")
+    reasons = [{"check": "service", "reason": str(error)} for error in errors[:200]] or [
+        {"check": "unknown", "reason": "the service rejected the batch without a reason"}]
     with transaction(case) as descriptor:
         _require_intent(case, descriptor, package_sha256)
         record = {"schema_version": "1.0", "state": "blocked", "package_sha256": package_sha256,
@@ -429,12 +469,16 @@ def _ensure_receipts_folder(case: Path) -> None:
         os.close(descriptor)
 
 
-def complete(case: Path, package_sha256: str, submission_id: str, review_id: str,
-             payload: dict[str, Any]) -> dict[str, Any]:
+def complete(case: Path, package_sha256: str, batch_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     _require_newsroom()
     _require_key(package_sha256)
-    if not SAFE_ID.match(submission_id) or not SAFE_ID.match(review_id):
-        raise Refused("submission and review ids must be plain identifiers")
+    if not SAFE_ID.match(batch_id):
+        raise Refused("the batch id must be the service's id")
+    assigned = payload.get("assigned_ids")
+    if assigned is not None and not (isinstance(assigned, list) and all(
+            isinstance(entry, dict) and all(isinstance(entry.get(key), str) and entry[key] for key in ("type", "client_id", "uuid"))
+            for entry in assigned)):
+        raise Refused("assigned_ids must be a list of {type, client_id, uuid}, or null")
     receipts = payload.get("receipts")
     if not isinstance(receipts, dict) or not receipts:
         raise Refused("receipts must be a non-empty object")
@@ -457,23 +501,31 @@ def complete(case: Path, package_sha256: str, submission_id: str, review_id: str
         _ensure_receipts_folder(case)
         atomic_write_files(case, {f"{RECEIPTS}/{name}": _json_bytes(value) for name, value in receipts.items()})
         marker.update({"status": "completed", "destination": "newsroom", "package_sha256": package_sha256,
-                       "submission_id": submission_id, "review_id": review_id, "completed_at": _now()})
-        submission = {"schema_version": "1.0", "state": "submitted", "idempotency_key": package_sha256,
-                      "package_sha256": package_sha256, "submission_id": submission_id, "review_id": review_id,
+                       "batch_id": batch_id, "completed_at": _now()})
+        submission = {"schema_version": "1.1", "state": "submitted", "idempotency_key": package_sha256,
+                      "package_sha256": package_sha256, "batch_id": batch_id,
                       "review_state": review_state, "receipts": sorted(f"{RECEIPTS}/{name}" for name in receipts),
                       "at": _now()}
-        atomic_write_files(case, {
-            "data/ingestion.json": _json_bytes(marker),
-            SUBMISSION: _json_bytes(submission),
-        }, data_descriptor=descriptor)
+        files = {"data/ingestion.json": _json_bytes(marker), SUBMISSION: _json_bytes(submission)}
+        # A later batch of this case names these records by the service's ids.
+        # null: the service already held the batch after a crash, so its
+        # answer, and the ids in it, were lost.
+        if assigned is not None:
+            ids = {(entry["type"], entry["client_id"]): entry for entry in [*_server_ids(case, descriptor), *assigned]}
+            files[SERVER_IDS] = _json_bytes({"schema_version": "1.0", "assigned_ids": sorted(
+                ({"type": e["type"], "client_id": e["client_id"], "uuid": e["uuid"]} for e in ids.values()),
+                key=lambda e: (e["type"], e["client_id"]))})
+        atomic_write_files(case, files, data_descriptor=descriptor)
     return {"ok": True, "already_recorded": False}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("build", "register", "checks", "pending"):
+    for name in ("build", "register", "checks", "pending", "request"):
         sub.add_parser(name).add_argument("case_dir")
+    for flag in ("--case-id", "--batch-id", "--out"):
+        sub.choices["request"].add_argument(flag, required=True)
     # The package (up to MAX_PACKAGE_BYTES, as base64) goes to a file: it is
     # larger than a program's output the harness reads.
     sub.choices["build"].add_argument("--out", required=True)
@@ -481,14 +533,16 @@ def main(argv: list[str] | None = None) -> int:
         command = sub.add_parser(name)
         command.add_argument("case_dir")
         command.add_argument("--package-sha256", required=True)
-        if name == "complete":
-            command.add_argument("--submission-id", required=True)
-            command.add_argument("--review-id", required=True)
+        if name != "blocked":
+            command.add_argument("--batch-id", required=True)
     args = parser.parse_args(argv)
     case = Path(args.case_dir).resolve()
     try:
         if args.command == "build":
             Path(args.out).write_text(json.dumps(build(case)), encoding="utf-8")
+            result = {"written": args.out}
+        elif args.command == "request":
+            Path(args.out).write_text(json.dumps(request(case, args.case_id, args.batch_id)), encoding="utf-8")
             result = {"written": args.out}
         elif args.command == "register":
             result = register(case, _object(sys.stdin.read(), "the case reference"))
@@ -497,12 +551,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "pending":
             result = pending(case)
         elif args.command == "begin":
-            result = begin(case, args.package_sha256)
+            result = begin(case, args.package_sha256, args.batch_id)
         elif args.command == "blocked":
             result = blocked(case, args.package_sha256, _object(sys.stdin.read(), "the rejection"))
         else:
-            result = complete(case, args.package_sha256, args.submission_id, args.review_id,
-                              _object(sys.stdin.read(), "the receipts"))
+            result = complete(case, args.package_sha256, args.batch_id, _object(sys.stdin.read(), "the receipts"))
     except (Refused, OrchestrationError, OSError) as exc:
         print(f"newsroom-package: refused: {exc}", file=sys.stderr)
         return 2

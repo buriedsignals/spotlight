@@ -100,7 +100,7 @@ const PROTECTED = [
 	/(^|\/)[^/]*receipt[^/]*$/, // signing, gate and ingest receipts
 	/^receipts\//, // newsroom receipts (the launcher copies them)
 	/^data\/editorial-case\.json$/, // newsroom case reference (the launcher)
-	/^data\/newsroom-(checks|submission)\.json$/, // newsroom check flags and submission (the launcher)
+	/^data\/newsroom-(checks|submission|ids)\.json$/, // the newsroom submission and the ids its service assigned (the launcher)
 	/^data\/case-contract\.json$/, // activation receipt (the launcher runs case-contract.py activate-new; the gate approval binds it)
 ];
 

@@ -323,10 +323,9 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 			const newsroom = process.env.SPOTLIGHT_EDITION === 'newsroom';
 			if (ingest?.resume_at === 'ingest') return newsroom ? NEXT_NEWSROOM_SUBMIT : nextFixedStep('wiki', stepFailed);
 			if (ingest?.resume_at === 'seal') return nextFixedStep('seal', stepFailed);
-			// The decision. The newsroom edition has no local batch: its page is the
-			// decision. A legacy case is not ingested. An activated solo case needs
-			// the analyst's batch before its page (Codex review of simp-ingest).
-			if (newsroom) return NEXT_INGEST_APPROVAL;
+			// The decision. A legacy case is not ingested. An activated case needs
+			// the analyst's batch before its page, in both editions (Codex review
+			// of simp-ingest).
 			if (!onDisk('data/case-contract.json')) return NEXT_INGEST_LEGACY;
 			// The launcher refuses every analyst once no batch can be built (Codex review of simp-next).
 			if (caseDir && batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, caseDir)) return NEXT_INGEST_BLOCKED;

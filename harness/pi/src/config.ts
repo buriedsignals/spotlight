@@ -79,18 +79,16 @@ export type HarnessConfig = {
 	newsroomOrigins: string[];
 };
 
-export type CustodyMode = 'hosted' | 'local_until_share';
 export const EDITORIAL_TOKEN_ENV = 'SPOTLIGHT_EDITORIAL_MCP_TOKEN';
 export const MIN_EDITORIAL_TOKEN_LENGTH = 16;
 
-// The Editorial MCP endpoint and what register_case sends at case start.
+// The Editorial MCP endpoint and the case name register_case sends at case start.
 // The token is named, never held here: editorial.ts reads it from the
 // launcher's environment per request.
 export type EditorialSetting = {
 	url: string;
 	tokenEnv: string;
 	caseTitle: string;
-	custodyMode: CustodyMode;
 };
 
 // The swarm route when the member opted in, or why there is none. The key is
@@ -300,7 +298,7 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	const modelTier = readModelTier(env);
 	const sensitive = sensitiveMode(env);
 	const research = researchSwitch(env);
-	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId, sensitive) : refuseEditorialInSolo(env);
+	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId) : refuseEditorialInSolo(env);
 	return {
 		edition,
 		casesRoot: resolve(casesRoot),
@@ -341,7 +339,7 @@ function refuseEditorialInSolo(env: Env): undefined {
 // submits the case through the Editorial MCP; without it there is no newsroom
 // path and nothing to fall back to, so the launcher stops. The token travels
 // over the network, so the endpoint is https (plain http only on loopback).
-function editorialSetting(env: Env, caseId: string, sensitive: boolean): EditorialSetting {
+function editorialSetting(env: Env, caseId: string): EditorialSetting {
 	const raw = env.SPOTLIGHT_EDITORIAL_MCP_URL?.trim();
 	if (!raw) throw new ConfigError('the newsroom edition needs the Editorial MCP (SPOTLIGHT_EDITORIAL_MCP_URL is not set), so Spotlight will not start.');
 	const url = httpURL('SPOTLIGHT_EDITORIAL_MCP_URL', raw);
@@ -355,11 +353,9 @@ function editorialSetting(env: Env, caseId: string, sensitive: boolean): Editori
 	if (token.length < MIN_EDITORIAL_TOKEN_LENGTH) {
 		throw new ConfigError(`${EDITORIAL_TOKEN_ENV} is shorter than ${MIN_EDITORIAL_TOKEN_LENGTH} characters, so it cannot be redacted reliably; sign in again through the newsroom extension.`);
 	}
-	const custody = env.SPOTLIGHT_CUSTODY_MODE?.trim() || (sensitive ? 'local_until_share' : 'hosted');
-	if (custody !== 'hosted' && custody !== 'local_until_share') throw new ConfigError('SPOTLIGHT_CUSTODY_MODE must be "hosted" or "local_until_share".');
 	const title = env.SPOTLIGHT_CASE_TITLE?.trim() || caseId;
 	if (title.length > 300) throw new ConfigError('SPOTLIGHT_CASE_TITLE must be at most 300 characters.');
-	return { url, tokenEnv: EDITORIAL_TOKEN_ENV, caseTitle: title, custodyMode: custody };
+	return { url, tokenEnv: EDITORIAL_TOKEN_ENV, caseTitle: title };
 }
 
 const SWITCH_ON = new Set(['on', 'true', '1', 'yes']);

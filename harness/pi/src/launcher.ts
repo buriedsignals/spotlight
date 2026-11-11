@@ -20,11 +20,10 @@ import {
 	ensureCaseRegistered,
 	isAllowedOrigin,
 	pendingSubmission,
-	runChecks,
 	stopsTheNewsroomCase,
 	submitCase,
 } from './editorial.ts';
-import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
+import type { EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { LEGACY_MARKERS, readPageChars, writeConfined } from './tools/case-files.ts';
@@ -196,13 +195,7 @@ async function editorialOperation(harness: Harness, role: string, op: string, ar
 	if (!client) throw new Error(`${op} is a newsroom edition tool`);
 	const spec = agentSpec(harness.composition, role);
 	if (!allowedTools(spec, harness.config.sensitive, harness.config.edition).includes(op)) throw new Error(`${op} is not a tool of the ${role}`);
-	if ((KNOWLEDGE_TOOLS as readonly string[]).includes(op)) return JSON.stringify(await client.call(op, args, signal));
-	const { config, active } = harness;
-	if (op === 'run_checks') {
-		const kind = args.kind === 'report' ? 'report' : args.kind === 'findings' ? 'findings' : undefined;
-		if (!kind) throw new Error('run_checks: kind must be "findings" or "report"');
-		return JSON.stringify(await runChecks(client, harness.caseRef!, active.caseDir, kind as CheckKind, packageRunner(harness), { signal }));
-	}
+	if ((KNOWLEDGE_TOOLS as readonly string[]).includes(op)) return JSON.stringify(await knowledge(client, op, args, signal));
 	if (op === 'newsroom_submit') {
 		const status = await caseStatus(harness);
 		const step = (status.ingest as { resume_at?: string } | undefined)?.resume_at;
@@ -214,8 +207,16 @@ async function editorialOperation(harness: Harness, role: string, op: string, ar
 	throw new Error(`unknown newsroom operation ${op}`);
 }
 
-// scripts/newsroom-package.py: builds the Submit package and is the only
-// writer of the newsroom case files, under the case lock.
+// A read of the newsroom's knowledge base. The harness calls only the tools
+// the service lists, so one it does not offer yet is a tool's own answer the
+// agent reads, never a call.
+async function knowledge(client: EditorialClient, op: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
+	if (!(await client.offers(op, signal))) throw new EditorialToolError(`${op}: the newsroom's service does not offer this yet; carry on without it`);
+	return client.call(op, args, signal);
+}
+
+// scripts/newsroom-package.py: prepares the batch for the newsroom and is the
+// only writer of the newsroom case files, under the case lock.
 function packageRunner(harness: Harness): RunPackage {
 	const { config } = harness;
 	return (args, input) =>
@@ -246,7 +247,7 @@ function reviewOpener(harness: Harness): (url: string) => Promise<boolean> {
 
 async function submit(harness: Harness, client: EditorialClient, signal?: AbortSignal) {
 	const outcome = await submitCase({ client, caseRef: harness.caseRef!, caseDir: harness.active.caseDir, signal, runPackage: packageRunner(harness), openReview: reviewOpener(harness) });
-	harness.log(outcome.state === 'submitted' ? `submitted the case to the newsroom (${outcome.receipts.length} receipt(s) in receipts/)` : 'the newsroom refused the package: integrity checks failed');
+	harness.log(outcome.state === 'submitted' ? `submitted the batch to the newsroom (${outcome.receipts.length} receipt(s) in receipts/)` : 'the newsroom refused the batch');
 	if (outcome.state === 'submitted' && outcome.notice) harness.log(outcome.notice);
 	return outcome;
 }
@@ -737,7 +738,7 @@ function researchRound(harness: Harness, retry: boolean, signal: AbortSignal): P
 			knowledge: harness.editorial
 				? async (query, laneSignal) => {
 					try {
-						return JSON.stringify(await harness.editorial!.call('search_knowledge', { query, limit: 20 }, laneSignal));
+						return JSON.stringify(await knowledge(harness.editorial!, 'search_knowledge', { query, limit: 20 }, laneSignal));
 					} catch (error) {
 						if (stopsTheNewsroomCase(error)) stopForNewsroom(harness, error);
 						throw error;
@@ -1221,7 +1222,6 @@ async function refusalFor(harness: Harness, role: string, task: string, status: 
 	// block stale; the page then offers the analyst again, so the latch clears too.
 	if (role === 'analyst' && harness.batchBlocked && !batchBlocked(harness.config.dataDir, harness.active.caseDir)) harness.batchBlocked = undefined;
 	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
-	if (role === 'analyst' && phase === 'ingest' && harness.config.edition === 'newsroom') return 'the analyst does not run at Ingest in the newsroom edition: the newsroom drafts the batch from the submitted case';
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
 	const refusal = spawnRefusal(spec, role, spec.phases ? String(status.phase ?? '') : '', harness.config.edition);

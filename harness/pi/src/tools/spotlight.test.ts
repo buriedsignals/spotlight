@@ -356,7 +356,9 @@ test('every state the resolver can return names a next step, and only member dec
 		['ingest decision, no batch (P5)', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/case-contract.json'], 'other'],
 		['ingest decision, batch built', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/case-contract.json', 'data/knowledge-batch-draft.json'], 'member'],
 		['ingest decision, legacy', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/knowledge-batch-draft.json'], 'other'],
-		['ingest decision, newsroom', { phase: 'ingest', ingest: { resume_at: 'decision' } }, [], 'member', undefined, 'newsroom'],
+		// The newsroom edition drafts the batch too: no batch names the analyst, a built one the page.
+		['ingest decision, newsroom, no batch', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/case-contract.json'], 'other', undefined, 'newsroom'],
+		['ingest decision, newsroom, batch built', { phase: 'ingest', ingest: { resume_at: 'decision' } }, ['data/case-contract.json', 'data/knowledge-batch-draft.json'], 'member', undefined, 'newsroom'],
 		['ingest requested', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other'],
 		['ingest requested, newsroom', { phase: 'ingest', ingest: { resume_at: 'ingest' } }, [], 'other', undefined, 'newsroom'],
 		['ingest seal', { phase: 'ingest', ingest: { resume_at: 'seal' } }, [], 'other'],
@@ -379,7 +381,7 @@ test('every state the resolver can return names a next step, and only member dec
 	// Codex review of simp-next: a failed fixed step is not retried by the model;
 	// a legacy follow-up names the investigator; a batch that cannot be built
 	// sends the member to the page, not the model to a refused analyst; the
-	// newsroom page names no analyst.
+	// newsroom page needs the analyst's batch as the solo one does.
 	assert.match(nextAction({ phase: 'investigation_gate_finalization', investigation_gate: { resume_at: 'seal' }, fixed_steps: [{ step: 'seal_gate', ok: false, output: 'x' }] }, () => false)!, /failed \(fixed_steps says why\)[^]*do not call spotlight_resolve again/);
 	assert.match(nextAction({ phase: 'investigation', missing: ['investigation follow-up'], follow_up: { instructions: 'x' } }, () => false)!, /spawn the investigator/);
 	// U9 held-kde: next_action agrees with the refusal of code's own fact-checker spawn; a later successful step clears it.
@@ -399,7 +401,7 @@ test('every state the resolver can return names a next step, and only member dec
 	t.after(() => { if (data === undefined) delete process.env.SPOTLIGHT_HARNESS_DATA; else process.env.SPOTLIGHT_HARNESS_DATA = data; });
 	assert.equal(nextAction({ phase: 'ingest', ingest: { resume_at: 'decision' } }, (relative) => relative === 'data/case-contract.json', blocked), NEXT_INGEST_BLOCKED);
 	process.env.SPOTLIGHT_EDITION = 'newsroom';
-	assert.equal(await missingForApproval(dir, { phase: 'ingest', ingest: { resume_at: 'decision' } }), undefined);
+	assert.match((await missingForApproval(dir, { phase: 'ingest', ingest: { resume_at: 'decision' } })) ?? '', /spawn_agent with agent analyst/);
 	delete process.env.SPOTLIGHT_EDITION;
 });
 

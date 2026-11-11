@@ -1,8 +1,7 @@
 // Newsroom edition tools. Each asks the launcher, the only process holding the
 // newsroom token, to call the newsroom's Editorial MCP (src/editorial.ts).
 // They replace query_vault (prior knowledge) in the newsroom edition and add
-// the newsroom's own decision checks and the Submit step (the orchestrator's
-// newsroomTools in harness/composition.json).
+// the Submit step (the orchestrator's newsroomTools in harness/composition.json).
 import { randomUUID } from 'node:crypto';
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
@@ -51,11 +50,8 @@ export function editorialTools(ask: EditorialAsk): ToolDefinition[] {
 			Type.Object({ record_id: recordId, depth: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })) }, { additionalProperties: false })),
 		tool(ask, 'coverage', 'Newsroom coverage', `The coverage report for an approved record: what the newsroom has published on it and what its knowledge base holds. ${UNTRUSTED}`,
 			Type.Object({ record_id: recordId }, { additionalProperties: false })),
-		tool(ask, 'run_checks', 'Run newsroom decision checks',
-			'Run the newsroom\'s decision checks on this case: kind "findings" at the Investigation gate (the findings with their passages), kind "report" on the report draft. The harness sends the case files itself and waits for the flags, which the review pages show. A flag never blocks and never becomes a verdict; "unavailable" never means "no flags".',
-			Type.Object({ kind: Type.Union([Type.Literal('findings'), Type.Literal('report')]) }, { additionalProperties: false })),
 		tool(ask, 'newsroom_submit', 'Submit the case to the newsroom',
-			'At Ingest, after the member requested ingestion: the harness builds the Submit package from the case, sends it to the newsroom (submit_case_review), reads the review status and records the receipts in receipts/; the newsroom\'s review page opens in the member\'s browser. A failed integrity check leaves the case at Ingest with the reasons. Then resolve again.',
+			'At Ingest, after the member approved the batch and requested ingestion on the page: the harness sends the approved batch to the newsroom (start_case_review), reads its review status and records the receipts in receipts/; the newsroom\'s review page opens in the member\'s browser. A batch the newsroom refuses leaves the case at Ingest with the reasons. Then resolve again.',
 			Type.Object({}, { additionalProperties: false })),
 	];
 }

@@ -717,9 +717,9 @@ def decide_ingest(
             raise OrchestrationError("the requested ingestion decision has no review receipt")
         ledger = None
     else:
-        # A decline needs no finished batch; a solo request on an activated
-        # case does, on every channel (the page also blocks without one).
-        if decision == "requested" and review.activated_case(case) and review.ingest_mode() == "solo":
+        # A decline needs no finished batch; a request on an activated case
+        # does, on every channel (the page also blocks without one).
+        if decision == "requested" and review.activated_case(case):
             if not case_path(case, review.INGEST_BATCH).is_file():
                 raise OrchestrationError("build and review the knowledge batch before requesting ingestion")
         ledger, binding = consume_nonce(case, data_descriptor, "ingest", nonce, digest,
