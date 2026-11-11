@@ -1,6 +1,6 @@
 // step2-design.md section 4: an AMENDMENT that sends only the directions it
 // changes is completed from the approved methodology. The scenario is in
-// launcher.test.ts ("code-built TASK: AMEND").
+// the launcher tests ("code-built TASK: AMEND").
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';

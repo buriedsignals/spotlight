@@ -3,7 +3,7 @@
 
 Each check has a passing case and at least one refused case. D4 (merge), the
 clue rules and ranking are in tests/research-merge-check.py; D7 is owned by
-tests/research-triage-check.py; D9 by harness/pi/src/launcher.test.ts.
+tests/research-triage-check.py; D9 by the launcher tests (harness/pi/src/launcher.part*.test.ts).
 """
 from __future__ import annotations
 

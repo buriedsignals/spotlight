@@ -1,6 +1,6 @@
 // step3c (reports/step3c-commit-design.md): which lines the investigator was
 // shown, when the commit step is due, and how a cite is clipped. The
-// end-to-end step is in launcher.test.ts ("commit step").
+// end-to-end step is in the launcher tests ("commit step").
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { commitDue, commitState, pickCommit, pickWrite, writeCommitDue, writeCommitFile } from './commit.ts';
