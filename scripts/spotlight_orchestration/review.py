@@ -1194,11 +1194,14 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
                           "suggested": None, "suggestion_source": "fact-check flag",
                           "suggestion_reason": f"Claim: {claim}. Flag {_text(flag.get('code'), 80)}: {_text(flag.get('reason'), 1000)}",
                           "required": True})
-    items += _unresolved_mentions(case, batch)
+    newsroom = ingest_mode() == "newsroom"
+    # Entity picks link mentions to the member's own wiki, which a newsroom case never reads.
+    if not newsroom:
+        items += _unresolved_mentions(case, batch)
     state = "final" if isinstance(final, dict) else "draft" if isinstance(batch, dict) else "empty"
     content: dict[str, Any] = {"batch": {"state": state, "records": records,
                                          "batch_sha256": _batch_sha256(case) if state == "final" else None}}
-    if ingest_mode() == "newsroom":
+    if newsroom:
         # The approved batch goes to the newsroom; the page shows how that went.
         submission = _read_case_json(case, NEWSROOM_SUBMISSION)
         if isinstance(submission, dict) and submission.get("state") in ("blocked", "submitted"):
