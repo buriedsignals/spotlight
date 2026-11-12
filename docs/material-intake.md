@@ -22,13 +22,15 @@ Open the Intake page from the review server's "Material intake" button, or, in a
 1. Check and confirm the record: its kind, who captured it, who the source is (a name or a pseudonym), who holds the rights, and how sensitive the original is. A new record starts as restrictive as possible (`case_only`), so anything you leave unsaid stays unpublishable. A confirmed record does not change.
 2. Look at each claim next to the passage it came from, with a few lines of the original around it, and keep, edit or drop it.
 3. Set each passage's attribution (on the record, background, not for attribution, or off the record), consent, and sensitivity. You can set defaults once for the whole item.
-4. Approve the kept claims of that item once none is left undecided. Changing the item's passages or claims afterwards removes the approval.
+4. Approve the kept claims of that item once none is left undecided. Changing the item's passages, claims or rights afterwards removes the approval.
+
+Confirming and approving happen on this page. The page asks Spotlight for a one-time code for that item and uses it for that one decision, and the page never shows it to you or to the agent. A command typed on the command line without the code is refused, and a confirmation or approval that someone wrote into the case's files by hand does not count: Spotlight ignores it and the page shows the item as not yet decided. What you confirm is the record as shown, and what you approve is the record, the kept claims and their passages with their rights, as shown. If any of it changed since the page showed it, the decision is refused and the page reloads.
 
 A passage is accepted only when its text appears in the original word for word, at one place. An approved claim enters your knowledge as what the source said. It carries no fact-check verdict.
 
 ## When there is no investigation
 
-A case that holds approved material and no brief goes from your approval straight to the Ingest decision. A case with an investigation shows the approved claims in the same Ingest batch as its findings.
+A case that holds approved material and no brief goes from your approval straight to the Ingest decision. A case with an investigation shows the approved claims in the same Ingest batch as its findings. The Ingest page shows under each claim from material the passage it rests on, which material it came from (its kind and file name), and the passage's attribution, consent and sensitivity in words, so you see the rights you are about to ingest.
 
 ## What leaves your computer
 

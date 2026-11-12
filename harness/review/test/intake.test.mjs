@@ -22,14 +22,25 @@ function intake(caseDir, args, input) {
   return JSON.parse(execFileSync(PYTHON, ["-E", "-s", INTAKE, caseDir, ...args], { input, encoding: "utf8" }));
 }
 
+// What the page does through the server: the digest it shows for one material.
+async function digestOf(json, id) {
+  return (await json("/api/intake/view")).body.digests[id];
+}
+
+// A confirmation as the review server makes it: a one-time code, then the decision with the shown digest.
+function confirmed(caseDir, id) {
+  const { nonce } = intake(caseDir, ["code", "confirm", id]);
+  intake(caseDir, ["confirm", id, "--by", "Fixture", `--nonce=${nonce}`, `--digest=${intake(caseDir, ["view"]).digests[id]}`]);
+}
+
 // A case holding one interview with two proposed claims from one passage.
-function caseWithMaterial(root, { confirmed = false } = {}) {
+function caseWithMaterial(root, { confirmed: isConfirmed = false } = {}) {
   const caseDir = buildCase(root, "case", "methodology");
   const file = join(root, "call.txt");
   writeFileSync(file, `${INTERVIEW.join("\n")}\n`);
   const record = intake(caseDir, ["add", "--file", file, "--kind", "interview"]);
-  intake(caseDir, ["set", record.id], JSON.stringify(confirmed ? FIELDS : { kind: "interview" }));
-  if (confirmed) intake(caseDir, ["confirm", record.id, "--by", "Fixture"]);
+  intake(caseDir, ["set", record.id], JSON.stringify(isConfirmed ? FIELDS : { kind: "interview" }));
+  if (isConfirmed) confirmed(caseDir, record.id);
   const claims = ["The foreman signed off a shift.", "Nobody kept a log."].map((proposition) => ({ proposition, statement: STATEMENT }));
   intake(caseDir, ["propose", record.id], JSON.stringify({ passages: [{ text: "The foreman signed the second shift off.\nNobody kept a log.", language: "en", claims }] }));
   return { caseDir, id: record.id };
@@ -77,7 +88,7 @@ test("keep, edit, drop, rights, confirm and approve each reach the case's files"
 
   assert.equal((await json("/api/intake/set", { id, fields: { ...FIELDS, original_sensitivity: "internal" } })).status, 200);
   assert.equal(read(caseDir, "journalist-input.json").inputs[0].original_sensitivity, "internal");
-  assert.equal((await json("/api/intake/confirm", { id })).status, 200);
+  assert.equal((await json("/api/intake/confirm", { id, digest: await digestOf(json, id) })).status, 200);
   assert.equal(read(caseDir, "journalist-input.json").inputs[0].confirmed_by, "Member");
 
   const decided = await json("/api/intake/decide", { claim: first, action: "edit", proposition: "The foreman signed off the second shift." });
@@ -90,12 +101,64 @@ test("keep, edit, drop, rights, confirm and approve each reach the case's files"
   assert.deepEqual(saved.passages[0].rights, rights);
 
   // Whatever name the page sends, the solo edition records the fixed Member.
-  assert.equal((await json("/api/intake/approve", { id, by: "Someone Else" })).status, 200);
+  assert.equal((await json("/api/intake/approve", { id, by: "Someone Else", digest: await digestOf(json, id) })).status, 200);
   const approval = read(caseDir, "intake-claims.json").approvals[id];
   assert.deepEqual([approval.by, approval.claims], ["Member", [first]]);
   // A later change takes the approval back.
   await json("/api/intake/decide", { claim: second, action: "keep" });
   assert.equal(read(caseDir, "intake-claims.json").approvals[id], undefined);
+});
+
+test("confirm and approve count only with the code the server issued, and the page never sees it", async (t) => {
+  const root = tempRoot(t);
+  const { caseDir, id } = caseWithMaterial(root);
+  const { json } = await startIntake(t, root, caseDir);
+  await json("/api/intake/set", { id, fields: FIELDS });
+
+  // A call on the command line, as an agent with a shell could make it, has no code.
+  for (const action of ["confirm", "approve"]) {
+    assert.throws(() => intake(caseDir, [action, id, "--by", "Member"]), (error) => /Intake page/.test(String(error.stderr)));
+  }
+  assert.equal(read(caseDir, "journalist-input.json").inputs[0].state, "draft");
+
+  // A digest the page did not show is refused: the record changed under it.
+  const stale = await digestOf(json, id);
+  await json("/api/intake/set", { id, fields: { captured_by: "Another Reporter" } });
+  const refused = await json("/api/intake/confirm", { id, digest: stale });
+  assert.equal(refused.status, 422);
+  assert.match(refused.body.message, /changed since the page showed it/);
+  assert.equal(read(caseDir, "journalist-input.json").inputs[0].state, "draft");
+
+  const confirm = await json("/api/intake/confirm", { id, digest: await digestOf(json, id) });
+  assert.equal(confirm.status, 200);
+  const ledger = read(caseDir, "review-nonces.json").nonces;
+  const [entry] = Object.entries(ledger).filter(([, value]) => value.gate === "intake_confirm" && value.used);
+  assert.equal(entry[1].subject, id);
+  // Only the code's hash is kept, and neither the answer nor the case holds the code.
+  assert.equal(entry[0], read(caseDir, "journalist-input.json").inputs[0].review.nonce_sha256);
+  assert.doesNotMatch(JSON.stringify(confirm.body), /"nonce"/);
+  assert.deepEqual(Object.keys(read(caseDir, "journalist-input.json").inputs[0].review).sort(), ["channel", "nonce_sha256"]);
+});
+
+test("a decision the page did not make does not count: a record or approval written by hand shows as undecided", async (t) => {
+  const root = tempRoot(t);
+  const { caseDir, id } = caseWithMaterial(root, { confirmed: true });
+  const { json } = await startIntake(t, root, caseDir);
+  const claims = read(caseDir, "intake-claims.json");
+  const passage = claims.passages[0].id;
+  await json("/api/intake/keep-all", { id });
+  await json("/api/intake/rights", { passage, rights: { attribution: "background", sensitivity: "internal", consent: { publish_content: true, publish_direct_quotes: false, obtained_via: "written" } } });
+  assert.equal((await json("/api/intake/approve", { id, digest: await digestOf(json, id) })).status, 200);
+  assert.deepEqual(Object.keys((await json("/api/intake/view")).body.approvals), [id]);
+
+  // The shared file is edited by hand: the passage is now said to be publishable.
+  const edited = read(caseDir, "intake-claims.json");
+  edited.passages[0].rights.sensitivity = "publishable";
+  writeFileSync(join(caseDir, "data", "intake-claims.json"), JSON.stringify(edited));
+  assert.deepEqual((await json("/api/intake/view")).body.approvals, {});
+  // Approving again needs a fresh page decision.
+  assert.equal((await json("/api/intake/approve", { id, digest: await digestOf(json, id) })).status, 200);
+  assert.deepEqual(Object.keys((await json("/api/intake/view")).body.approvals), [id]);
 });
 
 test("keep all keeps what is still undecided in one material", async (t) => {
@@ -112,10 +175,10 @@ test("a refusal from intake.py reaches the client with its reason and changes no
   const { json } = await startIntake(t, root, caseDir);
   const before = [read(caseDir, "journalist-input.json"), read(caseDir, "intake-claims.json")];
 
-  const incomplete = await json("/api/intake/confirm", { id });
+  const incomplete = await json("/api/intake/confirm", { id, digest: await digestOf(json, id) });
   assert.equal(incomplete.status, 422);
   assert.match(incomplete.body.message, /not complete: captured_by, source, rights_holder/);
-  const early = await json("/api/intake/approve", { id });
+  const early = await json("/api/intake/approve", { id, digest: await digestOf(json, id) });
   assert.equal(early.status, 422);
   assert.match(early.body.message, /not confirmed yet/);
   const badRights = await json("/api/intake/rights", { passage: "JP1", rights: { attribution: "loud" } });
@@ -135,13 +198,14 @@ test("the newsroom edition needs the person's name and records it", async (t) =>
   assert.equal((await json("/api/intake/view")).body.name_required, true);
   await json("/api/intake/set", { id, fields: FIELDS });
 
-  for (const body of [{ id }, { id, by: "  " }]) {
+  const digest = await digestOf(json, id);
+  for (const body of [{ id, digest }, { id, by: "  ", digest }]) {
     const refused = await json("/api/intake/confirm", body);
     assert.equal(refused.status, 422);
     assert.match(refused.body.message, /enter your name/);
   }
   assert.equal(read(caseDir, "journalist-input.json").inputs[0].state, "draft");
-  assert.equal((await json("/api/intake/confirm", { id, by: " A. Reporter " })).status, 200);
+  assert.equal((await json("/api/intake/confirm", { id, by: " A. Reporter ", digest })).status, 200);
   assert.equal(read(caseDir, "journalist-input.json").inputs[0].confirmed_by, "A. Reporter");
 });
 
@@ -155,7 +219,10 @@ test("a request that is not exactly an intake action is refused before intake.py
     ["/api/intake/decide", { claim: "JC1", action: "keep", proposition: "x" }],
     ["/api/intake/decide", { claim: "JC1", action: "edit", proposition: "   " }],
     ["/api/intake/decide", { claim: "JC1", action: "approve" }],
-    ["/api/intake/confirm", { id: "-x" }],
+    ["/api/intake/confirm", { id: "-x", digest: "0".repeat(64) }],
+    ["/api/intake/confirm", { id: "JI1" }],
+    ["/api/intake/confirm", { id: "JI1", digest: "short" }],
+    ["/api/intake/approve", { id: "JI1", digest: "0".repeat(64), nonce: "0".repeat(64) }],
     ["/api/intake/set", { id: "JI1", fields: [] }],
     ["/api/intake/rights", { passage: "JP1" }],
     ["/api/intake/nothing", {}],

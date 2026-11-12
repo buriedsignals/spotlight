@@ -275,6 +275,7 @@ const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) =
 const nodes = (node, test) => [...(test(node) ? [node] : []), ...(node.children ?? []).flatMap((child) => (typeof child === "object" ? nodes(child, test) : []))];
 const NOTHING_PENDING = { gate: "", pending_gate: "", gate_label: "Wiki changes" };
 const HOSTILE = "<img src=x onerror=alert(1)> the foreman signed it";
+const DIGEST = "d".repeat(64);
 
 function material({ record = {}, claim = {}, approvals = {}, nameRequired = false } = {}) {
   return {
@@ -284,6 +285,7 @@ function material({ record = {}, claim = {}, approvals = {}, nameRequired = fals
     passages: [{ id: "JP1", input_id: "JI1", text: HOSTILE, anchor_ref: { path: "intake/interviews/call.txt", line_start: 2, line_end: 2 }, rights: { attribution: "background" },
       context: { truncated: false, lines: [{ n: 1, text: "line before", in_passage: false }, { n: 2, text: HOSTILE, in_passage: true }, { n: 3, text: "line after", in_passage: false }] } }],
     claims: [{ id: "JC1", passage_id: "JP1", proposition: "The <b>foreman</b> signed off.", state: "proposed", ...claim }],
+    digests: { JI1: DIGEST },
     approvals,
   };
 }
@@ -341,16 +343,34 @@ test("approving needs a confirmed record and no claim left undecided; a confirme
   assert.deepEqual(await state(material({ record: confirmed, claim: { state: "kept" } })), { approve: "false", form: false, keepAll: false });
 });
 
+test("approving sends the digest the page showed for the material, and never a code", async () => {
+  const page = await intakePage(material({ record: { state: "confirmed", confirmed_by: "Member", confirmed_at: "2026-11-12T10:00:00Z" }, claim: { state: "kept" } }));
+  await page.getElementById("approve-JI1").listeners.click();
+  assert.deepEqual(page.posts.find((post) => post.path === "/api/intake/approve").body, { id: "JI1", digest: DIGEST });
+});
+
+test("the Ingest page shows what a claim from material rests on, as text, and nothing under a claim from an investigation", async (t) => {
+  const basis = { passage: HOSTILE, material: "interview, call.txt", rights: ["Attribution: background", "Consent: content may be published, direct quotes may not be published", "Sensitivity: internal"] };
+  const records = [{ type: "claims", id: "claim-1", version: 1, text: "From material.", basis }, { type: "claims", id: "claim-2", version: 1, text: "From an investigation." }];
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "report") }).view("report");
+  const page = await renderClient({ ...view, gate: "ingest", content: { batch: { state: "final", records } }, pending_gate: null, receipt: { decision: "requested", approved_by: "Member" } });
+  const app = page.getElementById("app");
+  assert.equal(nodes(app, (node) => node.tag === "img").length, 0, "the passage became markup");
+  const shown = words(page.getElementById("basis-claim-1"));
+  assert.ok(shown.includes(HOSTILE) && shown.includes("From the interview, call.txt.") && shown.includes("Attribution: background") && shown.includes("direct quotes may not be published"), shown);
+  assert.equal(page.getElementById("basis-claim-2"), null);
+});
+
 test("the solo Intake page asks for no name; the newsroom page asks and sends it with a confirmation", async () => {
   const solo = await intakePage(material());
   assert.equal(solo.getElementById("intake-name"), null);
   await solo.getElementById("confirm-JI1").listeners.click();
-  assert.deepEqual(solo.posts.find((post) => post.path === "/api/intake/confirm").body, { id: "JI1" });
+  assert.deepEqual(solo.posts.find((post) => post.path === "/api/intake/confirm").body, { id: "JI1", digest: DIGEST });
 
   const newsroom = await intakePage(material({ nameRequired: true }));
   newsroom.getElementById("intake-name").listeners.input({ target: { value: "A. Reporter" } });
   await newsroom.getElementById("confirm-JI1").listeners.click();
-  assert.deepEqual(newsroom.posts.find((post) => post.path === "/api/intake/confirm").body, { id: "JI1", by: "A. Reporter" });
+  assert.deepEqual(newsroom.posts.find((post) => post.path === "/api/intake/confirm").body, { id: "JI1", by: "A. Reporter", digest: DIGEST });
 });
 
 test("a gate page offers the Intake page only when the server has one", async (t) => {

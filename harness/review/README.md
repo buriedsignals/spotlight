@@ -123,7 +123,15 @@ the passage's rights, Keep / Edit / Drop, and the material's approval, with
 "Keep all". Every action is one `intake.py` call under `/api/intake/<action>`
 (view, set, confirm, decide, rights, keep-all, approve), saved at once; the
 server validates ids and body shape, and a refusal (exit 2) comes back as 422
-with its reason, shown beside the action. Context lines are read by
+with its reason, shown beside the action. Confirm and approve take the digest
+the view gave for that material (`digests`) and nothing else from the page.
+The server asks `intake.py code` for a one-time code for that material and
+action, keeps it in that one call, and passes it to `intake.py confirm` or
+`approve` with the digest; the page never receives it. The code is stored
+hashed in the case's nonce ledger and spent with the decision. A digest of
+what the page showed that no longer matches the material is refused, and the
+page reloads. The view lists a record whose confirmation, or an approval whose
+code and digest the ledger does not back, as not yet decided. Context lines are read by
 `intake.py view` only from plain files under the case's `intake/` folder, and
 only while the file still has the bytes the passage was taken from. The solo
 edition records the fixed `Member`; the newsroom edition asks for a name and

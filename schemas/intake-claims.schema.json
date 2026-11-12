@@ -200,8 +200,32 @@
             "type": "string",
             "pattern": "^JC[1-9][0-9]*$"
           }
+        },
+        "review": {
+          "$ref": "#/definitions/review_receipt"
+        },
+        "dependency_digest": {
+          "$ref": "#/definitions/sha256",
+          "description": "The digest of the confirmed record, the kept claims and their passages that the page showed and the nonce was spent on. An approval counts only while this still matches the content."
         }
       }
+    },
+    "review_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channel",
+        "nonce_sha256"
+      ],
+      "properties": {
+        "channel": {
+          "const": "page"
+        },
+        "nonce_sha256": {
+          "$ref": "#/definitions/sha256"
+        }
+      },
+      "description": "The hash of the one-time code the Intake page spent, as kept in data/review-nonces.json."
     }
   }
 }

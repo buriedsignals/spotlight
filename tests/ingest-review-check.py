@@ -87,6 +87,10 @@ class SoloIngest(SoloCase):
         view = self.view(case, "ingest")
         self.assertEqual(view["content"]["batch"]["state"], "final")
         self.assertEqual({i["key"] for i in view["items"] if i["kind"] == "selection"}, {"record:c1", "record:e1", "record:a1"})
+        # A claim from an investigation shows no material basis.
+        records = view["content"]["batch"]["records"]
+        self.assertTrue(any(r["type"] == "claims" for r in records))
+        self.assertFalse(any("basis" in r for r in records), records)
         before = view["digest"]
         self.edit(case, "ingest", {"kind": "mark", "key": "record:a1", "value": False})
         batch = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))

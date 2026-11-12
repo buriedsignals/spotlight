@@ -42,16 +42,22 @@ def run(script: str, *args: str, env: dict[str, str], expect: int = 0) -> subpro
     return done
 
 
+def decided(case: Path, action: str, record_id: str) -> None:
+    """The page's way: a one-time code for the material, then the decision with the digest the page shows."""
+    nonce = INTAKE.issue_code(case, action, record_id)["nonce"]
+    getattr(INTAKE, action)(case, record_id, "A. Reporter", nonce, INTAKE.view(case)["digests"][record_id])
+
+
 def approved_material(case: Path, name: str, text: str) -> None:
     """One confirmed record whose kept claim the journalist approved."""
     source = case.parent / f"{name}.txt"
     source.write_text(text, encoding="utf-8")
     record = INTAKE.set_fields(case, INTAKE.add(case, source)["id"], COMPLETE)
-    INTAKE.confirm(case, record["id"], "A. Reporter")
+    decided(case, "confirm", record["id"])
     stored = INTAKE.propose(case, record["id"], {"passages": [{"text": QUOTE, "language": "en", "direct_quote": True, "claims": [CLAIM]}]})
     INTAKE.set_rights(case, stored["passages"][-1]["id"], RIGHTS)
     INTAKE.decide(case, stored["claims"][-1]["id"], "keep")
-    INTAKE.approve(case, record["id"], "A. Reporter")
+    decided(case, "approve", record["id"])
 
 
 def main() -> int:
@@ -98,6 +104,19 @@ def main() -> int:
         require(page["blocking"] == [] and page["content"]["batch"]["state"] == "final", f"the page does not show a final batch: {page}")
         require(any(r["type"] == "claims" and CLAIM["proposition"] in r["text"] for r in page["content"]["batch"]["records"]),
                 f"the page does not list the claim: {page['content']}")
+        # A claim from material shows what it rests on: the passage, the material and the passage's rights, in words.
+        shown = next(r for r in page["content"]["batch"]["records"] if r["type"] == "claims")
+        require(shown["basis"] == {"passage": QUOTE, "material": "interview, call.txt",
+                                   "rights": ["Attribution: not for attribution",
+                                              "Consent: content may be published, direct quotes may not be published",
+                                              "Sensitivity: kept in the case only"]}, f"the claim does not show its basis: {shown}")
+
+        # An approval without the page's code behind it is not an approval: the case is back at the start.
+        unbacked = root / "unbacked" / "harbour"
+        shutil.copytree(case, unbacked)
+        (unbacked / "data" / "review-nonces.json").unlink()
+        copied_status = json.loads(run("spotlight-orchestration.py", "status", "--json", str(unbacked), env=env).stdout)
+        require(copied_status["phase"] == "brief", f"approvals with no ledger behind them took the material-only path: {copied_status}")
 
         # A request needs the page's own nonce; a hand-written decision does not advance the case.
         forged = root / "forged" / "harbour"

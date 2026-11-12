@@ -184,17 +184,20 @@ export function createIntakeBridge({
     throw Object.assign(new Error(message.slice(0, 2048) || "the material could not be read or saved"), { code: refused ? "refused" : "intake-failed" });
   }
 
-  // The person a confirmation or approval is recorded for, then the write.
-  async function asDecider(by, write) {
+  // The person a confirmation or approval is recorded for, then the write with
+  // a one-time code issued for this material and kept in this call only. The
+  // page never receives it; the digest is the one the page showed.
+  async function decideAs(action, id, by, digest) {
     const { by: name } = await run(["decider", ...(by === undefined ? [] : [`--by=${by}`])]);
-    return write(name);
+    const { nonce } = await run(["code", action, id]);
+    return run([action, id, `--by=${name}`, `--nonce=${nonce}`, `--digest=${digest}`]);
   }
 
   return Object.freeze({
     view: () => run(["view"]),
     set: (id, fields) => run(["set", id], JSON.stringify(fields)),
-    confirm: (id, by) => asDecider(by, (name) => run(["confirm", id, `--by=${name}`])),
-    approve: (id, by) => asDecider(by, (name) => run(["approve", id, `--by=${name}`])),
+    confirm: (id, by, digest) => decideAs("confirm", id, by, digest),
+    approve: (id, by, digest) => decideAs("approve", id, by, digest),
     decide: (claim, action, fields) => run(["decide", claim, action], action === "edit" ? JSON.stringify(fields) : ""),
     rights: (passage, rights) => run(["rights", passage], JSON.stringify(rights)),
     keepAll: (id) => run(["keep-all", id]),

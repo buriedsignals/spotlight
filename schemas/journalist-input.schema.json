@@ -149,6 +149,29 @@
           "type": "string",
           "format": "date-time"
         },
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "channel",
+            "nonce_sha256"
+          ],
+          "properties": {
+            "channel": {
+              "const": "page"
+            },
+            "nonce_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "description": "The hash of the one-time code the Intake page spent to confirm this record, as kept in data/review-nonces.json. A confirmed record counts only while this code backs it."
+        },
+        "dependency_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "The digest of the record's fields (all but its state, confirmation and derivatives) that the page showed and the code was spent on."
+        },
         "passage_defaults": {
           "$ref": "#/definitions/passage_rights",
           "description": "What the journalist said once for this material; each passage taken from it starts with these rights."

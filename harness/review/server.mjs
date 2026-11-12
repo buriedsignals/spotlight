@@ -12,6 +12,7 @@ const BODY_LIMIT = 64 << 10;
 const MAX_FOLLOW_UP = 4000;
 const REQUEST_TIMEOUT_MS = 150_000;
 const MATERIAL_ID = /^JI[1-9][0-9]*$/;
+const DIGEST = /^[a-f0-9]{64}$/;
 const PASSAGE_ID = /^JP[1-9][0-9]*$/;
 const CLAIM_ID = /^JC[1-9][0-9]*$/;
 const MAX_NAME = 200;
@@ -461,8 +462,8 @@ export async function startReviewServer({
     }
     if (action === "confirm" || action === "approve") {
       const by = optionalName(plainObject(body, action));
-      const { id } = exactObject(body, by === undefined ? ["id"] : ["id", "by"], action);
-      return intake[action](pattern(id, MATERIAL_ID, "the material"), by);
+      const { id, digest } = exactObject(body, by === undefined ? ["id", "digest"] : ["id", "by", "digest"], action);
+      return intake[action](pattern(id, MATERIAL_ID, "the material"), by, pattern(digest, DIGEST, "the digest"));
     }
     if (action === "keep-all") {
       return intake.keepAll(pattern(exactObject(body, ["id"], "keep all").id, MATERIAL_ID, "the material"));

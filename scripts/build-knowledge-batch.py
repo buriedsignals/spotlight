@@ -75,6 +75,7 @@ from intake import passage_in_lines  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.dependencies import material_only_case  # noqa: E402
+from spotlight_orchestration.intake_decisions import counted_approvals  # noqa: E402
 from spotlight_orchestration.review import ingest_mode  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 from verdicts import FLAG_CODES, VERDICTS_1_1  # noqa: E402
@@ -253,7 +254,8 @@ def _file_sha(case: Path, relative: str) -> str | None:
 
 def approved_material(case: Path) -> list[dict[str, Any]]:
     """Each approved claim of the case's material with its passage and its
-    material's record, checked against the files as they are now."""
+    material's record, checked against the files as they are now. An approval
+    the Intake page's code does not back, or whose content changed, is none."""
     register = _load(case, INPUTS, required=False)
     intake = _load(case, INTAKE_CLAIMS, required=False)
     if not isinstance(register, dict) or not isinstance(intake, dict):
@@ -262,10 +264,8 @@ def approved_material(case: Path) -> list[dict[str, Any]]:
     passages = {p["id"]: p for p in intake.get("passages", [])}
     claims = {c["id"]: c for c in intake.get("claims", [])}
     out = []
-    for input_id, approval in sorted((intake.get("approvals") or {}).items()):
-        record = inputs.get(input_id)
-        if record is None or record.get("state") != "confirmed":
-            raise BuildError(f"material {input_id} is approved but its record is not confirmed")
+    for input_id, approval in sorted(counted_approvals(case).items()):
+        record = inputs[input_id]
         if _file_sha(case, record["content_ref"]) != record["content_sha256"]:
             raise BuildError(f"material {input_id}: {record['content_ref']} no longer has the registered bytes")
         for claim_id in approval["claims"]:

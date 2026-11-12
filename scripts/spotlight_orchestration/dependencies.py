@@ -145,17 +145,16 @@ MATERIAL_FILES = ("data/journalist-input.json", "data/intake-claims.json")
 
 def material_only_case(case: Path) -> bool:
     """A case with approved material and no brief: no investigation will run,
-    so its material goes from intake straight to Ingest."""
+    so its material goes from intake straight to Ingest. An approval counts
+    only when the Intake page's nonce backs it (intake_decisions)."""
     # Any trace of an investigation rules it out: a case restored without its
     # brief must not have its ingest approval bound to the material alone.
     investigation = ("brief-directions.txt", "data/methodology.json", "data/findings.json")
     if any(case_path(case, name).is_file() for name in investigation) or not case_path(case, "data/journalist-input.json").is_file():
         return False
-    try:
-        claims = json.loads(case_path(case, "data/intake-claims.json").read_bytes())
-    except (OSError, ValueError):
-        return False
-    return isinstance(claims, dict) and bool(claims.get("approvals"))
+    # Imported here: intake_decisions reads the review ledger, and review imports this module.
+    from .intake_decisions import counted_approvals
+    return bool(counted_approvals(case))
 
 
 def ingest_digest(case: Path) -> str:

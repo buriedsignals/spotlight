@@ -12,17 +12,18 @@ Usage:
   python3 scripts/intake.py {CASE_DIR} add --file PATH [--kind KIND] [--actor agent --model ID]
   python3 scripts/intake.py {CASE_DIR} scan
   python3 scripts/intake.py {CASE_DIR} set JI1 [--actor agent --model ID] < fields.json
-  python3 scripts/intake.py {CASE_DIR} confirm JI1 --by NAME
+  python3 scripts/intake.py {CASE_DIR} confirm JI1 --by NAME --nonce CODE --digest DIGEST
   python3 scripts/intake.py {CASE_DIR} list
   python3 scripts/intake.py {CASE_DIR} derive JI1 --file transcript.txt --type transcript
   python3 scripts/intake.py {CASE_DIR} propose JI1 [--actor agent --model ID] < proposal.json
   python3 scripts/intake.py {CASE_DIR} decide JC1 keep|drop|edit [< {"proposition": ..., "statement": ...}]
   python3 scripts/intake.py {CASE_DIR} rights JP1 < rights.json
-  python3 scripts/intake.py {CASE_DIR} approve JI1 --by NAME
+  python3 scripts/intake.py {CASE_DIR} approve JI1 --by NAME --nonce CODE --digest DIGEST
   python3 scripts/intake.py {CASE_DIR} claims
   python3 scripts/intake.py {CASE_DIR} view
   python3 scripts/intake.py {CASE_DIR} keep-all JI1
   python3 scripts/intake.py {CASE_DIR} decider [--by NAME]
+  python3 scripts/intake.py {CASE_DIR} code confirm|approve JI1
 
 - add copies a file into the case and drafts its record; scan drafts a record
   for every file already dropped under intake/. A file whose kind the name
@@ -31,9 +32,13 @@ Usage:
   rights_holder, original_sensitivity, and passage_defaults (the rights each
   passage taken from this material starts with). An agent may propose them; this script
   alone sets the id, the file's place, its fingerprint and the capture time.
-- confirm is the journalist's: it accepts a complete record whose file still
-  has the registered bytes, and closes it. A confirmed record does not change;
-  different bytes are a new record.
+- confirm is the journalist's, made on the Intake page: it accepts a complete
+  record whose file still has the registered bytes, and closes it. A confirmed
+  record does not change; different bytes are a new record. It needs the
+  page's one-time code for that record (--nonce) and the digest the page
+  showed (--digest, the record's fields without its state, confirmation and
+  derivatives); without them it is refused. A record confirmed any other way
+  does not count.
 
 A draft starts as restrictive as the model allows (`case_only`): what is not
 stated is not publishable.
@@ -53,14 +58,21 @@ Passages and claims (no investigation is involved, and no verdict is given):
 - decide is the journalist's keep, drop or edit of one claim; rights sets one
   passage's attribution, consent and sensitivity.
 - approve is the journalist's approval of the kept claims of one confirmed
-  record, once none is left undecided. It rebuilds the case's knowledge batch
-  for the Ingest page. Any later change to that material's
-  passages or claims removes the approval.
+  record, once none is left undecided, made on the Intake page. It needs the
+  page's one-time code for that record and the digest the page showed (the
+  confirmed record, each kept claim and its passage whole, rights included).
+  It rebuilds the case's knowledge batch for the Ingest page. Any later change
+  to that material's passages, claims or rights removes the approval, and an
+  approval whose content no longer matches its digest, or that the nonce
+  ledger (data/review-nonces.json) does not back, is not one.
 - The review page's three: view returns what the page shows (the register, the
   passages each with a few lines of context from the file they were taken from,
   the claims and the approvals); keep-all keeps every claim of one material
   that is still undecided; decider names who a page's confirmation or approval
-  is recorded for: the fixed Member in the solo edition, else the name given.
+  is recorded for: the fixed Member in the solo edition, else the name given;
+  code issues the page's one-time code for one material and action (it stores
+  only the hash, in the case's nonce ledger) and prints it for the review
+  server alone.
 
 Exit codes: 0 = done (the register, or the record, as JSON on stdout);
 2 = refused (the reason is on stderr).
@@ -86,7 +98,10 @@ import schema_check  # noqa: E402
 from evidence_anchors import locate_quote, normalized, source_lines  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
-from spotlight_orchestration.review import SOLO_DECIDER, ingest_mode, rebuild_ingest_batch  # noqa: E402
+from spotlight_orchestration import intake_decisions as decisions  # noqa: E402
+from spotlight_orchestration.review import (  # noqa: E402
+    INTAKE_GATES, LEDGER_FILE, SOLO_DECIDER, issue_nonce, ledger_bytes, load_ledger, ingest_mode, rebuild_ingest_batch,
+)
 from spotlight_orchestration.storage import transaction  # noqa: E402
 
 TARGET = "data/journalist-input.json"
@@ -162,12 +177,15 @@ def _load_claims(case: Path) -> dict[str, Any]:
     return doc
 
 
-def _publish(case: Path, doc: dict[str, Any], descriptor: int, target: str = TARGET) -> None:
+def _publish(case: Path, doc: dict[str, Any], descriptor: int, target: str = TARGET, ledger: dict[str, Any] | None = None) -> None:
+    """Write the document and, for a decision, the nonce ledger that spent its code: both or neither."""
     errors = schema_check.load(CLAIMS_SCHEMA if target == CLAIMS else SCHEMA).errors(doc)
     if errors:
         raise Refused(f"{target} would not be valid: " + "; ".join(errors[:6]))
-    atomic_write_files(case, {target: (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")},
-                       data_descriptor=descriptor)
+    files = {target: (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")}
+    if ledger is not None:
+        files[f"data/{LEDGER_FILE}"] = ledger_bytes(ledger)
+    atomic_write_files(case, files, data_descriptor=descriptor)
 
 
 def _shape_errors(value: Any, schema: Path, definition: str) -> list[str]:
@@ -362,14 +380,40 @@ def _check_fields(record: dict[str, Any]) -> None:
         raise Refused('kind "other" needs kind_detail')
 
 
-def confirm(case: Path, record_id: str, by: str) -> dict[str, Any]:
-    """The journalist's acceptance of a complete record whose file is unchanged."""
+def _require_code(action: str, nonce: str | None, digest: str | None) -> None:
+    if not nonce or not digest:
+        raise Refused(f"to {action} is the journalist's decision, made on the Intake page. A command needs the one-time code "
+                      "(--nonce) the page was issued for this material and the digest (--digest) it showed")
+
+
+def _spend(ledger: dict[str, Any], action: str, record_id: str, nonce: str, digest: str, current: str) -> dict[str, Any]:
+    try:
+        return decisions.spend(ledger, action, record_id, nonce, digest, current)
+    except OrchestrationError as exc:
+        raise Refused(str(exc)) from exc
+
+
+def issue_code(case: Path, action: str, record_id: str) -> dict[str, str]:
+    """A one-time code for the page to confirm or approve one material. Only
+    its hash is kept in the case; the code goes to the review server alone."""
+    if action not in INTAKE_GATES:
+        raise Refused(f"a code is issued to {' or '.join(INTAKE_GATES)}")
+    with transaction(case) as descriptor:
+        _record(_load(case), record_id)
+        return {"nonce": issue_nonce(case, descriptor, INTAKE_GATES[action], record_id)}
+
+
+def confirm(case: Path, record_id: str, by: str, nonce: str | None = None, digest: str | None = None) -> dict[str, Any]:
+    """The journalist's acceptance of a complete record whose file is unchanged,
+    backed by the page's code for this record and the digest of its fields."""
+    _require_code("confirm", nonce, digest)
     if not by.strip():
         raise Refused("--by names who confirms")
     with transaction(case) as descriptor:
         doc = _load(case)
         record = _record(doc, record_id)
-        if record["state"] == "confirmed":
+        ledger = load_ledger(case, descriptor)
+        if decisions.confirmed(case, record, ledger):
             return record
         missing = [name for name in ("kind", "captured_by", "source", "rights_holder") if not record.get(name)]
         if missing:
@@ -378,8 +422,9 @@ def confirm(case: Path, record_id: str, by: str) -> dict[str, Any]:
         path = _material_file(case, case / record["content_ref"])
         if _sha256(path) != record["content_sha256"]:
             raise Refused(f"{record['content_ref']} no longer has the registered bytes; changed material is a new record")
-        record.update({"state": "confirmed", "confirmed_by": by.strip(), "confirmed_at": _now()})
-        _publish(case, doc, descriptor)
+        receipt = _spend(ledger, "confirm", record_id, nonce, digest, decisions.confirm_digest(record))
+        record.update({"state": "confirmed", "confirmed_by": by.strip(), "confirmed_at": _now(), **receipt})
+        _publish(case, doc, descriptor, ledger=ledger)
     return record
 
 
@@ -531,12 +576,16 @@ def keep_all(case: Path, record_id: str) -> list[dict[str, Any]]:
     return proposed
 
 
-def approve(case: Path, record_id: str, by: str) -> dict[str, Any]:
-    """The journalist's approval of one confirmed record's kept claims."""
+def approve(case: Path, record_id: str, by: str, nonce: str | None = None, digest: str | None = None) -> dict[str, Any]:
+    """The journalist's approval of one confirmed record's kept claims, backed
+    by the page's code for this record and the digest of what it covers."""
+    _require_code("approve", nonce, digest)
     if not by.strip():
         raise Refused("--by names who approves")
     with transaction(case) as descriptor:
-        if _record(_load(case), record_id)["state"] != "confirmed":
+        record = _record(_load(case), record_id)
+        ledger = load_ledger(case, descriptor)
+        if not decisions.confirmed(case, record, ledger):
             raise Refused(f"{record_id} is not confirmed yet: its record is approved first, then its claims")
         doc = _load_claims(case)
         claims = _claims_of(doc, record_id)
@@ -546,8 +595,9 @@ def approve(case: Path, record_id: str, by: str) -> dict[str, Any]:
         kept = [claim["id"] for claim in claims if claim["state"] == "kept"]
         if not kept:
             raise Refused(f"{record_id} has no kept claim to approve")
-        doc["approvals"][record_id] = {"by": by.strip(), "at": _now(), "claims": kept}
-        _publish(case, doc, descriptor, CLAIMS)
+        receipt = _spend(ledger, "approve", record_id, nonce, digest, decisions.approve_digest(record, doc))
+        doc["approvals"][record_id] = {"by": by.strip(), "at": _now(), "claims": kept, **receipt}
+        _publish(case, doc, descriptor, CLAIMS, ledger)
     # The Ingest page shows a built batch: a case that holds only material has
     # no analyst to build it, so the approval does. The builder takes the lock itself.
     rebuild_ingest_batch(case.resolve())
@@ -578,14 +628,20 @@ def _context(case: Path, passage: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def view(case: Path) -> dict[str, Any]:
-    """Everything the review page shows of a case's material, in one read."""
+    """Everything the review page shows of a case's material, in one read. A
+    record or approval the page's code does not back is shown as not yet
+    decided, and each material comes with the digest its next decision binds."""
     claims = _load_claims(case)
+    ledger = load_ledger(case)
+    inputs = [record if decisions.confirmed(case, record, ledger) else {**record, "state": "draft"} for record in _load(case)["inputs"]]
     return {
         "name_required": ingest_mode() == "newsroom",
-        "inputs": _load(case)["inputs"],
+        "inputs": inputs,
+        "digests": {record["id"]: decisions.subject_digest("approve" if record["state"] == "confirmed" else "confirm", record, claims)
+                    for record in inputs},
         "passages": [{**passage, "context": _context(case, passage)} for passage in claims["passages"]],
         "claims": claims["claims"],
-        "approvals": claims["approvals"],
+        "approvals": decisions.counted_approvals(case),
     }
 
 
@@ -625,6 +681,11 @@ def main(argv: list[str] | None = None) -> int:
         sub = commands.add_parser(name)
         sub.add_argument("id")
         sub.add_argument("--by", required=True)
+        sub.add_argument("--nonce")
+        sub.add_argument("--digest")
+    code_parser = commands.add_parser("code")
+    code_parser.add_argument("action")
+    code_parser.add_argument("id")
     derive_parser = commands.add_parser("derive")
     derive_parser.add_argument("id")
     derive_parser.add_argument("--file", type=Path, required=True)
@@ -639,6 +700,7 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("keep-all").add_argument("id")
     commands.add_parser("decider").add_argument("--by")
     args = parser.parse_args(argv)
+    args.case = args.case.resolve()  # the review ledger is read through the case's real path
     try:
         if args.command == "add":
             result: Any = add(args.case, args.file, args.kind, args.actor, args.model)
@@ -647,7 +709,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "set":
             result = set_fields(args.case, args.id, _stdin_json(), args.actor, args.model)
         elif args.command == "confirm":
-            result = confirm(args.case, args.id, args.by)
+            result = confirm(args.case, args.id, args.by, args.nonce, args.digest)
         elif args.command == "derive":
             result = derive(args.case, args.id, args.file, args.type)
         elif args.command == "propose":
@@ -657,7 +719,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "rights":
             result = set_rights(args.case, args.id, _stdin_json())
         elif args.command == "approve":
-            result = approve(args.case, args.id, args.by)
+            result = approve(args.case, args.id, args.by, args.nonce, args.digest)
+        elif args.command == "code":
+            result = issue_code(args.case, args.action, args.id)
         elif args.command == "claims":
             result = _load_claims(args.case)
         elif args.command == "view":

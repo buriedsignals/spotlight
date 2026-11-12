@@ -678,6 +678,26 @@ function reportContent(content) {
   ];
 }
 
+// A claim from the case's material says what it rests on: the passage, the
+// material it was taken from and the passage's rights.
+function ingestRecord(record) {
+  const basis = record.basis;
+  return el(
+    "li",
+    {},
+    `${record.type} ${record.id} v${record.version}: ${record.text}`,
+    basis
+      ? el(
+          "div",
+          { className: "muted", id: `basis-${record.id}` },
+          el("p", { className: "quote", text: basis.passage }),
+          el("p", { text: `From the ${basis.material}.` }),
+          el("p", { text: basis.rights.join(" · ") }),
+        )
+      : null,
+  );
+}
+
 function ingestContent(content, items) {
   const batch = content.batch ?? {};
   const records = batch.records ?? [];
@@ -695,7 +715,7 @@ function ingestContent(content, items) {
       el("h2", { id: "batch-heading", text: "Knowledge batch" }),
       stateLine ? el("p", { text: stateLine }) : null,
       records.length
-        ? list(records.map((record) => `${record.type} ${record.id} v${record.version}: ${record.text}`), "")
+        ? el("ul", {}, records.map(ingestRecord))
         : el("p", { className: "muted", text: "No batch preview is available for this case. Deciding here records only whether to ingest." }),
     ),
     newsroomSubmission(content.submission),
@@ -1578,7 +1598,8 @@ async function intakeAct(key, steps, done) {
   try {
     let saved = 0;
     for (const [path, body] of steps) {
-      const { status, data } = await post(`/api/intake/${path}`, body);
+      // A step that follows another is built from the material as that step left it.
+      const { status, data } = await post(`/api/intake/${path}`, typeof body === "function" ? body() : body);
       if (status === 403) return;
       if (status !== 200) {
         intakeErrors[key] = data.message || "That was refused. Nothing was saved.";
@@ -1586,13 +1607,13 @@ async function intakeAct(key, steps, done) {
         break;
       }
       saved += 1;
+      await loadIntake();
     }
     if (saved === steps.length) {
       delete drafts[key];
       intakeErrors = {};
       say(done);
     }
-    if (saved) await loadIntake();
   } finally {
     setBusy(false);
   }
@@ -1615,7 +1636,7 @@ function recordForm(record) {
   const save = (confirm) => () =>
     intakeAct(
       record.id,
-      [["set", { id: record.id, fields: recordFields(record, state) }], ...(confirm ? [["confirm", { id: record.id, ...byName() }]] : [])],
+      [["set", { id: record.id, fields: recordFields(record, state) }], ...(confirm ? [["confirm", () => ({ id: record.id, ...byName(), digest: intake.digests[record.id] })]] : [])],
       confirm ? "Record confirmed." : "Saved.",
     );
   return [
@@ -1737,7 +1758,7 @@ function approvalControls(record, claims) {
       intakeErrors[key] = "Enter your name before approving.";
       return render(view);
     }
-    return intakeAct(key, [["approve", { id: record.id, ...byName() }]], "Approved.");
+    return intakeAct(key, [["approve", { id: record.id, ...byName(), digest: intake.digests[record.id] }]], "Approved.");
   };
   return [
     approval ? el("p", { className: "meta", text: `Approved by ${approval.by}, ${approval.at}: ${approval.claims.length} ${approval.claims.length === 1 ? "claim" : "claims"}.` }) : null,
