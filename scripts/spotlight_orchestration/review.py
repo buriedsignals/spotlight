@@ -23,7 +23,7 @@ from typing import Any
 from .case_writer import atomic_write_files
 from .claim_basis import claim_basis
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
-from .dependencies import current_hashes, investigation_gate_dependencies
+from .dependencies import current_hashes, ingest_digest, investigation_gate_dependencies, material_only_case
 from . import research_view
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, load_state, read_data_bytes
 
@@ -183,7 +183,7 @@ def subject_digest(case: Path, gate: str) -> str:
         # also covers the triage, suggestions and round ledger the page shows.
         return _canonical_sha({"outputs": current_hashes(case, RESEARCH_OUTPUTS),
                                "shown": research_view.shown_hashes(case)})
-    dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
+    dependency = ingest_digest(case) if gate == "ingest" and material_only_case(case) else str(investigation_gate_dependencies(case)["dependency_digest"])
     if gate == "ingest" and activated_case(case):
         bound = {"dependencies": dependency, "batch": _batch_sha256(case)}
         # The mention identifiers decide which register entities the notes
@@ -263,8 +263,11 @@ def _batch_sha256(case: Path) -> str | None:
 
 
 def activated_case(case: Path) -> bool:
+    """A case that builds a Batch 1.1: an investigation under findings
+    contract 1.1, or material alone."""
     findings = _read_case_json(case, "data/findings.json")
-    return isinstance(findings, dict) and findings.get("schema_version") == "1.1" and case_path(case, "data/case-contract.json").is_file()
+    return material_only_case(case) or (
+        isinstance(findings, dict) and findings.get("schema_version") == "1.1" and case_path(case, "data/case-contract.json").is_file())
 
 
 def spotlight_config_path() -> Path:
@@ -312,7 +315,7 @@ def rebuild_ingest_batch(case: Path) -> None:
     """Rebuild the draft and, when nothing is pending, the final batch, after
     a page edit. Runs outside the edit's lock: the builder takes it itself.
     A refusal is recorded in the draft, which the page shows as blocking."""
-    if not activated_case(case) or not case_path(case, INGEST_PROPOSAL).is_file():
+    if not activated_case(case) or not (material_only_case(case) or case_path(case, INGEST_PROPOSAL).is_file()):
         return
     done = subprocess.run([sys.executable, str(SCRIPT_DIR / "build-knowledge-batch.py"), str(case), "--review"],
                           capture_output=True, text=True, check=False)
@@ -1120,7 +1123,11 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
     draft = _read_case_json(case, INGEST_DRAFT)
     final = _read_case_json(case, INGEST_BATCH)
     blocking: list[str] = []
-    if not isinstance(proposal, dict):
+    material_only = material_only_case(case)
+    if material_only and ingest_mode() == "newsroom":
+        # The newsroom's service does not take journalist input, so material stays in the case.
+        blocking.append("this case holds only material, which the newsroom edition keeps in the case: there is nothing to ingest")
+    elif not isinstance(proposal, dict) and not material_only:
         blocking.append("the analyst has not proposed a knowledge batch yet")
     elif not isinstance(draft, dict):
         blocking.append("the knowledge batch has not been built yet")
@@ -1135,12 +1142,13 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
             blocking.append("the batch is not rebuilt for the latest edit yet; reload, or ask the agent to rebuild it")
     batch = final if isinstance(final, dict) else (draft or {}).get("batch") if isinstance(draft, dict) else None
     records = []
-    for array in ("claims", "events", "story_arcs", "assessments", "source_positions"):
+    for array in ("claims", "events", "story_arcs", "assessments", "source_positions", "journalist_inputs"):
         for record in (batch or {}).get(array, []) if isinstance(batch, dict) else []:
             if isinstance(record, dict):
                 records.append({"type": array, "id": _text(record.get("id"), 200), "version": record.get("version"),
                                 "text": _text(record.get("proposition") or record.get("title") or record.get("action")
-                                              or record.get("verdict") or (record.get("actor") or {}).get("label"), 2000)})
+                                              or record.get("verdict") or (record.get("actor") or {}).get("label")
+                                              or record.get("content_ref"), 2000)})
     items = []
     for array, label in (("claims", "claim"), ("events", "event"), ("story_arcs", "story arc")):
         for record in proposal.get(array, []) if isinstance(proposal, dict) and isinstance(proposal.get(array), list) else []:

@@ -73,6 +73,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import schema_check  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
+from spotlight_orchestration.dependencies import material_only_case  # noqa: E402
 from spotlight_orchestration.review import ingest_mode  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 from verdicts import FLAG_CODES, VERDICTS_1_1  # noqa: E402
@@ -225,7 +226,10 @@ class Ids:
 
 
 def build(case: Path, models: dict[str, str], draft: bool, proposal: Any = None) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
-    material = [] if ingest_mode() == "newsroom" else approved_material(case)
+    newsroom = ingest_mode() == "newsroom"
+    if newsroom and material_only_case(case):
+        raise BuildError("this case holds only material, which the newsroom edition keeps in the case: there is nothing to build")
+    material = [] if newsroom else approved_material(case)
     if material and proposal is None and not (case / "data" / "findings.json").exists():
         # A case that holds only material: no investigation ran, so there is
         # nothing of one to read or to validate.
