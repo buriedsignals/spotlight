@@ -297,11 +297,6 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	if (!isAbsolute(casesRoot)) throw new ConfigError('SPOTLIGHT_CASES_ROOT must be an absolute path.');
 	if (!isAbsolute(dataDir)) throw new ConfigError('SPOTLIGHT_HARNESS_DATA must be an absolute path.');
 	const inProtectedCases = protectedCases(resolve(casesRoot));
-	// The newsroom edition registers every case with the newsroom's service
-	// and reads its knowledge, which a protected case must not do.
-	if (inProtectedCases && edition === 'newsroom') {
-		throw new ConfigError('a protected case does not run in the newsroom edition: the case would be registered with the newsroom\'s service. Run it in the solo edition.');
-	}
 	// SPOTLIGHT_CASE_ID wins; otherwise the chat id binds the case.
 	const caseId = chatId && !env.SPOTLIGHT_CASE_ID?.trim() ? bindChatCase(resolve(casesRoot), resolve(dataDir), chatId) : required(env, 'SPOTLIGHT_CASE_ID');
 	if (!CASE_ID.test(caseId) || caseId === '.' || caseId === '..') {
@@ -325,6 +320,9 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	const modelTier = readModelTier(env);
 	// Sensitive mode is what keeps a case off every cloud service today (no
 	// swarm, no cloud decision model, no web tools), so a protected case has it.
+	// What protects the case is where inference runs. In the newsroom edition
+	// it still registers with, reads from and submits to the newsroom's own
+	// service, which is the newsroom's and not a third party.
 	const sensitive = sensitiveMode(env) || inProtectedCases;
 	const research = researchSwitch(env);
 	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId) : refuseEditorialInSolo(env);

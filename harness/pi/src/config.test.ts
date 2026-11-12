@@ -236,13 +236,24 @@ test('a case in a protected cases folder runs in sensitive mode, which no settin
 	symlinkSync(join(home, 'cases_protected'), join(home, 'cases'), 'dir');
 	assert.equal(start(join(home, 'cases'), optedIn).config.sensitive, true, 'a link to the protected folder is protected');
 
-	// The newsroom edition would register the case with the newsroom's service.
-	assert.throws(() => start('/work/cases_protected', {
+	// The newsroom edition: the case still reaches the newsroom's own service,
+	// and its models run only on the newsroom's own inference.
+	const routes = [
+		{ name: 'cloud', base_url: 'https://cloud.example/v1', model: 'm', inference: 'third-party' },
+		{ name: 'own', base_url: 'https://own.newsroom.example/v1', model: 'm', inference: 'own' },
+	];
+	const newsroom = readConfig({
+		...BASE,
+		SPOTLIGHT_CASES_ROOT: '/work/cases_protected',
 		SPOTLIGHT_EDITION: 'newsroom',
 		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
 		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
-		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'own', base_url: 'https://own.newsroom.example/v1', model: 'm', inference: 'own' }]),
-	}), /does not run in the newsroom edition/);
+		SPOTLIGHT_ROUTES: JSON.stringify(routes),
+		SPOTLIGHT_RESEARCH_SWARMS: 'on',
+	});
+	assert.equal(newsroom.sensitive, true);
+	assert.equal(newsroom.swarm.available, false);
+	assert.equal(routeFor(newsroom).name, 'own');
 });
 
 test('the Research switch reaches every pi process as on or off, so a stall round meets D1 with it', () => {
