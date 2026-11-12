@@ -1,6 +1,7 @@
 // The only way the review server reads or writes a case: the Python
 // orchestration seam, which applies edits and decisions under the case lock.
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -214,10 +215,35 @@ export function createIntakeBridge({
   // by the page's tick, the record's confirmation (skipped when it is already
   // confirmed), then the approval. The first refusal stops it; what the earlier
   // steps saved stays saved and nothing after it runs.
-  async function approveMaterial(id, { by, choices, keep }) {
+  // What the page showed of each material: its claims' wording and the passages
+  // they rest on. An approval names it, so a claim reworded elsewhere after the
+  // page loaded is not approved unseen.
+  function seenBy(view) {
+    const seen = {};
+    for (const input of view.inputs) {
+      const passages = view.passages.filter((passage) => passage.input_id === input.id);
+      const ids = new Set(passages.map((passage) => passage.id));
+      const shown = {
+        passages: passages.map((passage) => [passage.id, passage.text]),
+        claims: view.claims.filter((claim) => ids.has(claim.passage_id)).map((claim) => [claim.id, claim.proposition]),
+      };
+      seen[input.id] = createHash("sha256").update(JSON.stringify(shown)).digest("hex");
+    }
+    return seen;
+  }
+
+  async function view() {
+    const shown = await run(["view"]);
+    return { ...shown, seen: seenBy(shown) };
+  }
+
+  async function approveMaterial(id, { by, choices, keep, seen }) {
     const { by: name } = await inStep("rights", () => run(["decider", ...(by === undefined ? [] : [`--by=${by}`])]));
     await inStep("claims", async () => {
-      const { passages, claims } = await run(["view"]);
+      const current = await view();
+      const { passages, claims } = current;
+      if (current.seen[id] !== seen)
+        throw Object.assign(new Error("this material changed since the page showed it; reload the page"), { code: "refused" });
       const mine = new Set(passages.filter((passage) => passage.input_id === id).map((passage) => passage.id));
       const ids = claims.filter((claim) => mine.has(claim.passage_id)).map((claim) => claim.id);
       if (ids.length !== Object.keys(keep).length || ids.some((claim) => !Object.hasOwn(keep, claim)))
@@ -235,7 +261,7 @@ export function createIntakeBridge({
   }
 
   return Object.freeze({
-    view: () => run(["view"]),
+    view,
     decide: (claim, action, fields) => run(["decide", claim, action], action === "edit" ? JSON.stringify(fields) : ""),
     approveMaterial,
   });

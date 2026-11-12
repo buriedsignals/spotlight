@@ -358,10 +358,9 @@ def main() -> int:
         require(page_passage["context"] == {"before": "line 1\nline 2\nline 3\n", "after": "\nline 6\nline 7\nline 8"},
                 f"the passage is not shown with the words around it: {page_passage['context']}")
         require(shown["name_required"] is False and any(r["id"] == page_record["id"] for r in shown["inputs"]), "the view lacks the register or the edition")
-        kept = INTAKE.keep_all(case, page_record["id"])
-        require(len(kept) == 2 and all(c["state"] == "kept" for c in kept), f"keep_all did not keep both claims: {kept}")
-        require("no claim left" in refused(INTAKE.keep_all, case, page_record["id"]), "keep_all passed with nothing left to decide")
-        require("no material record" in refused(INTAKE.keep_all, case, "JI99"), "keep_all took an unknown record")
+        kept = [c for c in shown["claims"] if c["passage_id"] == page_passage["id"] and c["state"] == "proposed"]
+        for shown_claim in kept:
+            INTAKE.decide(case, shown_claim["id"], "keep")
         confirm(case, page_record["id"])
         approve(case, page_record["id"])
         INTAKE.decide(case, kept[0]["id"], "drop")

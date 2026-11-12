@@ -300,6 +300,7 @@ function material({ nameRequired = false, approved = [], plain = {} } = {}) {
     passages: [passage("JP1", "JI1", HOSTILE), passage("JP2", "JI1", "my brother-in-law is on nights"), passage("JP3", "JI2", "second material")],
     claims: [claim("JC1", "JP1", "The <b>foreman</b> signed off."), claim("JC2", "JP2", "His brother-in-law works nights.", { leave_out: "it could identify the source" }), claim("JC3", "JP3", "Second claim.")],
     digests: {},
+    seen: { JI1: "a".repeat(64), JI2: "b".repeat(64) },
     approvals: Object.fromEntries(approved.map((id) => [id, { by: "Member", at: "2026-11-12T10:00:00Z", claims: ["JC1"] }])),
   };
 }
@@ -362,7 +363,7 @@ test("approving sends the material's fields and ticks in one request, with no di
   await page.getElementById("approve-JI1").listeners.click();
   const posted = page.posts.filter((post) => post.path.startsWith("/api/intake/") && post.path !== "/api/intake/view");
   assert.deepEqual(posted.map((post) => post.path), ["/api/intake/approve-material"]);
-  assert.deepEqual(posted[0].body, { id: "JI1", choices: { ...Object.fromEntries(Object.entries(PLAIN).filter(([name]) => name !== "summary")), publish: "off_record", holder: "B. Holder" }, keep: { JC1: true, JC2: false } });
+  assert.deepEqual(posted[0].body, { id: "JI1", choices: { ...Object.fromEntries(Object.entries(PLAIN).filter(([name]) => name !== "summary")), publish: "off_record", holder: "B. Holder" }, keep: { JC1: true, JC2: false }, seen: "a".repeat(64) });
   const [first, second] = sections(page);
   assert.deepEqual([isOpen(first), isOpen(second)], [false, true]);
   assert.ok(words(first.children[0]).includes("Approved"));

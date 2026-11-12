@@ -53,6 +53,9 @@ function caseWithMaterial(root, { confirmed: isConfirmed = false } = {}) {
 const read = (caseDir, name) => JSON.parse(readFileSync(join(caseDir, "data", name), "utf8"));
 const files = (caseDir) => ["journalist-input.json", "intake-claims.json"].map((name) => readFileSync(join(caseDir, "data", name), "utf8"));
 const approveBody = (id, keep = { JC1: true, JC2: true, JC3: false }, choices = CHOICES) => ({ id, choices, keep });
+// An approval names what the page showed (the view's `seen` for that material).
+const seenOf = async (json, id) => (await json("/api/intake/view", {})).body.seen[id];
+const approve = async (json, id, ...rest) => json("/api/intake/approve-material", { ...approveBody(id, ...rest), seen: await seenOf(json, id) });
 const states = (caseDir) => Object.fromEntries(read(caseDir, "intake-claims.json").claims.map((claim) => [claim.id, claim.state]));
 
 async function startIntake(t, root, caseDir, env = solo(root), extra = {}) {
@@ -94,7 +97,7 @@ test("one approval saves the rights, decides each claim by its tick, confirms th
   const { caseDir, id } = caseWithMaterial(root);
   const { json } = await startIntake(t, root, caseDir);
 
-  const approved = await json("/api/intake/approve-material", approveBody(id, { JC1: true, JC2: false, JC3: false }));
+  const approved = await approve(json, id, { JC1: true, JC2: false, JC3: false });
   assert.equal(approved.status, 200);
   assert.doesNotMatch(JSON.stringify(approved.body), /"nonce"/);
   assert.deepEqual(states(caseDir), { JC1: "kept", JC2: "dropped", JC3: "dropped" });
@@ -118,7 +121,7 @@ test("a claim the model suggested leaving out is dropped unless the page ticked 
     const root = tempRoot(t);
     const { caseDir, id } = caseWithMaterial(root);
     const { json } = await startIntake(t, root, caseDir);
-    assert.equal((await json("/api/intake/approve-material", approveBody(id, { JC1: true, JC2: true, JC3: ticked }))).status, 200);
+    assert.equal((await approve(json, id, { JC1: true, JC2: true, JC3: ticked })).status, 200);
     assert.equal(states(caseDir).JC3, want);
     // The suggestion stays on the claim, so it can be compared with the choice later.
     assert.equal(read(caseDir, "intake-claims.json").claims[2].leave_out, "it could identify the source");
@@ -129,12 +132,12 @@ test("an already confirmed record is not confirmed again, and its own rights go 
   const root = tempRoot(t);
   const { caseDir, id } = caseWithMaterial(root, { confirmed: true });
   const { json } = await startIntake(t, root, caseDir);
-  assert.equal((await json("/api/intake/approve-material", approveBody(id))).status, 200);
+  assert.equal((await approve(json, id)).status, 200);
   const gates = Object.values(read(caseDir, "review-nonces.json").nonces).map((entry) => entry.gate).sort();
   assert.deepEqual(gates, ["intake_approve", "intake_confirm"], "one confirmation (the fixture's) and one approval");
   assert.deepEqual(read(caseDir, "intake-claims.json").passages.map((passage) => passage.rights), [RIGHTS, RIGHTS]);
   // Other rights are not a change the confirmed record accepts.
-  const other = await json("/api/intake/approve-material", approveBody(id, undefined, { ...CHOICES, publish: "on_record" }));
+  const other = await approve(json, id, undefined, { ...CHOICES, publish: "on_record" });
   assert.equal(other.status, 422);
   assert.equal(other.body.step, "rights");
   assert.match(other.body.message, /no longer changes/);
@@ -151,7 +154,7 @@ test("a refusal at the first steps stops there, names the step and leaves nothin
     [approveBody(id, { JC1: true, JC2: true }), "claims", /changed since the page showed them/],
     [approveBody(id, { JC1: false, JC2: false, JC3: false }), "claims", /keep at least one claim/],
   ]) {
-    const refused = await json("/api/intake/approve-material", body);
+    const refused = await json("/api/intake/approve-material", { ...body, seen: await seenOf(json, id) });
     assert.equal(refused.status, 422);
     assert.equal(refused.body.step, step);
     assert.match(refused.body.message, message);
@@ -165,7 +168,7 @@ test("a refusal at the confirmation leaves the earlier steps saved and no approv
   const { json } = await startIntake(t, root, caseDir);
   // The file changed after it was registered: its record cannot be confirmed.
   writeFileSync(join(caseDir, "intake", "interviews", "call.txt"), "Changed after it was registered.\n");
-  const refused = await json("/api/intake/approve-material", approveBody(id, { JC1: true, JC2: false, JC3: false }));
+  const refused = await approve(json, id, { JC1: true, JC2: false, JC3: false });
   assert.equal(refused.status, 422);
   assert.equal(refused.body.step, "confirm");
   assert.match(refused.body.message, /The record could not be confirmed: .*registered bytes/);
@@ -182,7 +185,7 @@ test("a refusal at the approval is reported and leaves no approval", async (t) =
   writeFileSync(wrapper, `#!/bin/sh\ncase " $* " in *" approve "*) echo "intake: the approval was refused" >&2; exit 2;; esac\nexec '${PYTHON}' "$@"\n`);
   chmodSync(wrapper, 0o755);
   const { json } = await startIntake(t, root, caseDir, solo(root), { python: wrapper });
-  const refused = await json("/api/intake/approve-material", approveBody(id));
+  const refused = await approve(json, id);
   assert.equal(refused.status, 422);
   assert.deepEqual([refused.body.step, refused.body.message], ["approve", "The claims could not be approved: the approval was refused"]);
   assert.equal(read(caseDir, "journalist-input.json").inputs[0].state, "confirmed");
@@ -193,7 +196,7 @@ test("a decision the page did not make does not count: an approval edited by han
   const root = tempRoot(t);
   const { caseDir, id } = caseWithMaterial(root);
   const { json } = await startIntake(t, root, caseDir);
-  assert.equal((await json("/api/intake/approve-material", approveBody(id))).status, 200);
+  assert.equal((await approve(json, id)).status, 200);
   assert.deepEqual(Object.keys((await json("/api/intake/view")).body.approvals), [id]);
 
   // The shared file is edited by hand: the passage is now said to be internal.
@@ -202,7 +205,7 @@ test("a decision the page did not make does not count: an approval edited by han
   writeFileSync(join(caseDir, "data", "intake-claims.json"), JSON.stringify(edited));
   assert.deepEqual((await json("/api/intake/view")).body.approvals, {});
   // Approving again needs a fresh page decision.
-  assert.equal((await json("/api/intake/approve-material", approveBody(id))).status, 200);
+  assert.equal((await approve(json, id)).status, 200);
   assert.deepEqual(Object.keys((await json("/api/intake/view")).body.approvals), [id]);
 });
 
@@ -227,12 +230,12 @@ test("the newsroom edition needs the person's name and records it", async (t) =>
   assert.equal((await json("/api/intake/view")).body.name_required, true);
   const before = files(caseDir);
   for (const body of [approveBody(id), { ...approveBody(id), by: "  " }]) {
-    const refused = await json("/api/intake/approve-material", body);
+    const refused = await json("/api/intake/approve-material", { ...body, seen: await seenOf(json, id) });
     assert.equal(refused.status, 422);
     assert.match(refused.body.message, /enter your name/);
   }
   assert.deepEqual(files(caseDir), before);
-  assert.equal((await json("/api/intake/approve-material", { ...approveBody(id), by: " A. Reporter " })).status, 200);
+  assert.equal((await json("/api/intake/approve-material", { ...approveBody(id), by: " A. Reporter ", seen: await seenOf(json, id) })).status, 200);
   const saved = [read(caseDir, "journalist-input.json").inputs[0], read(caseDir, "intake-claims.json").approvals[id]];
   assert.deepEqual([saved[0].captured_by, saved[0].confirmed_by, saved[1].by], ["A. Reporter", "A. Reporter", "A. Reporter"]);
 });
@@ -242,8 +245,10 @@ test("a request that is not exactly an intake action is refused before intake.py
   const { caseDir } = caseWithMaterial(root);
   const { json } = await startIntake(t, root, caseDir);
   const before = files(caseDir);
-  const approval = approveBody("JI1");
+  const approval = { ...approveBody("JI1"), seen: await seenOf(json, "JI1") };
   for (const [path, body] of [
+    ["/api/intake/approve-material", { ...approval, seen: undefined }],
+    ["/api/intake/approve-material", { ...approval, seen: "what I saw" }],
     ["/api/intake/approve-material", { ...approval, id: "--help" }],
     ["/api/intake/approve-material", { ...approval, digest: "0".repeat(64) }],
     ["/api/intake/approve-material", { ...approval, nonce: "0".repeat(64) }],
@@ -259,6 +264,19 @@ test("a request that is not exactly an intake action is refused before intake.py
     const { status } = await json(path, body);
     assert.ok([400, 404].includes(status), `${path} ${JSON.stringify(body)} gave ${status}`);
   }
+  assert.deepEqual(files(caseDir), before);
+});
+
+test("an approval of a material reworded since the page showed it is refused, and nothing is decided", async (t) => {
+  const root = tempRoot(t);
+  const { caseDir, id } = caseWithMaterial(root);
+  const { json } = await startIntake(t, root, caseDir);
+  const seen = await seenOf(json, id);
+  assert.equal((await json("/api/intake/rewrite", { claim: "JC1", proposition: "Something the journalist never read." })).status, 200);
+  const before = files(caseDir);
+  const refused = await json("/api/intake/approve-material", { ...approveBody(id), seen });
+  assert.equal(refused.status, 422);
+  assert.match(refused.body.message, /changed since the page showed it/);
   assert.deepEqual(files(caseDir), before);
 });
 

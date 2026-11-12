@@ -22,7 +22,6 @@ Usage:
   python3 scripts/intake.py {CASE_DIR} approve JI1 --by NAME --nonce CODE --digest DIGEST
   python3 scripts/intake.py {CASE_DIR} claims
   python3 scripts/intake.py {CASE_DIR} view
-  python3 scripts/intake.py {CASE_DIR} keep-all JI1
   python3 scripts/intake.py {CASE_DIR} decider [--by NAME]
   python3 scripts/intake.py {CASE_DIR} code confirm|approve JI1
 
@@ -81,8 +80,7 @@ Passages and claims (no investigation is involved, and no verdict is given):
 - The review page's: view returns what the page shows (the register, each
   record with its plain-language choices and one-line summary, the passages each
   with the words around them from the file they were taken from, the claims and
-  the approvals); keep-all keeps every claim of one material that is still
-  undecided; decider names who a page's confirmation or approval is recorded
+  the approvals); decider names who a page's confirmation or approval is recorded
   for: the fixed Member in the solo edition, else the name given;
   code issues the page's one-time code for one material and action (it stores
   only the hash, in the case's nonce ledger) and prints it for the review
@@ -664,21 +662,6 @@ def _claims_of(doc: dict[str, Any], record_id: str) -> list[dict[str, Any]]:
     return [claim for claim in doc["claims"] if claim["passage_id"] in passages]
 
 
-def keep_all(case: Path, record_id: str) -> list[dict[str, Any]]:
-    """The journalist keeps every claim of one material that is still undecided."""
-    with transaction(case) as descriptor:
-        _record(_load(case), record_id)
-        doc = _load_claims(case)
-        proposed = [claim for claim in _claims_of(doc, record_id) if claim["state"] == "proposed"]
-        if not proposed:
-            raise Refused(f"{record_id} has no claim left to decide")
-        for claim in proposed:
-            claim["state"] = "kept"
-        doc["approvals"].pop(record_id, None)
-        _publish(case, doc, descriptor, CLAIMS)
-    return proposed
-
-
 def approve(case: Path, record_id: str, by: str, nonce: str | None = None, digest: str | None = None) -> dict[str, Any]:
     """The journalist's approval of one confirmed record's kept claims, backed
     by the page's code for this record and the digest of what it covers."""
@@ -832,7 +815,6 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("list")
     commands.add_parser("claims")
     commands.add_parser("view")
-    commands.add_parser("keep-all").add_argument("id")
     commands.add_parser("decider").add_argument("--by")
     args = parser.parse_args(argv)
     args.case = args.case.resolve()  # the review ledger is read through the case's real path
@@ -863,8 +845,6 @@ def main(argv: list[str] | None = None) -> int:
             result = _load_claims(args.case)
         elif args.command == "view":
             result = view(args.case)
-        elif args.command == "keep-all":
-            result = keep_all(args.case, args.id)
         elif args.command == "decider":
             result = decider(args.by)
         else:

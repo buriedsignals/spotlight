@@ -1627,7 +1627,7 @@ async function approveItem(id) {
   else if (!Object.values(draft.keep).includes(true)) intakeErrors[id] = "Keep at least one claim to approve.";
   else {
     delete intakeErrors[id];
-    await intakeCall(id, "approve-material", { id, ...(intake.name_required ? { by: intakeName } : {}), choices: draft.fields, keep: draft.keep }, "Approved.", () => openNext(id));
+    await intakeCall(id, "approve-material", { id, ...(intake.name_required ? { by: intakeName } : {}), choices: draft.fields, keep: draft.keep, seen: intake.seen[id] }, "Approved.", () => openNext(id));
     return;
   }
   render(view);

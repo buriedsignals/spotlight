@@ -464,13 +464,14 @@ export async function startReviewServer({
     }
     if (action === "approve-material") {
       const by = optionalName(plainObject(body, "approval"));
-      const { id, choices, keep } = exactObject(body, by === undefined ? ["id", "choices", "keep"] : ["id", "by", "choices", "keep"], "approval");
+      const { id, choices, keep, seen } = exactObject(body, by === undefined ? ["id", "choices", "keep", "seen"] : ["id", "by", "choices", "keep", "seen"], "approval");
+      if (typeof seen !== "string" || !/^[0-9a-f]{64}$/.test(seen)) throw Object.assign(new Error("the approval does not say what the page showed"), { status: 400 });
       plainObject(keep, "the claims");
       for (const [claim, kept] of Object.entries(keep)) {
         pattern(claim, CLAIM_ID, "a claim");
         if (typeof kept !== "boolean") throw Object.assign(new Error("a claim is kept or left out"), { status: 400 });
       }
-      return intake.approveMaterial(pattern(id, MATERIAL_ID, "the material"), { by, choices: plainObject(choices, "the choices"), keep });
+      return intake.approveMaterial(pattern(id, MATERIAL_ID, "the material"), { by, choices: plainObject(choices, "the choices"), keep, seen });
     }
     throw Object.assign(new Error("This route does not exist."), { status: 404, code: "not-found" });
   }
