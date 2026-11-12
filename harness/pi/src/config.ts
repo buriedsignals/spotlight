@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
-import { isAbsolute, resolve } from 'node:path';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
 import { piCliPath } from './pi-process.ts';
@@ -63,6 +63,9 @@ export type HarnessConfig = {
 	spotlightConfig: string;
 	// Sensitive mode: no egress tools in any process.
 	sensitive: boolean;
+	// The case sits in a protected cases folder (protectedCases), which turns
+	// sensitive mode on whatever the environment says.
+	protected: boolean;
 	// Engine's Research switch: the whole Research phase, or none.
 	research: boolean;
 	// The third route, beside the pipeline route (`general`, the process
@@ -232,6 +235,16 @@ function newsroomRoutes(env: Env): { routes: Route[]; pipelineRoute: Route } {
 	return { routes, pipelineRoute };
 }
 
+// A protected cases folder holds material no cloud service may receive
+// (source interviews, a protected investigation). It is one named
+// `cases_protected`, or one holding a `.spotlight-protected` file, so the rule
+// travels with the folder and no setting can switch it off.
+export const PROTECTED_CASES_FOLDER = 'cases_protected';
+export const PROTECTED_MARKER = '.spotlight-protected';
+function protectedCases(casesRoot: string): boolean {
+	return basename(casesRoot) === PROTECTED_CASES_FOLDER || existsSync(resolve(casesRoot, PROTECTED_MARKER));
+}
+
 // Sensitive mode is on when SPOTLIGHT_SENSITIVE is "true" or the checkout's
 // AGENTS.md frontmatter says `sensitive: true`, as the scripts read it.
 function sensitiveMode(env: Env): boolean {
@@ -296,7 +309,10 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 		throw new ConfigError('SPOTLIGHT_MODEL_CONTEXT_WINDOW must be an integer of at least 1024.');
 	}
 	const modelTier = readModelTier(env);
-	const sensitive = sensitiveMode(env);
+	// Sensitive mode is what keeps a case off every cloud service today (no
+	// swarm, no cloud decision model, no web tools), so a protected case has it.
+	const inProtectedCases = protectedCases(resolve(casesRoot));
+	const sensitive = sensitiveMode(env) || inProtectedCases;
 	const research = researchSwitch(env);
 	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId) : refuseEditorialInSolo(env);
 	return {
@@ -317,6 +333,7 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 		python: env.SPOTLIGHT_PYTHON?.trim() || spotlightPython({ env, root: CHECKOUT_ROOT }) || 'python3',
 		spotlightConfig: spotlightConfigPath(env),
 		sensitive,
+		protected: inProtectedCases,
 		research,
 		swarm: swarmSetting(env, edition, routes, sensitive, research),
 		editorial,

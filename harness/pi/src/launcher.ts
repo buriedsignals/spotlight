@@ -1391,6 +1391,9 @@ function main(): void {
 	try {
 		args = parseLaunchArgs(process.argv.slice(2));
 		config = readConfig(process.env, args.sessionId);
+		// The resolver and the helper programs read the mode from the
+		// environment, so a protected case's sensitive mode is set there too.
+		if (config.sensitive) process.env.SPOTLIGHT_SENSITIVE = 'true';
 		composition = loadComposition();
 		routeFor(config);
 		checkRouteSecrets(config, composition, process.env);

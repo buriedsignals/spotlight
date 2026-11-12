@@ -208,6 +208,28 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 	assert.equal(allowed.route.keyEnv, 'CLOUD_TOKEN');
 });
 
+test('a case in a protected cases folder runs in sensitive mode, which no setting turns off', (t) => {
+	const start = (casesRoot: string, extra: Record<string, string> = {}) => {
+		const env = { ...BASE, SPOTLIGHT_CASES_ROOT: casesRoot, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ...extra };
+		return { config: readConfig(env), env };
+	};
+	const optedIn = { SPOTLIGHT_SENSITIVE: 'false', SPOTLIGHT_RESEARCH_SWARMS: 'on', OPENROUTER_API_KEY: 'k' };
+
+	const ordinary = start('/work/cases', optedIn).config;
+	assert.equal(ordinary.protected, false);
+	assert.equal(ordinary.swarm.available, true);
+
+	const named = start('/work/cases_protected', optedIn);
+	assert.equal(named.config.protected, true);
+	assert.equal(named.config.swarm.available, false, 'no swarm');
+	assert.equal(childEnv(named.config, COMPOSITION, 'investigator', named.env).SPOTLIGHT_SENSITIVE, 'true', 'every process is told');
+
+	const marked = mkdtempSync(join(tmpdir(), 'spotlight-protected-'));
+	t.after(() => rm(marked, { recursive: true, force: true }));
+	writeFileSync(join(marked, '.spotlight-protected'), '');
+	assert.equal(start(marked, optedIn).config.sensitive, true, 'a marker file protects a folder of any name');
+});
+
 test('the Research switch reaches every pi process as on or off, so a stall round meets D1 with it', () => {
 	const env = (extra: Record<string, string>) => ({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ...extra });
 	for (const [value, passed] of [['', 'off'], ['off', 'off'], ['on', 'on']]) {
