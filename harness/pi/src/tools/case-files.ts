@@ -101,6 +101,8 @@ const PROTECTED = [
 	/^receipts\//, // newsroom receipts (the launcher copies them)
 	/^data\/editorial-case\.json$/, // newsroom case reference (the launcher)
 	/^data\/newsroom-(submission|ids)\.json$/, // the newsroom submission and the ids its service assigned (the launcher)
+	/^data\/(journalist-input|intake-claims)\.json$/, // the material register, its passages and claims (scripts/intake.py)
+	/^intake\//, // the material itself: a registered original never changes
 	/^data\/case-contract\.json$/, // activation receipt (the launcher runs case-contract.py activate-new; the gate approval binds it)
 ];
 

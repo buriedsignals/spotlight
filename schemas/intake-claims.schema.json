@@ -1,0 +1,207 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/intake-claims.schema.json",
+  "schema_version": "1.0",
+  "title": "Spotlight material passages and claims",
+  "description": "data/intake-claims.json: the exact passages taken from a case's material (data/journalist-input.json) and the claims drawn from them. Written only by scripts/intake.py. A claim here reports what the material's source said; it has no finding and no fact-check verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "passages",
+    "claims",
+    "approvals"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "passages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/passage"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/claim"
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/approval"
+      },
+      "description": "Per material id: the journalist's approval of its kept claims. Any later change to that material's passages or claims removes it."
+    }
+  },
+  "definitions": {
+    "nonempty_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "journalist",
+            "agent_candidate"
+          ]
+        },
+        "model": {
+          "$ref": "#/definitions/nonempty_text"
+        }
+      }
+    },
+    "passage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "input_id",
+        "text",
+        "anchor_ref",
+        "anchor_sha256",
+        "language",
+        "direct_quote",
+        "rights",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^JP[1-9][0-9]*$"
+        },
+        "input_id": {
+          "type": "string",
+          "pattern": "^JI[1-9][0-9]*$"
+        },
+        "text": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "anchor_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "line_start",
+            "line_end"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^intake/[^/]+/[^/]+$"
+            },
+            "line_start": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "line_end": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "derivative_id": {
+              "type": "string",
+              "pattern": "^D[1-9][0-9]*$"
+            }
+          }
+        },
+        "anchor_sha256": {
+          "$ref": "#/definitions/sha256"
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+        },
+        "direct_quote": {
+          "type": "boolean"
+        },
+        "speaker": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "rights": {
+          "type": "object",
+          "description": "As passage_rights in schemas/journalist-input.schema.json; checked by scripts/intake.py."
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "passage_id",
+        "proposition",
+        "statement",
+        "state",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^JC[1-9][0-9]*$"
+        },
+        "passage_id": {
+          "type": "string",
+          "pattern": "^JP[1-9][0-9]*$"
+        },
+        "proposition": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "statement": {
+          "type": "object",
+          "description": "As statement in schemas/knowledge-proposal.schema.json; checked by scripts/intake.py."
+        },
+        "state": {
+          "enum": [
+            "proposed",
+            "kept",
+            "dropped"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "by",
+        "at",
+        "claims"
+      ],
+      "properties": {
+        "by": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^JC[1-9][0-9]*$"
+          }
+        }
+      }
+    }
+  }
+}
