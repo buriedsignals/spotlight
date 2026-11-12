@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,11 @@ INTAKE = importlib.util.module_from_spec(_SPEC)
 assert _SPEC.loader is not None
 _SPEC.loader.exec_module(INTAKE)
 
+_WSPEC = importlib.util.spec_from_file_location("wiki_destination", ROOT / "scripts" / "wiki-destination.py")
+WIKI = importlib.util.module_from_spec(_WSPEC)
+assert _WSPEC.loader is not None
+_WSPEC.loader.exec_module(WIKI)
+
 COMPLETE = {"kind": "interview", "captured_by": "A. Reporter", "source": {"pseudonym": "Dock worker 1"},
             "rights_holder": {"label": "A. Reporter"}}
 
@@ -28,10 +34,10 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-def refused(call, *args, **kwargs) -> str:
+def refused(call, *args, error: type[Exception] | None = None, **kwargs) -> str:
     try:
         call(*args, **kwargs)
-    except INTAKE.Refused as exc:
+    except (error or INTAKE.Refused) as exc:
         return str(exc)
     raise AssertionError(f"{call.__name__} was not refused")
 
@@ -142,16 +148,21 @@ def main() -> int:
         INTAKE.decide(case, drawn["id"], "keep")
         INTAKE.set_rights(case, passage["id"], {})
         INTAKE.approve(case, filled["id"], "A. Reporter")
-        build = lambda *flags: subprocess.run([sys.executable, str(ROOT / "scripts" / "build-knowledge-batch.py"), str(case), *flags],  # noqa: E731
-                                              capture_output=True, text=True)
+        solo = Path(tmp) / "solo.json"  # no install config: the solo edition
+        newsroom = Path(tmp) / "newsroom.json"
+        newsroom.write_text(json.dumps({"knowledge_destination": {"mode": "newsroom"}}), encoding="utf-8")
+        build = lambda config=solo: subprocess.run([sys.executable, str(ROOT / "scripts" / "build-knowledge-batch.py"), str(case)],  # noqa: E731
+                                                   capture_output=True, text=True, env={**os.environ, "SPOTLIGHT_CONFIG": str(config)})
         without_rights = build()
         require(without_rights.returncode == 2 and "attribution, consent, sensitivity" in without_rights.stderr, without_rights.stderr)
         rights = {"attribution": "not_for_attribution", "sensitivity": "internal",
                   "consent": {"publish_content": True, "publish_direct_quotes": False, "obtained_via": "recorded_oral"}}
         INTAKE.set_rights(case, passage["id"], rights)
         INTAKE.approve(case, filled["id"], "A. Reporter")
-        held = build("--hold-material")
-        require(held.returncode == 2 and not (case / "data" / "knowledge-batch.json").exists(), f"held material was built: {held.stdout}{held.stderr}")
+        # The newsroom's service does not take journalist input yet, so there
+        # the material stays in the case.
+        held = build(newsroom)
+        require(held.returncode == 2 and not (case / "data" / "knowledge-batch.json").exists(), f"a newsroom batch took the material: {held.stdout}{held.stderr}")
         built = build()
         require(built.returncode == 0, built.stderr)
         batch = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))
@@ -165,6 +176,19 @@ def main() -> int:
                 "a claim from material was given a verdict")
         position = batch["source_positions"][0]
         require(position["actor"] == {"label": "Dock worker 1"} and position["stance"] == "asserts", f"{position}")
+        # The wiki: a note for the claim, and a place only a protected case may use.
+        notes_out = WIKI.notes_for([batch], {}, type("Plain", (), {"link": staticmethod(lambda name, source="": name)})())
+        note = next(iter(notes_out.values()))
+        require("Dock worker 1 asserts" in note and f'supports: "{quote}" <interview' in note and "## Assessment" not in note,
+                f"the claim's note does not show the material as its source: {note}")
+        protected = Path(tmp).resolve() / "cases_protected" / "harbour"
+        protected.mkdir(parents=True)
+        elsewhere = Path(tmp) / "member-wiki"
+        require(WIKI.destination(protected, None) == protected.parent / "wiki" and (protected.parent / "wiki" / "spotlight").is_dir(),
+                "a protected case is not written to its folder's own wiki")
+        require("own wiki" in refused(WIKI.destination, protected, elsewhere, error=WIKI.DestinationError), "a protected case was sent to another wiki")
+        require(WIKI.destination(case, elsewhere) == elsewhere, "an ordinary case lost its wiki")
+
         (case / "intake" / "interviews" / "call.txt").write_text("Rewritten after approval.\n", encoding="utf-8")
         require(build().returncode == 2, "a batch was built from material that changed after it was registered")
 

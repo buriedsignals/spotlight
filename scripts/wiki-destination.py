@@ -25,6 +25,12 @@ activated case in solo mode. In order:
    the request); this script never writes the register.
 4. data/ingestion.json records the completed receipt, which the phase seals.
 
+A case in a protected cases folder (scripts/protected_cases.py) is written to
+that folder's own wiki, never to the member's. A batch holding a passage of
+journalist material marked `case_only` is written from a protected case only:
+the member's wiki is plain files that other programs read and that may be
+synced.
+
 The wiki lock (the wiki service's .wiki-lock) and the case lock are held for
 the whole write. Re-running after an interruption is safe: a kept batch with
 the same bytes, a journal line already present and a note that is already
@@ -56,6 +62,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import schema_check  # noqa: E402
+from protected_cases import protected_case, protected_wiki  # noqa: E402
 
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 from integrations._credentials import config_path  # noqa: E402
@@ -175,6 +182,18 @@ def workspace_from_config() -> Path:
         return Path(config["knowledge_destination"]["workspace_path"]).expanduser().resolve()
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise DestinationError(f"no wiki workspace in .spotlight-config.json (knowledge_destination.workspace_path): {exc}") from exc
+
+
+def destination(case: Path, requested: Path | None) -> Path:
+    """The wiki a case is written to: a protected case's own, else the one
+    asked for or configured."""
+    if not protected_case(case):
+        return requested or workspace_from_config()
+    wiki = protected_wiki(case)
+    if requested is not None and requested != wiki:
+        raise DestinationError(f"a protected case is written only to its folder's own wiki ({wiki})")
+    (wiki / NAMESPACE).mkdir(parents=True, exist_ok=True)
+    return wiki
 
 
 class Resolver:
@@ -337,14 +356,17 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
                 body += ["", "## Passages", ""]
                 for membership in sorted(passages, key=lambda r: r["id"]):
                     passage = latest("source_expression", membership["source_expression_ref"]["id"]) or {}
-                    evidence = latest("evidence", ((passage.get("origin_ref") or {}).get("id")) or "") or {}
-                    source = (evidence.get("capture") or {}).get("source_url", "")
+                    origin = passage.get("origin_ref") or {}
+                    evidence = latest(origin.get("type", "evidence"), origin.get("id") or "") or {}
+                    # A web capture is named by its address, journalist material by its kind.
+                    source = (evidence.get("capture") or {}).get("source_url", "") or evidence.get("kind", "").replace("_", " ")
                     speaker = f" ({_md(passage['speaker'])})" if passage.get("speaker") else ""
                     body.append(f"- {membership['role']}: \"{_md(passage.get('text', ''))}\"{speaker} <{_md(source)}>".rstrip(" <>"))
             positions = about("source_position", "claim_ref", record_id)
             if positions:
                 body += ["", "## Source positions", ""]
-                body += [f"- {link(p['actor']['label'])} {p['stance']}: \"{_md(p['attribution_verbatim'])}\"" for p in positions]
+                body += [f"- {link(p['actor']['label'])} {p['stance']}"
+                         + (f": \"{_md(p['attribution_verbatim'])}\"" if p.get("attribution_verbatim") else "") for p in positions]
             events = about("claim_event_membership", "claim_ref", record_id)
             if events:
                 body += ["", "## Events", ""] + [f"- {note_link(m['event_ref']['id'], m['event_ref']['id'])}" for m in events]
@@ -408,6 +430,9 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
             errors += RULES.validate(batch, [_admitted_store(ids)])
         if errors:
             raise DestinationError("the approved batch is not valid: " + "; ".join(errors[:6]))
+        if not protected_case(case) and any(p.get("sensitivity") == "case_only" for p in batch.get("source_expressions", [])):
+            raise DestinationError("the batch holds material marked case_only, which is written to a wiki only from a protected "
+                                   "cases folder (cases_protected); move the case there, or change the passage's sensitivity")
         batch_ids = {(t, r["id"], r["version"]) for a, t in RULES.ARRAYS.items() for r in batch.get(a, [])}
         # Read before anything is written: a malformed file stops the run here.
         mentions_path = case / "data" / "knowledge-mentions.json"
@@ -499,8 +524,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--overwrite-hand-edits", action="store_true")
     args = parser.parse_args(argv)
     try:
-        workspace = Path(args.workspace).expanduser().resolve() if args.workspace else workspace_from_config()
-        result = write(Path(args.case_dir).resolve(), workspace, args.overwrite_hand_edits)
+        case = Path(args.case_dir).resolve()
+        workspace = destination(case, Path(args.workspace).expanduser().resolve() if args.workspace else None)
+        result = write(case, workspace, args.overwrite_hand_edits)
     except (DestinationError, OrchestrationError, OSError) as exc:
         print(f"wiki-destination: refused: {exc}", file=sys.stderr)
         return 2

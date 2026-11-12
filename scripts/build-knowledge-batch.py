@@ -22,8 +22,9 @@ journalist approved in data/intake-claims.json is added with its material's
 record, its exact passage with the passage's rights, a grounding record and
 a position (the material's source asserts it). Such a claim reports what the
 source said, so it gets no assessment. A case that holds only material, with
-no findings, builds from that alone. --hold-material leaves it all out (the
-newsroom edition, until its service accepts journalist input).
+no findings, builds from that alone. In the newsroom edition the material is
+left out: its service does not accept journalist input yet, so it stays in
+the case.
 
 Ids come from data/knowledge-ids.json, so a rebuild after review edits reuses
 them; a new id is random, never derived from content. A record already
@@ -72,6 +73,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import schema_check  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
+from spotlight_orchestration.review import ingest_mode  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 from verdicts import FLAG_CODES, VERDICTS_1_1  # noqa: E402
 from evidence_anchors import fact_checker_acquired, fetch_registry, normalized as _normalized  # noqa: E402
@@ -222,8 +224,8 @@ class Ids:
         return placed, True
 
 
-def build(case: Path, models: dict[str, str], draft: bool, proposal: Any = None, hold_material: bool = False) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
-    material = [] if hold_material else approved_material(case)
+def build(case: Path, models: dict[str, str], draft: bool, proposal: Any = None) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    material = [] if ingest_mode() == "newsroom" else approved_material(case)
     if material and proposal is None and not (case / "data" / "findings.json").exists():
         # A case that holds only material: no investigation ran, so there is
         # nothing of one to read or to validate.
@@ -621,7 +623,7 @@ def _dump(doc: Any) -> bytes:
     return (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def write(case: Path, models: dict[str, str], mode: str = "final", hold_material: bool = False) -> dict[str, Any]:
+def write(case: Path, models: dict[str, str], mode: str = "final") -> dict[str, Any]:
     """mode final: the batch or a refusal; draft: the draft only; review: the
     draft, plus the final batch when no flag is pending (what the ingest page
     shows after each edit). A review-mode refusal is itself recorded as the
@@ -630,7 +632,7 @@ def write(case: Path, models: dict[str, str], mode: str = "final", hold_material
     with transaction(case) as descriptor:
         try:
             try:
-                batch, pending, flags, ids, mentions = build(case, models, draft, hold_material=hold_material)
+                batch, pending, flags, ids, mentions = build(case, models, draft)
             except (KeyError, TypeError, AttributeError) as exc:
                 raise BuildError(f"a case file is malformed ({type(exc).__name__}: {exc}); run validate-case.py") from exc
         except BuildError as exc:
@@ -664,7 +666,6 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--review", action="store_true", help="write the draft, and the final batch when nothing is pending")
     group.add_argument("--check-proposal", action="store_true",
                        help="check the proposal JSON on stdin against interface 1 and write nothing (the Pi harness, when a proposal is written)")
-    parser.add_argument("--hold-material", action="store_true", help="leave the case's material out of the batch")
     args = parser.parse_args(argv)
     if args.check_proposal:
         # Every check the build makes, on the proposal from stdin, writing
@@ -688,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     models = dict(item.split("=", 1) for item in args.model if "=" in item)
     try:
-        result = write(Path(args.case_dir), models, "review" if args.review else "draft" if args.draft else "final", args.hold_material)
+        result = write(Path(args.case_dir), models, "review" if args.review else "draft" if args.draft else "final")
     except (BuildError, OrchestrationError, OSError) as exc:
         print(f"build-knowledge-batch: refused: {exc}", file=sys.stderr)
         return 2

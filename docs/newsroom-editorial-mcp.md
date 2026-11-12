@@ -197,10 +197,11 @@ not wired into this runtime.
 
 ## What stays out of open-source Spotlight
 
-- **Journalist input.** Intake of interviews, source emails, notes and
-  documents (kind, source or protected pseudonym, attribution, consent,
-  rights, sensitivity) belongs to the newsroom edition. Whatever a newsroom
-  edition adds travels only to its own Editorial MCP, never to a third-party
-  model route.
+- **Journalist input is not sent yet.** Open-source Spotlight registers a
+  case's material (interviews, source emails, notes, documents) and takes
+  passages and claims from it (`scripts/intake.py`), for the solo edition's
+  wiki. In the newsroom edition that material stays in the case: the batch
+  builder leaves it out until the newsroom's service accepts
+  `journalist_inputs`. It never goes to a third-party model route.
 - The review of a stored batch, its approval, publication and corrections
   happen in the newsroom's own service and applications.
