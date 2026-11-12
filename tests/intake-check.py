@@ -137,6 +137,37 @@ def main() -> int:
         INTAKE.decide(case, drawn["id"], "drop")
         require("no kept claim" in refused(INTAKE.approve, case, filled["id"], "A. Reporter"), "an approval with nothing kept was recorded")
 
+        # Ingest, with no investigation: the batch builder takes the approved
+        # claims as what the source said. No rights on the passage, no batch.
+        INTAKE.decide(case, drawn["id"], "keep")
+        INTAKE.set_rights(case, passage["id"], {})
+        INTAKE.approve(case, filled["id"], "A. Reporter")
+        build = lambda *flags: subprocess.run([sys.executable, str(ROOT / "scripts" / "build-knowledge-batch.py"), str(case), *flags],  # noqa: E731
+                                              capture_output=True, text=True)
+        without_rights = build()
+        require(without_rights.returncode == 2 and "attribution, consent, sensitivity" in without_rights.stderr, without_rights.stderr)
+        rights = {"attribution": "not_for_attribution", "sensitivity": "internal",
+                  "consent": {"publish_content": True, "publish_direct_quotes": False, "obtained_via": "recorded_oral"}}
+        INTAKE.set_rights(case, passage["id"], rights)
+        INTAKE.approve(case, filled["id"], "A. Reporter")
+        held = build("--hold-material")
+        require(held.returncode == 2 and not (case / "data" / "knowledge-batch.json").exists(), f"held material was built: {held.stdout}{held.stderr}")
+        built = build()
+        require(built.returncode == 0, built.stderr)
+        batch = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))
+        material = batch["journalist_inputs"][0]
+        require(material["content_sha256"] == hashlib.sha256(notes.read_bytes()).hexdigest() and material["source"] == {"pseudonym": "Dock worker 1"}
+                and "state" not in material, f"the material's record is not the register's: {material}")
+        sent = batch["source_expressions"][0]
+        require(sent["text"] == quote and sent["origin_ref"]["type"] == "journalist_input" and sent["origin_ref"]["id"] == material["id"]
+                and all(sent[name] == rights[name] for name in rights), f"the passage lost its origin or its rights: {sent}")
+        require(batch["claims"][0]["proposition"] == claim["proposition"] and "assessments" not in batch,
+                "a claim from material was given a verdict")
+        position = batch["source_positions"][0]
+        require(position["actor"] == {"label": "Dock worker 1"} and position["stance"] == "asserts", f"{position}")
+        (case / "intake" / "interviews" / "call.txt").write_text("Rewritten after approval.\n", encoding="utf-8")
+        require(build().returncode == 2, "a batch was built from material that changed after it was registered")
+
         # The command line refuses with exit 2 and leaves the register alone.
         before = (case / "data" / "journalist-input.json").read_bytes()
         result = subprocess.run([sys.executable, str(ROOT / "scripts" / "intake.py"), str(case), "confirm", "JI9", "--by", "x"],

@@ -3,7 +3,7 @@
   "$id": "https://spotlight.buriedsignals.com/schemas/knowledge-batch-1.1.schema.json",
   "title": "Spotlight Knowledge Batch 1.1 (core)",
   "description": "The open-source core of Knowledge Batch 1.1: one proposed knowledge batch built from a case. It keeps the full Batch 1.1 names and rules and only its open-source record types and fields, so every core batch also validates against the full schema.",
-  "$comment": "Derived from the full Knowledge Batch 1.1 schema with sha256 8ca0442770e9a939685519407f91e6b77c7c5604e52554d7ea012a74627b095e. MIT. Never set in a batch: approval decisions, who submitted it and when; the service adds them. Cross-record rules C1-C10 and C13 are enforced by scripts/validate-knowledge-batch.py.",
+  "$comment": "Derived from the full Knowledge Batch 1.1 schema with sha256 8ca0442770e9a939685519407f91e6b77c7c5604e52554d7ea012a74627b095e. MIT. Never set in a batch: approval decisions, who submitted it and when; the service adds them. Cross-record rules C1-C10 and C13, and the journalist-input rules J1-J3, are enforced by scripts/validate-knowledge-batch.py.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -25,6 +25,12 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/evidence"
+      }
+    },
+    "journalist_inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/journalist_input"
       }
     },
     "source_expressions": {
@@ -223,6 +229,7 @@
     "record_type": {
       "enum": [
         "evidence",
+        "journalist_input",
         "source_expression",
         "claim",
         "claim_source_expression",
@@ -482,7 +489,8 @@
       "properties": {
         "type": {
           "enum": [
-            "evidence"
+            "evidence",
+            "journalist_input"
           ]
         },
         "id": {
@@ -532,6 +540,64 @@
         },
         "provenance": {
           "$ref": "#/definitions/provenance"
+        },
+        "attribution": {
+          "enum": [
+            "on_record",
+            "background",
+            "not_for_attribution",
+            "off_record"
+          ]
+        },
+        "consent": {
+          "$ref": "#/definitions/consent"
+        },
+        "sensitivity": {
+          "enum": [
+            "case_only",
+            "internal",
+            "publishable"
+          ]
+        }
+      },
+      "$comment": "An original-language passage: one exact origin. Passages from journalist input carry their own operative controls; passages from evidence carry none.",
+      "if": {
+        "properties": {
+          "origin_ref": {
+            "properties": {
+              "type": {
+                "const": "journalist_input"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "attribution",
+          "consent",
+          "sensitivity"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "attribution"
+              ]
+            },
+            {
+              "required": [
+                "consent"
+              ]
+            },
+            {
+              "required": [
+                "sensitivity"
+              ]
+            }
+          ]
         }
       }
     },
@@ -1017,6 +1083,182 @@
         },
         "provenance": {
           "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "journalist_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "captured_by",
+        "captured_at",
+        "source",
+        "rights_holder",
+        "original_sensitivity",
+        "content_ref",
+        "content_sha256",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "kind": {
+          "enum": [
+            "interview",
+            "source_email",
+            "field_note",
+            "document",
+            "dataset",
+            "photo_or_video",
+            "other"
+          ]
+        },
+        "kind_detail": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "captured_by": {
+          "$ref": "#/definitions/nonempty_text",
+          "$comment": "PENDING CONFIRMATION (O4): staff identifier format."
+        },
+        "captured_at": {
+          "$ref": "#/definitions/date_time"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entity_id": {
+              "$ref": "#/definitions/nonempty_text"
+            },
+            "pseudonym": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "entity_id"
+              ]
+            },
+            {
+              "required": [
+                "pseudonym"
+              ]
+            }
+          ],
+          "$comment": "An entity or a pseudonym, never both (checked by scripts/validate-knowledge-batch.py, J1): a protected source's identity stays in the case."
+        },
+        "rights_holder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label"
+          ],
+          "properties": {
+            "label": {
+              "$ref": "#/definitions/nonempty_text"
+            },
+            "entity_id": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          }
+        },
+        "original_sensitivity": {
+          "enum": [
+            "case_only",
+            "internal",
+            "publishable"
+          ],
+          "$comment": "Handling of the original artifact, which the server does not receive. It does not describe this metadata record or any selected passage."
+        },
+        "content_ref": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "content_sha256": {
+          "$ref": "#/definitions/sha256"
+        },
+        "derivatives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/derivative"
+          }
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "other"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "kind_detail"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "kind_detail"
+          ]
+        }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publish_content",
+        "publish_direct_quotes",
+        "obtained_via"
+      ],
+      "properties": {
+        "publish_content": {
+          "type": "boolean"
+        },
+        "publish_direct_quotes": {
+          "type": "boolean"
+        },
+        "obtained_via": {
+          "enum": [
+            "written",
+            "recorded_oral",
+            "unrecorded_oral",
+            "other"
+          ],
+          "$comment": "PENDING ORGANISATIONAL CONFIRMATION (O7)."
+        },
+        "obtained_via_detail": {
+          "$ref": "#/definitions/nonempty_text"
+        }
+      },
+      "if": {
+        "properties": {
+          "obtained_via": {
+            "const": "other"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "obtained_via_detail"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "obtained_via_detail"
+          ]
         }
       }
     }
