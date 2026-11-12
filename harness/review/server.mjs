@@ -12,8 +12,6 @@ const BODY_LIMIT = 64 << 10;
 const MAX_FOLLOW_UP = 4000;
 const REQUEST_TIMEOUT_MS = 150_000;
 const MATERIAL_ID = /^JI[1-9][0-9]*$/;
-const DIGEST = /^[a-f0-9]{64}$/;
-const PASSAGE_ID = /^JP[1-9][0-9]*$/;
 const CLAIM_ID = /^JC[1-9][0-9]*$/;
 const MAX_NAME = 200;
 const MAX_PROPOSITION = 4000;
@@ -448,37 +446,31 @@ export async function startReviewServer({
     return [200, { ...(await bridge.view(gate)), gate_label: GATE_LABELS[gate] }];
   }
 
-  // The Intake view's routes. Every action is one intake.py call, saved at
-  // once; a refusal travels back as the reason and nothing is assumed saved.
+  // The Intake view's routes. A claim's rewrite is one intake.py call; one
+  // material's approval is one request that runs its steps in order (see
+  // createIntakeBridge). A refusal travels back as the reason, with the step
+  // it came from, and nothing after that step runs.
   async function intakeRoute(action, request) {
     const body = await readJson(request);
     if (action === "view") {
       exactObject(body, [], "intake request");
       return intake.view();
     }
-    if (action === "set") {
-      const { id, fields } = exactObject(body, ["id", "fields"], "record");
-      return intake.set(pattern(id, MATERIAL_ID, "the material"), plainObject(fields, "the fields"));
-    }
-    if (action === "confirm" || action === "approve") {
-      const by = optionalName(plainObject(body, action));
-      const { id, digest } = exactObject(body, by === undefined ? ["id", "digest"] : ["id", "by", "digest"], action);
-      return intake[action](pattern(id, MATERIAL_ID, "the material"), by, pattern(digest, DIGEST, "the digest"));
-    }
-    if (action === "keep-all") {
-      return intake.keepAll(pattern(exactObject(body, ["id"], "keep all").id, MATERIAL_ID, "the material"));
-    }
-    if (action === "decide") {
-      const edits = body?.action === "edit";
-      const { claim, action: decision, proposition } = exactObject(body, edits ? ["claim", "action", "proposition"] : ["claim", "action"], "decision");
-      pattern(decision, /^(keep|drop|edit)$/, "the decision");
-      if (edits && (typeof proposition !== "string" || !proposition.trim() || proposition.length > MAX_PROPOSITION))
+    if (action === "rewrite") {
+      const { claim, proposition } = exactObject(body, ["claim", "proposition"], "rewrite");
+      if (typeof proposition !== "string" || !proposition.trim() || proposition.length > MAX_PROPOSITION)
         throw Object.assign(new Error(`Write the claim in at most ${MAX_PROPOSITION} characters.`), { status: 400 });
-      return intake.decide(pattern(claim, CLAIM_ID, "the claim"), decision, edits ? { proposition } : undefined);
+      return intake.decide(pattern(claim, CLAIM_ID, "the claim"), "edit", { proposition });
     }
-    if (action === "rights") {
-      const { passage, rights } = exactObject(body, ["passage", "rights"], "rights");
-      return intake.rights(pattern(passage, PASSAGE_ID, "the passage"), plainObject(rights, "the rights"));
+    if (action === "approve-material") {
+      const by = optionalName(plainObject(body, "approval"));
+      const { id, choices, keep } = exactObject(body, by === undefined ? ["id", "choices", "keep"] : ["id", "by", "choices", "keep"], "approval");
+      plainObject(keep, "the claims");
+      for (const [claim, kept] of Object.entries(keep)) {
+        pattern(claim, CLAIM_ID, "a claim");
+        if (typeof kept !== "boolean") throw Object.assign(new Error("a claim is kept or left out"), { status: 400 });
+      }
+      return intake.approveMaterial(pattern(id, MATERIAL_ID, "the material"), { by, choices: plainObject(choices, "the choices"), keep });
     }
     throw Object.assign(new Error("This route does not exist."), { status: 404, code: "not-found" });
   }
@@ -586,7 +578,7 @@ export async function startReviewServer({
     } catch (error) {
       const status = error?.status ?? (error?.code === "refused" ? 422 : 500);
       const message = status === 500 ? "The review request failed." : String(error?.message ?? "The request was refused.").slice(0, 2048);
-      return sendJson(response, status, { code: error?.code ?? "review-error", message });
+      return sendJson(response, status, { code: error?.code ?? "review-error", message, ...(error?.step ? { step: error.step } : {}) });
     }
   }
 

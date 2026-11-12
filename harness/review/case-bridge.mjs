@@ -13,6 +13,13 @@ export const SEAM_REFUSED = 3;
 export const SEAM_DIGEST_CHANGED = 4;
 // Exit code of scripts/intake.py for a request it refuses.
 const INTAKE_REFUSED = 2;
+// What an approval says when the step named could not be done.
+const STEP_FAILED = {
+  rights: "The rights were not saved",
+  claims: "The claims were not saved",
+  confirm: "The record could not be confirmed",
+  approve: "The claims could not be approved",
+};
 
 // Stand-in for Bun.which: the first executable regular file on PATH.
 export function which(command, pathValue = process.env.PATH ?? "") {
@@ -184,23 +191,53 @@ export function createIntakeBridge({
     throw Object.assign(new Error(message.slice(0, 2048) || "the material could not be read or saved"), { code: refused ? "refused" : "intake-failed" });
   }
 
-  // The person a confirmation or approval is recorded for, then the write with
-  // a one-time code issued for this material and kept in this call only. The
-  // page never receives it; the digest is the one the page showed.
-  async function decideAs(action, id, by, digest) {
-    const { by: name } = await run(["decider", ...(by === undefined ? [] : [`--by=${by}`])]);
+  // A one-time code for this material and action, kept in this call only and
+  // spent with the decision. The digest is read from the material as it is now,
+  // after whatever the earlier steps saved; the page never sees either.
+  async function decideAs(action, id, by) {
+    const { digests } = await run(["view"]);
     const { nonce } = await run(["code", action, id]);
-    return run([action, id, `--by=${name}`, `--nonce=${nonce}`, `--digest=${digest}`]);
+    return run([action, id, `--by=${by}`, `--nonce=${nonce}`, `--digest=${digests[id]}`]);
+  }
+
+  // Runs one step of an approval; a refusal names the step it came from.
+  async function inStep(step, work) {
+    try {
+      return await work();
+    } catch (error) {
+      if (error.code === "refused") error.message = `${STEP_FAILED[step]}: ${error.message}`;
+      throw Object.assign(error, { step });
+    }
+  }
+
+  // One material's approval, in order: its rights, each claim kept or dropped
+  // by the page's tick, the record's confirmation (skipped when it is already
+  // confirmed), then the approval. The first refusal stops it; what the earlier
+  // steps saved stays saved and nothing after it runs.
+  async function approveMaterial(id, { by, choices, keep }) {
+    const { by: name } = await inStep("rights", () => run(["decider", ...(by === undefined ? [] : [`--by=${by}`])]));
+    await inStep("claims", async () => {
+      const { passages, claims } = await run(["view"]);
+      const mine = new Set(passages.filter((passage) => passage.input_id === id).map((passage) => passage.id));
+      const ids = claims.filter((claim) => mine.has(claim.passage_id)).map((claim) => claim.id);
+      if (ids.length !== Object.keys(keep).length || ids.some((claim) => !Object.hasOwn(keep, claim)))
+        throw Object.assign(new Error("the claims of this material changed since the page showed them; reload the page"), { code: "refused" });
+      if (!Object.values(keep).includes(true))
+        throw Object.assign(new Error("keep at least one claim to approve"), { code: "refused" });
+    });
+    await inStep("rights", () => run(["material-rights", id, `--by=${name}`], JSON.stringify(choices)));
+    await inStep("claims", async () => {
+      for (const [claim, kept] of Object.entries(keep)) await run(["decide", claim, kept ? "keep" : "drop"]);
+    });
+    const { inputs } = await run(["view"]);
+    if (inputs.find((input) => input.id === id)?.state !== "confirmed") await inStep("confirm", () => decideAs("confirm", id, name));
+    return inStep("approve", () => decideAs("approve", id, name));
   }
 
   return Object.freeze({
     view: () => run(["view"]),
-    set: (id, fields) => run(["set", id], JSON.stringify(fields)),
-    confirm: (id, by, digest) => decideAs("confirm", id, by, digest),
-    approve: (id, by, digest) => decideAs("approve", id, by, digest),
     decide: (claim, action, fields) => run(["decide", claim, action], action === "edit" ? JSON.stringify(fields) : ""),
-    rights: (passage, rights) => run(["rights", passage], JSON.stringify(rights)),
-    keepAll: (id) => run(["keep-all", id]),
+    approveMaterial,
   });
 }
 

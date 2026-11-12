@@ -98,6 +98,73 @@ def register(case: Path) -> list[dict]:
     return json.loads((case / "data" / "journalist-input.json").read_text(encoding="utf-8"))["inputs"]
 
 
+PLAIN = {"kind": "interview", "source_as": "pseudonym", "source": "Dock worker 1", "holder": "A. Reporter",
+         "publish": "not_attributed", "quotes": "not_allowed", "consent": "recorded_oral"}
+SUMMARY = "Dock worker 1 (pseudonym) \u00b7 yes, not attributed by name \u00b7 direct quotes not allowed \u00b7 consent spoken, on the recording"
+
+
+def plain_rights(root: Path) -> None:
+    """A material's rights in the journalist's plain choices: what each choice is stored as, that every passage of the
+    material takes them, what the view gives back, and that a claim suggested to be left out stays the journalist's to decide."""
+    case = root / "plain"
+    (case / "data").mkdir(parents=True)
+    (root / "plain.txt").write_text(f"We were short for weeks. {QUOTE}. Nobody put it in writing.\nThe second passage is here.\n", encoding="utf-8")
+    record_id = INTAKE.add(case, root / "plain.txt", kind="interview")["id"]
+
+    # Nothing stored yet: the view says so, and offers the plain choices with the most restrictive ones named.
+    shown = INTAKE.view(case)
+    require(shown["inputs"][0]["plain"]["publish"] is None and shown["inputs"][0]["plain"]["summary"].endswith("rights not set yet"),
+            f"{shown['inputs'][0]['plain']}")
+    require(shown["restrictive"] == {"source_as": "pseudonym", "publish": "off_record", "quotes": "not_allowed", "consent": "unrecorded_oral"}
+            and [choice["label"] for choice in shown["choices"]["publish"]]
+            == ["Yes, on the record", "Yes, not attributed by name", "Background only", "No, off the record"], "the view lacks the choices")
+
+    # A suggestion to leave a claim out is stored and decides nothing.
+    suggested = {**CLAIM, "proposition": "Dock worker 1 says it was a long shift.", "leave_out": "  it could identify the source "}
+    require("leave_out" in refused(INTAKE.propose, case, record_id, {"passages": [{"text": QUOTE, "language": "en", "claims": [{**suggested, "leave_out": " "}]}]}),
+            "an empty reason was accepted")
+    INTAKE.propose(case, record_id, {"passages": [{"text": QUOTE, "language": "en", "claims": [CLAIM, suggested]},
+                                                  {"text": "The second passage is here.", "language": "en", "claims": [{**CLAIM, "proposition": "Another."}]}]})
+    claims = INTAKE.view(case)["claims"]
+    require([c.get("leave_out") for c in claims] == [None, "it could identify the source", None] and {c["state"] for c in claims} == {"proposed"},
+            f"the suggestion was not stored as one: {claims}")
+    INTAKE.decide(case, "JC2", "edit", {"proposition": "Dock worker 1 says it was a very long shift."})
+    require(INTAKE.view(case)["claims"][1]["state"] == "proposed", "a rewrite decided the claim")
+
+    # Each choice, and what it is stored as: on every passage of the material.
+    before = (case / "data" / "journalist-input.json").read_bytes()
+    for bad in ({}, {**PLAIN, "publish": "loud"}, {**PLAIN, "holder": " "}, {**PLAIN, "kind": "other"}, {**PLAIN, "extra": 1}):
+        refused(INTAKE.material_rights, case, record_id, bad)
+    require((case / "data" / "journalist-input.json").read_bytes() == before, "a refused choice changed the record")
+    for publish, quotes, consent, stored in (
+        ("on_record", "allowed", "written", ("on_record", "publishable", True, True, "written")),
+        ("not_attributed", "not_allowed", "recorded_oral", ("not_for_attribution", "publishable", True, False, "recorded_oral")),
+        ("background", "allowed", "unrecorded_oral", ("background", "internal", False, False, "unrecorded_oral")),
+        ("off_record", "allowed", "written", ("off_record", "case_only", False, False, "written")),
+    ):
+        INTAKE.material_rights(case, record_id, {**PLAIN, "publish": publish, "quotes": quotes, "consent": consent})
+        attribution, sensitivity, content, direct, via = stored
+        want = {"attribution": attribution, "sensitivity": sensitivity,
+                "consent": {"publish_content": content, "publish_direct_quotes": direct, "obtained_via": via}}
+        require(register(case)[0]["passage_defaults"] == want and [p["rights"] for p in INTAKE.view(case)["passages"]] == [want, want],
+                f"{publish} is not stored on the record and on every passage")
+    named = INTAKE.material_rights(case, record_id, {**PLAIN, "source_as": "real_name", "source": "Jo Docks", "kind": "other", "kind_detail": "a voice memo"})
+    require(named["source"] == {"entity_id": "Jo Docks"} and named["captured_by"] == "Member" and named["kind_detail"] == "a voice memo", f"{named}")
+    INTAKE.material_rights(case, record_id, PLAIN)
+    plain = INTAKE.view(case)["inputs"][0]["plain"]
+    require(plain == {**PLAIN, "kind_detail": "", "summary": SUMMARY}, f"the view does not give back what was stored: {plain}")
+
+    # Confirming closes the record: the same choices go on, other rights are refused. The journalist keeps the claim the
+    # model suggested leaving out and drops another; the batch builder takes the approval.
+    confirm(case, record_id)
+    INTAKE.material_rights(case, record_id, PLAIN)
+    require("no longer changes" in refused(INTAKE.material_rights, case, record_id, {**PLAIN, "publish": "on_record"}), "a confirmed record's rights changed")
+    for claim_id, action in (("JC1", "keep"), ("JC2", "keep"), ("JC3", "drop")):
+        INTAKE.decide(case, claim_id, action)
+    require(INTAKE.view(case)["claims"][1]["leave_out"] == "it could identify the source", "the suggestion did not stay on the claim")
+    require(approve(case, record_id)["claims"] == ["JC1", "JC2"] and counted(case), "the page's approval is not one the batch builder accepts")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as raw:
         tmp = str(Path(raw).resolve())  # the case's real path, as the review ledger is read through it
@@ -288,11 +355,8 @@ def main() -> int:
                        "claims": [{"proposition": "The foreman signed off a shift.", **both}, {"proposition": "The foreman kept no log.", **both}]}]})
         shown = INTAKE.view(case)
         page_passage = next(p for p in shown["passages"] if p["input_id"] == page_record["id"])
-        numbered = [(line["n"], line["in_passage"]) for line in page_passage["context"]["lines"]]
-        require(numbered == [(1, False), (2, False), (3, False), (4, True), (5, True), (6, False), (7, False), (8, False)],
-                f"the passage is not shown in its context: {numbered}")
-        require(page_passage["context"]["lines"][3]["text"] == "the foreman signed the second shift off" and not page_passage["context"]["truncated"],
-                f"{page_passage['context']}")
+        require(page_passage["context"] == {"before": "line 1\nline 2\nline 3\n", "after": "\nline 6\nline 7\nline 8"},
+                f"the passage is not shown with the words around it: {page_passage['context']}")
         require(shown["name_required"] is False and any(r["id"] == page_record["id"] for r in shown["inputs"]), "the view lacks the register or the edition")
         kept = INTAKE.keep_all(case, page_record["id"])
         require(len(kept) == 2 and all(c["state"] == "kept" for c in kept), f"keep_all did not keep both claims: {kept}")
@@ -394,6 +458,8 @@ def main() -> int:
         require("not confirmed yet" in refused(approve, by_hand, held["id"]), "the claims of a record confirmed by hand were approved")
         confirm(by_hand, held["id"])
         require(INTAKE.view(by_hand)["inputs"][0]["state"] == "confirmed", "the page could not confirm a record whose state was edited by hand")
+
+        plain_rights(Path(tmp))
 
         # The command line refuses with exit 2 and leaves the register alone.
         before = (case / "data" / "journalist-input.json").read_bytes()

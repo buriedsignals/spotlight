@@ -18,6 +18,7 @@ Usage:
   python3 scripts/intake.py {CASE_DIR} propose JI1 [--actor agent --model ID] < proposal.json
   python3 scripts/intake.py {CASE_DIR} decide JC1 keep|drop|edit [< {"proposition": ..., "statement": ...}]
   python3 scripts/intake.py {CASE_DIR} rights JP1 < rights.json
+  python3 scripts/intake.py {CASE_DIR} material-rights JI1 [--by NAME] < choices.json
   python3 scripts/intake.py {CASE_DIR} approve JI1 --by NAME --nonce CODE --digest DIGEST
   python3 scripts/intake.py {CASE_DIR} claims
   python3 scripts/intake.py {CASE_DIR} view
@@ -54,9 +55,21 @@ Passages and claims (no investigation is involved, and no verdict is given):
                    "claims": [{"proposition": "...", "statement": {"subject": {"text": "..."}, "predicate": "..."}}]}]}
   A passage is accepted only when its text is in the material word for word,
   at exactly one place; this script records where. It starts with the
-  material's passage_defaults, or with no rights at all.
-- decide is the journalist's keep, drop or edit of one claim; rights sets one
-  passage's attribution, consent and sensitivity.
+  material's passage_defaults, or with no rights at all. A claim may carry
+  "leave_out": "reason", a model's suggestion to leave it out. It is stored on
+  the claim and never changes the claim's state, which the journalist decides;
+  it stays on the claim after the decision.
+- decide is the journalist's keep, drop or edit of one claim; an edit rewrites
+  the claim's proposition or statement and leaves its decision as it was. rights
+  sets one passage's attribution, consent and sensitivity.
+- material-rights is the page's way to set a material's rights in plain choices
+  (listed in CHOICES: kind, how the source is shown, may be published, direct
+  quotes, how consent was given, who holds the rights; a real name is stored as
+  the source's entity_id, a pseudonym as its pseudonym). While the record is a
+  draft it sets the record's fields, with captured_by the person deciding (see
+  decider), and its passage_defaults; a confirmed record only accepts the
+  choices it already holds. It then writes the same rights to every passage of
+  that material.
 - approve is the journalist's approval of the kept claims of one confirmed
   record, once none is left undecided, made on the Intake page. It needs the
   page's one-time code for that record and the digest the page showed (the
@@ -65,11 +78,12 @@ Passages and claims (no investigation is involved, and no verdict is given):
   to that material's passages, claims or rights removes the approval, and an
   approval whose content no longer matches its digest, or that the nonce
   ledger (data/review-nonces.json) does not back, is not one.
-- The review page's three: view returns what the page shows (the register, the
-  passages each with a few lines of context from the file they were taken from,
-  the claims and the approvals); keep-all keeps every claim of one material
-  that is still undecided; decider names who a page's confirmation or approval
-  is recorded for: the fixed Member in the solo edition, else the name given;
+- The review page's: view returns what the page shows (the register, each
+  record with its plain-language choices and one-line summary, the passages each
+  with the words around them from the file they were taken from, the claims and
+  the approvals); keep-all keeps every claim of one material that is still
+  undecided; decider names who a page's confirmation or approval is recorded
+  for: the fixed Member in the solo edition, else the name given;
   code issues the page's one-time code for one material and action (it stores
   only the hash, in the case's nonce ledger) and prints it for the review
   server alone.
@@ -81,6 +95,7 @@ Exit codes: 0 = done (the register, or the record, as JSON on stdout);
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import re
@@ -128,10 +143,28 @@ KIND_BY_SUFFIX = {
 }
 SENSITIVITIES = ("case_only", "internal", "publishable")
 ACTORS = {"journalist": "journalist", "agent": "agent_candidate"}
-# What the review page shows of a passage: its lines, and a few around them.
+# What the review page shows around a passage: a few lines each side, cut to this many characters.
 CONTEXT_LINES = 3
-MAX_PASSAGE_LINES = 40
-MAX_LINE_CHARS = 2000
+CONTEXT_CHARS = 300
+# The journalist's plain choices for a material. The page sends the keys and shows
+# the labels; only this module knows what each is stored as.
+CHOICES = {
+    "kind": {"interview": "Interview", "source_email": "Email from a source", "field_note": "Field note", "document": "Document",
+             "dataset": "Dataset", "photo_or_video": "Photo or video", "other": "Other"},
+    "source_as": {"pseudonym": "A pseudonym", "real_name": "The source's real name"},
+    "publish": {"on_record": "Yes, on the record", "not_attributed": "Yes, not attributed by name",
+                "background": "Background only", "off_record": "No, off the record"},
+    "quotes": {"not_allowed": "Not allowed", "allowed": "Allowed"},
+    "consent": {"written": "In writing", "recorded_oral": "Spoken, on the recording", "unrecorded_oral": "Spoken, not recorded"},
+}
+FIELD_NAMES = {"kind": "Kind of material", "source_as": "The source is shown as", "publish": "May be published",
+               "quotes": "Direct quotes", "consent": "How consent was given"}
+# What the page preselects while nothing is stored: the most restrictive choice.
+RESTRICTIVE = {"source_as": "pseudonym", "publish": "off_record", "quotes": "not_allowed", "consent": "unrecorded_oral"}
+# May be published, as stored: attribution, whether the content may be published, sensitivity.
+PUBLISH = {"on_record": ("on_record", True, "publishable"), "not_attributed": ("not_for_attribution", True, "publishable"),
+           "background": ("background", False, "internal"), "off_record": ("off_record", False, "case_only")}
+MATERIAL_CHOICES = ("kind", "kind_detail", "source_as", "source", "holder", "publish", "quotes", "consent")
 SETTABLE = ("kind", "kind_detail", "captured_by", "source", "rights_holder", "original_sensitivity", "passage_defaults")
 
 
@@ -500,10 +533,14 @@ def propose(case: Path, record_id: str, proposal: Any, actor: str = "journalist"
                 errors = _shape_errors(claim.get("statement"), SCHEMAS / "knowledge-proposal.schema.json", "claim/properties/statement")
                 if errors:
                     raise Refused(f"{where}: statement needs a subject and a predicate ({'; '.join(errors[:3])})")
+                leave_out = claim.get("leave_out")
+                if leave_out is not None and (not isinstance(leave_out, str) or not leave_out.strip()):
+                    raise Refused(f"{where}: leave_out is the reason to leave the claim out, as text")
                 if any(c["passage_id"] == passage["id"] and c["proposition"] == claim["proposition"].strip() for c in doc["claims"]):
                     continue
                 doc["claims"].append({"id": _next("JC", doc["claims"]), "passage_id": passage["id"],
                                       "proposition": claim["proposition"].strip(), "statement": claim["statement"],
+                                      **({"leave_out": leave_out.strip()} if leave_out else {}),
                                       "state": "proposed", "provenance": provenance})
         doc["approvals"].pop(record_id, None)
         _publish(case, doc, descriptor, CLAIMS)
@@ -518,7 +555,7 @@ def _passage(doc: dict[str, Any], passage_id: str) -> dict[str, Any]:
 
 
 def decide(case: Path, claim_id: str, action: str, fields: Any = None) -> dict[str, Any]:
-    """The journalist keeps, drops or rewrites one claim."""
+    """The journalist keeps or drops one claim, or rewrites it and leaves its decision as it was."""
     if action not in ("keep", "drop", "edit"):
         raise Refused("decide takes keep, drop or edit")
     with transaction(case) as descriptor:
@@ -536,7 +573,8 @@ def decide(case: Path, claim_id: str, action: str, fields: Any = None) -> dict[s
                 if errors:
                     raise Refused(f"statement needs a subject and a predicate ({'; '.join(errors[:3])})")
             claim.update({**fields, "provenance": {"method": "journalist"}})
-        claim["state"] = "dropped" if action == "drop" else "kept"
+        else:
+            claim["state"] = "dropped" if action == "drop" else "kept"
         doc["approvals"].pop(_passage(doc, claim["passage_id"])["input_id"], None)
         _publish(case, doc, descriptor, CLAIMS)
     return claim
@@ -554,6 +592,71 @@ def set_rights(case: Path, passage_id: str, rights: Any) -> dict[str, Any]:
         doc["approvals"].pop(passage["input_id"], None)
         _publish(case, doc, descriptor, CLAIMS)
     return passage
+
+
+def _text_choice(choices: dict[str, Any], name: str, ask: str) -> str:
+    value = choices.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise Refused(ask)
+    return value.strip()
+
+
+def _chosen(choices: dict[str, Any], name: str) -> str:
+    if choices.get(name) not in CHOICES[name]:
+        options = ", ".join(f'"{label}"' for label in CHOICES[name].values())
+        raise Refused(f"{FIELD_NAMES[name]}: choose one of {options}")
+    return choices[name]
+
+
+def _passage_rights(choices: dict[str, Any]) -> dict[str, Any]:
+    """The rights a material's plain choices stand for. Direct quotes are never
+    allowed for content that may not be published."""
+    attribution, content, sensitivity = PUBLISH[_chosen(choices, "publish")]
+    return {"attribution": attribution, "sensitivity": sensitivity,
+            "consent": {"publish_content": content, "publish_direct_quotes": content and _chosen(choices, "quotes") == "allowed",
+                        "obtained_via": _chosen(choices, "consent")}}
+
+
+def _record_fields(choices: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    kind = _chosen(choices, "kind")
+    shown = _text_choice(choices, "source", "The source is shown as: write the name or the pseudonym")
+    fields: dict[str, Any] = {
+        "kind": kind,
+        "source": {("entity_id" if _chosen(choices, "source_as") == "real_name" else "pseudonym"): shown},
+        "rights_holder": {**(record.get("rights_holder") or {}), "label": _text_choice(choices, "holder", "Who holds the rights: write who holds them")},
+        "passage_defaults": _passage_rights(choices),
+    }
+    if kind == "other":
+        fields["kind_detail"] = _text_choice(choices, "kind_detail", 'Kind of material: say what kind it is when you choose "Other"')
+    return fields
+
+
+def _write_passage_rights(case: Path, record_id: str, rights: dict[str, Any]) -> None:
+    """The same rights on every passage of one material; an approval is taken back only when a passage changed."""
+    with transaction(case) as descriptor:
+        doc = _load_claims(case)
+        changed = [passage for passage in doc["passages"] if passage["input_id"] == record_id and passage.get("rights") != rights]
+        for passage in changed:
+            passage["rights"] = copy.deepcopy(rights)
+        if changed:
+            doc["approvals"].pop(record_id, None)
+            _publish(case, doc, descriptor, CLAIMS)
+
+
+def material_rights(case: Path, record_id: str, choices: Any, by: str | None = None) -> dict[str, Any]:
+    """The rights of one material, from the journalist's plain choices: its
+    record while that is a draft, then every passage taken from it."""
+    if not isinstance(choices, dict) or set(choices) - set(MATERIAL_CHOICES):
+        raise Refused(f"the choices are a JSON object of: {', '.join(MATERIAL_CHOICES)}")
+    name = decider(by)["by"]
+    record = _record(_load(case), record_id)
+    fields = _record_fields(choices, record)
+    if record["state"] == "draft":
+        record = set_fields(case, record_id, {**fields, "captured_by": name})
+    elif any(record.get(field) != value for field, value in fields.items()):
+        raise Refused(f"{record_id} is confirmed and no longer changes; different rights are a new record")
+    _write_passage_rights(case, record_id, fields["passage_defaults"])
+    return record
 
 
 def _claims_of(doc: dict[str, Any], record_id: str) -> list[dict[str, Any]]:
@@ -604,10 +707,10 @@ def approve(case: Path, record_id: str, by: str, nonce: str | None = None, diges
     return doc["approvals"][record_id]
 
 
-def _context(case: Path, passage: dict[str, Any]) -> dict[str, Any] | None:
-    """The passage's own lines with a few around them, numbered as the anchor
-    numbers them. None when its file is no longer a plain file under intake/
-    or no longer has the bytes the passage was taken from."""
+def _context(case: Path, passage: dict[str, Any]) -> dict[str, str] | None:
+    """The words just before and after the passage in the file it was taken
+    from, a few lines each side. None when that file is no longer a plain file
+    under intake/ or no longer has the bytes the passage was taken from."""
     anchor = passage["anchor_ref"]
     try:
         path = _material_file(case, case / anchor["path"])
@@ -616,15 +719,42 @@ def _context(case: Path, passage: dict[str, Any]) -> dict[str, Any] | None:
     if _sha256(path) != passage["anchor_sha256"]:
         return None
     lines = source_lines(path)
-    first = max(1, anchor["line_start"] - CONTEXT_LINES)
-    shown_end = min(anchor["line_end"], anchor["line_start"] + MAX_PASSAGE_LINES - 1)
-    truncated = shown_end < anchor["line_end"]
-    last = min(len(lines), shown_end if truncated else shown_end + CONTEXT_LINES)
-    return {
-        "lines": [{"n": n, "text": lines[n - 1][:MAX_LINE_CHARS], "in_passage": anchor["line_start"] <= n <= anchor["line_end"]}
-                  for n in range(first, last + 1)],
-        "truncated": truncated,
+    first, last = anchor["line_start"], anchor["line_end"]
+    body = "\n".join(lines[first - 1:last])
+    found = re.search(r"\s+".join(re.escape(word) for word in passage["text"].split()), body)
+    if found is None:
+        return {"before": "", "after": ""}
+    before = "\n".join([*lines[max(0, first - 1 - CONTEXT_LINES):first - 1], body[:found.start()]])
+    after = "\n".join([body[found.end():], *lines[last:last + CONTEXT_LINES]])
+    return {"before": ("… " + before[-CONTEXT_CHARS:]) if len(before) > CONTEXT_CHARS else before,
+            "after": (after[:CONTEXT_CHARS] + " …") if len(after) > CONTEXT_CHARS else after}
+
+
+def _plain(record: dict[str, Any]) -> dict[str, Any]:
+    """What a record holds, as the journalist's plain choices (None where nothing
+    plain is stored) and as the one line the page opens with."""
+    source = record.get("source") or {}
+    rights = record.get("passage_defaults") or {}
+    consent = rights.get("consent") or {}
+    stored = (rights.get("attribution"), consent.get("publish_content"), rights.get("sensitivity"))
+    quotes = consent.get("publish_direct_quotes")
+    plain = {
+        "kind": record.get("kind"), "kind_detail": record.get("kind_detail", ""),
+        "source_as": "real_name" if "entity_id" in source else "pseudonym", "source": source.get("entity_id") or source.get("pseudonym") or "",
+        "holder": (record.get("rights_holder") or {}).get("label", ""),
+        "publish": next((name for name, held in PUBLISH.items() if held == stored), None),
+        "quotes": None if quotes is None else "allowed" if quotes else "not_allowed",
+        "consent": consent.get("obtained_via") if consent.get("obtained_via") in CHOICES["consent"] else None,
     }
+    return {**plain, "summary": _summary(plain)}
+
+
+def _summary(plain: dict[str, Any]) -> str:
+    source = f"{plain['source']} ({'real name' if plain['source_as'] == 'real_name' else 'pseudonym'})" if plain["source"] else "source not named yet"
+    publish, quotes, consent = (CHOICES[name].get(plain[name]) for name in ("publish", "quotes", "consent"))
+    if None in (publish, quotes, consent):
+        return f"{source} · rights not set yet"
+    return f"{source} · {publish.lower()} · direct quotes {quotes.lower()} · consent {consent.lower()}"
 
 
 def view(case: Path) -> dict[str, Any]:
@@ -636,7 +766,9 @@ def view(case: Path) -> dict[str, Any]:
     inputs = [record if decisions.confirmed(case, record, ledger) else {**record, "state": "draft"} for record in _load(case)["inputs"]]
     return {
         "name_required": ingest_mode() == "newsroom",
-        "inputs": inputs,
+        "choices": {name: [{"value": value, "label": label} for value, label in options.items()] for name, options in CHOICES.items()},
+        "restrictive": RESTRICTIVE,
+        "inputs": [{**record, "plain": _plain(record)} for record in inputs],
         "digests": {record["id"]: decisions.subject_digest("approve" if record["state"] == "confirmed" else "confirm", record, claims)
                     for record in inputs},
         "passages": [{**passage, "context": _context(case, passage)} for passage in claims["passages"]],
@@ -694,6 +826,9 @@ def main(argv: list[str] | None = None) -> int:
     decide_parser.add_argument("id")
     decide_parser.add_argument("action")
     commands.add_parser("rights").add_argument("id")
+    material_parser = commands.add_parser("material-rights")
+    material_parser.add_argument("id")
+    material_parser.add_argument("--by")
     commands.add_parser("list")
     commands.add_parser("claims")
     commands.add_parser("view")
@@ -718,6 +853,8 @@ def main(argv: list[str] | None = None) -> int:
             result = decide(args.case, args.id, args.action, _stdin_json() if args.action == "edit" else None)
         elif args.command == "rights":
             result = set_rights(args.case, args.id, _stdin_json())
+        elif args.command == "material-rights":
+            result = material_rights(args.case, args.id, _stdin_json(), args.by)
         elif args.command == "approve":
             result = approve(args.case, args.id, args.by, args.nonce, args.digest)
         elif args.command == "code":

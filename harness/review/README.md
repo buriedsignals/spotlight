@@ -116,27 +116,55 @@ lookup marks only that mention ("Could not look up") and the gate stays usable.
 ## Material intake
 
 A second view, opened with or without a pending gate, for the material a
-journalist brought to the case (`scripts/intake.py`). Per item it shows the
-record (editable while a draft, then confirmed and read-only), each claim with
-its passage in context (a few lines around the passage's own, highlighted),
-the passage's rights, Keep / Edit / Drop, and the material's approval, with
-"Keep all". Every action is one `intake.py` call under `/api/intake/<action>`
-(view, set, confirm, decide, rights, keep-all, approve), saved at once; the
-server validates ids and body shape, and a refusal (exit 2) comes back as 422
-with its reason, shown beside the action. Confirm and approve take the digest
-the view gave for that material (`digests`) and nothing else from the page.
-The server asks `intake.py code` for a one-time code for that material and
-action, keeps it in that one call, and passes it to `intake.py confirm` or
-`approve` with the digest; the page never receives it. The code is stored
-hashed in the case's nonce ledger and spent with the decision. A digest of
-what the page showed that no longer matches the material is refused, and the
-page reloads. The view lists a record whose confirmation, or an approval whose
-code and digest the ledger does not back, as not yet decided. Context lines are read by
-`intake.py view` only from plain files under the case's `intake/` folder, and
-only while the file still has the bytes the passage was taken from. The solo
-edition records the fixed `Member`; the newsroom edition asks for a name and
-`intake.py decider` refuses a blank one. The same capability, Host and Origin
-checks apply as to every other route.
+journalist brought to the case (`scripts/intake.py`). Each item is an expandable
+section; the first item not yet approved is open, and approving one closes it,
+marks it Approved and opens the next. Inside an item, one folded line says what
+is recorded about it and its rights (prefilled, for example "Dock worker 1
+(pseudonym) · yes, not attributed by name · direct quotes not allowed · consent
+spoken, on the recording"). Opening it shows six plain-language fields: kind of
+material, how the source is shown (a pseudonym or a real name), whether it may be
+published, direct quotes, how consent was given and who holds the rights. They
+apply to every claim of the item; there is no per-claim or per-passage rights
+control. One button shows the words around every passage of the item, taken
+from the file the passage came from; no line numbers are shown. Each claim is a
+card with a tick box (ticked means keep), its sentence (click to rewrite it in
+place), its structure as tags (who, did, what, from the claim's statement) and
+its passage. A claim the model suggested leaving out (`leave_out` on the claim)
+arrives unticked and dimmed with the reason. At the bottom: how many are kept
+and left out, and one button, "Approve N claims".
+
+The routes, all POST under `/api/intake/`, with the same capability, Host and
+Origin checks as every other route:
+
+- `view` returns `intake.py view`: the register with each record's plain
+  choices and summary, the choices offered, the passages with the words around
+  them, the claims and the counted approvals.
+- `rewrite` saves a claim's new sentence through `intake.py decide ... edit`
+  (the proposition only; the claim's decision is left as it was). The page sends
+  it when the sentence loses focus and has changed.
+- `approve-material` approves one item in a single request. The server runs, in
+  order: `intake.py material-rights` (the item's rights, written to the record
+  while it is a draft and then to every passage of the item), `intake.py decide`
+  for each claim (keep when ticked, drop when not), `confirm` unless the record
+  is already confirmed, and `approve`. It checks first that the page sent exactly
+  the claims the item has and that at least one is ticked. The first refusal
+  stops it: the answer is 422 with the reason and the step that refused
+  (`rights`, `claims`, `confirm` or `approve`), what earlier steps saved stays
+  saved, and nothing after the refusal runs. A closed tab does not stop a
+  request already received.
+
+The page sends no digest and no code. For each of `confirm` and `approve` the
+server reads the digest from `intake.py view` after the earlier steps are saved,
+asks `intake.py code` for a one-time code for that material and action, keeps
+it in that call, and passes both to the command; the page never receives it.
+The code is stored hashed in the case's nonce ledger and spent with the
+decision. The view lists a record whose confirmation, or an approval whose code
+and digest the ledger does not back, as not yet decided. The words around a
+passage are read by `intake.py view` only from plain files under the case's
+`intake/` folder, and only while the file still has the bytes the passage was
+taken from. The solo edition records the fixed `Member`; the newsroom edition
+asks for a name once at the top of the page, requires it before approving, and
+`intake.py decider` refuses a blank one.
 
 ## Wiki changes
 

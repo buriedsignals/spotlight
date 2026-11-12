@@ -165,6 +165,10 @@
           "type": "object",
           "description": "As statement in schemas/knowledge-proposal.schema.json; checked by scripts/intake.py."
         },
+        "leave_out": {
+          "$ref": "#/definitions/nonempty_text",
+          "description": "A model's suggestion to leave this claim out, with its reason. It never changes the claim's state, which the journalist decides, and it stays on the claim after the decision."
+        },
         "state": {
           "enum": [
             "proposed",
