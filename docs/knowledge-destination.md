@@ -11,6 +11,8 @@ and story arc (`spotlight/claims/`, `spotlight/events/`,
 built by `scripts/build-knowledge-batch.py`. A newsroom-mode case writes
 nothing locally. `AGENTS.md` ("Solo wiki destination") has the details.
 
+Claims from a journalist's own material (interviews, emails, notes, documents) go in the same batch, as what the source said, with no fact-check verdict; see [material-intake.md](material-intake.md). A case in a protected cases folder is written to that folder's own wiki, never to the member's.
+
 The wiki is `knowledge_destination.workspace_path` in `.spotlight-config.json`.
 Engine writes the block with `type`, `workspace_path`, `namespace` and `mode`
 (`solo` or `newsroom`); `scripts/validate-install-config.py` checks it.

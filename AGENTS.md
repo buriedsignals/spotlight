@@ -239,6 +239,16 @@ Triggering (per-run is the default posture):
 
 A Tor-proxied fetch **never silently falls back to a direct (de-anonymizing) fetch** — on a Tor failure the seam raises, and the operator chooses to re-run `--no-tor` (revealing their IP) or abort. Tor exits are widely blocklisted, so an anonymized fetch of a hard target may simply fail; that is by design, not a bug.
 
+## Protected cases
+
+A cases folder is protected when it is named `cases_protected` or holds a file named `.spotlight-protected`, so the rule travels with the folder (`scripts/protected_cases.py`). Use it for material that no cloud service may receive, such as source interviews.
+
+- The Pi harness runs every case in a protected folder in sensitive mode, and no setting turns that off (`protectedCases` in `harness/pi/src/config.ts`). Such a case reaches no cloud model, no research swarm and no web.
+- A protected case is written only to its folder's own wiki, `<cases folder>/wiki`, never to the member's wiki. `scripts/wiki-destination.py` refuses any other destination for it.
+- A batch that holds a passage of journalist material marked `case_only` is written only from a protected case. The same batch from any other folder is refused, because the member's wiki is plain files that other programs read and that may be synced.
+
+The protection is enforced in the Pi harness. A runtime that has a shell can still read the folder, so elsewhere this is a convention until the folder is encrypted, and Spotlight does not encrypt it. See `docs/sensitivity.md` for what sensitive mode does and does not provide.
+
 ## Cases Directory Structure
 
 Each investigation creates an isolated directory under the configured
@@ -278,12 +288,18 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── knowledge-batch.json      # Reviewed Batch 1.1 (core), built by scripts/build-knowledge-batch.py
 │   ├── knowledge-batch-draft.json # Builder draft for review, with flags awaiting a disposition
 │   ├── ingest-review.json        # Ingest page choices: record selection and flag dispositions
+│   ├── journalist-input.json     # Material register, one record per item brought to the case; schema: schemas/journalist-input.schema.json; written only by scripts/intake.py
+│   ├── intake-claims.json        # Passages taken word for word from the material, the claims drawn from them and the approvals; schema: schemas/intake-claims.schema.json; same writer
 │   ├── decision-signals.json     # Optional decision-model review signals (opt-in; never evidence)
 │   ├── indicator-framework.json  # Indicator Framework ratings, branches and Flags & Tasks (Lab members, when the approved methodology turns it on); checked by scripts/validate-indicator-framework.py
 │   ├── indicator-framework.md    # The same, for reading; never changes findings' confidence or grounding
 │   ├── anomaly-signals.json     # (optional) Anomaly detector runs and signals (leads, never findings); written only by integrations/anomaly/adapter.py
 │   ├── anomaly-decision.json    # (optional) The decision model's answer on running Anomaly on the case's tables; written only by scripts/anomaly-decision.py (Pi harness, local tiers)
 │   └── monitoring.json          # (optional) External monitor registry for the case
+├── intake/                      # Material the journalist brought, never sent anywhere; scripts/intake.py is the only writer
+│   ├── interviews/ emails/ notes/ documents/ datasets/ media/ other/  # One folder per kind
+│   ├── unsorted/                # A file whose kind is not yet named
+│   └── derived/                 # Added text versions (a transcript of a recording); the original is unchanged
 └── research/
     ├── *.md                     # Scraped web content
     ├── *.json                   # Search results
@@ -311,7 +327,9 @@ activation documents use their own schema versions as declared below.
 | Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |
 | Provenance Manifest | `schemas/provenance-manifest.schema.json` | Case artifact hashes, claim/verdict links, evidence refs, and optional Noosphere C2PA signing metadata |
 | Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding and report prose; can only lower confidence or add flags |
-| Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py` |
+| Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, journalist inputs, passages (with attribution, consent and sensitivity), claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13, and the journalist-input rules J1–J3, are checked by `scripts/validate-knowledge-batch.py` |
+| Journalist Input | `schemas/journalist-input.schema.json` | `data/journalist-input.json`: one record per item of material a journalist brought to the case, in the fields of `journalist_input` in Batch 1.1; written only by `scripts/intake.py` |
+| Intake Claims | `schemas/intake-claims.schema.json` | `data/intake-claims.json`: the exact passages taken from the material, the claims drawn from them and the journalist's approvals; a claim reports what the source said and has no verdict; written only by `scripts/intake.py` |
 | Knowledge Proposal | `schemas/knowledge-proposal.schema.json` | Analyst interface 1: normalized claims per finding (with `attributed`), events, story arcs and memberships; `scripts/build-knowledge-batch.py` adds the rest |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations, and the optional `research_plan` (topic briefs, round budget, keys, egress, consent) |
 | Research Lane | `schemas/research-lane.schema.json` | `research/swarm/<topic-id>/lane.json`: one lane's route, status, budget and spend |
@@ -343,6 +361,20 @@ propositions, source positions, the old `partially_verified` and
 `mischaracterized` verdicts, a finding's `disputed` confidence, flag
 dispositions, events and story arcs.
 
+## Material intake
+
+A journalist can bring material into a case: an interview, a source's email, field notes, a document, a dataset, a photo or a video. Each item is a file under `{CASE_DIR}/intake/`, in a folder per kind, with one record in `data/journalist-input.json`. This is an optional side step. It is not a phase, it is not a gate, and it involves no investigation and no fact-check.
+
+- `scripts/intake.py` is the only writer of `data/journalist-input.json`, `data/intake-claims.json` and `intake/`. The Pi harness's file tools refuse writes to all three. Its docstring lists the commands.
+- A record is drafted from the file, as restrictive as the model allows (`case_only`). The journalist confirms the record, and a confirmed record does not change: different bytes are a new record. The original file stays in the case and is never sent anywhere.
+- Passages are taken word for word. `propose` accepts a passage only when its text is in the material exactly, at one place, and the script records where. A recording or a scan needs a text version first, added with `derive`, which leaves the original unchanged.
+- Claims are drawn from passages. The journalist keeps, drops or edits each claim and sets each passage's attribution, consent and sensitivity; a batch is not built while a kept claim's passage lacks one of the three. `confirm`, `decide`, `rights` and `approve` are the journalist's commands. A model's proposals are run with `--actor agent --model ID`, which marks them as agent candidates.
+- The journalist approves the kept claims of one confirmed material once none is left undecided. A later change to its passages or claims removes the approval. Approval rebuilds the case's knowledge batch (`scripts/build-knowledge-batch.py`), where each approved claim enters with its material's `journalist_input` record, its exact passage and its source's position. The claim reports what the source said and has no assessment. The batch rules J1 to J3 apply (`scripts/validate-knowledge-batch.py`).
+- The journalist does this on the Intake page of the review server (`harness/review/README.md`, "Material intake"); a chat-app host with the review MCP opens it through `open_spotlight_intake`. The solo edition records the fixed `Member`; the newsroom edition asks for a name.
+- A case that holds approved material and has no brief goes from intake approval straight to the Ingest decision (`material_only_case` in `scripts/spotlight_orchestration/dependencies.py`). The ingest approval then binds the register and the approved claims in place of an Investigation gate digest.
+- In the newsroom edition the material is held in the case. The newsroom's service does not accept journalist input yet, so the batch leaves it out, and a case that holds only material has nothing to ingest.
+- The Pi harness has no model tool for intake yet: the orchestrator cannot open the Intake page or propose passages (issue #293). Until then the journalist or the review server runs `scripts/intake.py`.
+
 ## Solo wiki destination
 
 An activated case in solo mode is written to the member's wiki by
@@ -368,7 +400,7 @@ the model never sets it). Each batch's links are kept in `spotlight/entity-links
 rebuilding the notes for a later batch keeps them. Spotlight
 never writes the register. Without Engine there are no links. The write holds
 the wiki's `.wiki-lock` and the case lock throughout. Newsroom-mode cases
-write nothing locally.
+write nothing locally. A case in a protected cases folder is written to that folder's own wiki only, and a batch with a `case_only` passage is refused from any other case (see "Protected cases").
 
 ## Source-Expression Release Modes
 
