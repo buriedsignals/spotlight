@@ -244,6 +244,7 @@ A Tor-proxied fetch **never silently falls back to a direct (de-anonymizing) fet
 A cases folder is protected when it is named `cases_protected` or holds a file named `.spotlight-protected`, so the rule travels with the folder (`scripts/protected_cases.py`). Use it for material that no cloud service may receive, such as source interviews.
 
 - The Pi harness runs every case in a protected folder in sensitive mode, and no setting turns that off (`protectedCases` in `harness/pi/src/config.ts`). Such a case reaches no cloud model, no research swarm and no web.
+- A protected case runs in the solo edition only. The newsroom edition registers every case with the newsroom's service, so the Pi harness refuses to start one there.
 - A protected case is written only to its folder's own wiki, `<cases folder>/wiki`, never to the member's wiki. `scripts/wiki-destination.py` refuses any other destination for it.
 - A batch that holds a passage of journalist material marked `case_only` is written only from a protected case. The same batch from any other folder is refused, because the member's wiki is plain files that other programs read and that may be synced.
 

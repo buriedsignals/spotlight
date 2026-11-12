@@ -71,6 +71,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import schema_check  # noqa: E402
+from intake import passage_in_lines  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.dependencies import material_only_case  # noqa: E402
@@ -272,8 +273,11 @@ def approved_material(case: Path) -> list[dict[str, Any]]:
             passage = passages.get(claim["passage_id"]) if claim else None
             if claim is None or claim.get("state") != "kept" or passage is None or passage.get("input_id") != input_id:
                 raise BuildError(f"material {input_id}: approved claim {claim_id} is missing, or no longer kept")
-            if _file_sha(case, passage["anchor_ref"]["path"]) != passage["anchor_sha256"]:
-                raise BuildError(f"material passage {passage['id']}: {passage['anchor_ref']['path']} changed since the passage was taken")
+            anchor = passage["anchor_ref"]
+            if _file_sha(case, anchor["path"]) != passage["anchor_sha256"]:
+                raise BuildError(f"material passage {passage['id']}: {anchor['path']} changed since the passage was taken")
+            if not passage_in_lines(case / anchor["path"], passage["text"], anchor["line_start"], anchor["line_end"]):
+                raise BuildError(f"material passage {passage['id']} is not in {anchor['path']} word for word")
             missing = [name for name in PASSAGE_RIGHTS if name not in (passage.get("rights") or {})]
             if missing:
                 raise BuildError(f"material passage {passage['id']} has no {', '.join(missing)}; the journalist sets them before Ingest")

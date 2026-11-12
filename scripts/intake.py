@@ -199,6 +199,40 @@ def _relative(case: Path, path: Path) -> str:
     return path.resolve().relative_to(case.resolve()).as_posix()
 
 
+def _folder(case: Path, name: str) -> Path:
+    """A folder under intake/ made of real directories of the case, so a copy
+    or a move can never land outside it through a link."""
+    root = case / INTAKE
+    folder = root / name
+    for path in (root, folder):
+        if path.is_symlink():
+            raise Refused(f"{_shown(case, path)} is a link, not a folder of the case; material is not written through it")
+        path.mkdir(exist_ok=True)
+    if folder.resolve() != case.resolve() / INTAKE / name:
+        raise Refused(f"{INTAKE}/{name} is not a folder of the case")
+    return folder
+
+
+def _shown(case: Path, path: Path) -> str:
+    return path.relative_to(case).as_posix()
+
+
+def _copy_new(source: Path, target: Path) -> None:
+    """Copy to a path that must not exist yet, never through a link left there."""
+    try:
+        with source.open("rb") as reader, target.open("xb") as writer:
+            shutil.copyfileobj(reader, writer)
+    except FileExistsError as exc:
+        raise Refused(f"{target.name} already exists under {INTAKE}/ and is not replaced") from exc
+
+
+def passage_in_lines(path: Path, text: str, line_start: int, line_end: int) -> bool:
+    """Whether those lines of the file hold the text literally. Only runs of
+    white space may differ: a look-alike character is a different word."""
+    squeeze = lambda value: " ".join(value.split())  # noqa: E731
+    return squeeze(text) in squeeze("\n".join(source_lines(path)[line_start - 1:line_end]))
+
+
 def _free(folder: Path, name: str) -> Path:
     """A path in `folder` no other file holds: name, name-2, name-3."""
     stem, suffix = Path(name).stem, Path(name).suffix
@@ -249,10 +283,8 @@ def add(case: Path, source: Path, kind: str | None = None, actor: str = "journal
         existing = _by_sha(doc, _sha256(source))
         if existing is not None:
             return existing
-        folder = case / INTAKE / (FOLDERS[kind] if kind else UNSORTED)
-        folder.mkdir(parents=True, exist_ok=True)
-        target = _free(folder, source.name)
-        shutil.copyfile(source, target)
+        target = _free(_folder(case, FOLDERS[kind] if kind else UNSORTED), source.name)
+        _copy_new(source, target)
         record = _draft(doc, case, target, kind, provenance)
         _publish(case, doc, descriptor)
     return record
@@ -295,17 +327,29 @@ def set_fields(case: Path, record_id: str, fields: Any, actor: str = "journalist
         if merged.get("kind") != "other":
             merged.pop("kind_detail", None)
         _check_fields(merged)
+        # The fields are checked before the file moves, and a failed write
+        # moves it back: the register never names a place the file has left.
+        errors = schema_check.load(SCHEMA).errors({"schema_version": "1.0", "inputs": [merged]})
+        if errors:
+            raise Refused("the fields are not valid: " + "; ".join(errors[:6]))
         kind = merged.get("kind")
+        current = moved = None
         if kind and Path(record["content_ref"]).parts[1] != FOLDERS[kind]:
             current = _material_file(case, case / record["content_ref"])
-            folder = case / INTAKE / FOLDERS[kind]
-            folder.mkdir(parents=True, exist_ok=True)
-            moved = _free(folder, current.name)
+            moved = _free(_folder(case, FOLDERS[kind]), current.name)
             current.rename(moved)
             merged["content_ref"] = _relative(case, moved)
+        before = dict(record)
         record.clear()
         record.update(merged)
-        _publish(case, doc, descriptor)
+        try:
+            _publish(case, doc, descriptor)
+        except BaseException:
+            if moved is not None:
+                moved.rename(current)
+            record.clear()
+            record.update(before)
+            raise
     return record
 
 
@@ -346,10 +390,8 @@ def derive(case: Path, record_id: str, source: Path, text_type: str) -> dict[str
     with transaction(case) as descriptor:
         doc = _load(case)
         record = _record(doc, record_id)
-        folder = case / INTAKE / DERIVED
-        folder.mkdir(parents=True, exist_ok=True)
-        target = _free(folder, f"{record_id}-{source.name}")
-        shutil.copyfile(source, target)
+        target = _free(_folder(case, DERIVED), f"{record_id}-{source.name}")
+        _copy_new(source, target)
         derivatives = record.setdefault("derivatives", [])
         derivatives.append({"id": _next("D", derivatives), "type": text_type.strip(),
                             "content_ref": _relative(case, target), "content_sha256": _sha256(target)})
@@ -364,7 +406,9 @@ def _locate(case: Path, record: dict[str, Any], text: str, label: str) -> dict[s
     found = []
     for path, derivative_id in files:
         span = locate_quote(_material_file(case, case / path), text)
-        if span:
+        # locate_quote reads look-alike characters as the same; a passage of
+        # material is the file's own characters.
+        if span and passage_in_lines(case / path, text, *span):
             found.append({"path": path, "line_start": span[0], "line_end": span[1],
                           **({"derivative_id": derivative_id} if derivative_id else {})})
     if len(found) != 1:

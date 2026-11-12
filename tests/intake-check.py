@@ -25,6 +25,8 @@ WIKI = importlib.util.module_from_spec(_WSPEC)
 assert _WSPEC.loader is not None
 _WSPEC.loader.exec_module(WIKI)
 
+import protected_cases as PROTECTED  # noqa: E402
+
 COMPLETE = {"kind": "interview", "captured_by": "A. Reporter", "source": {"pseudonym": "Dock worker 1"},
             "rights_holder": {"label": "A. Reporter"}}
 
@@ -99,6 +101,21 @@ def main() -> int:
         dropped.write_bytes(b"%PDF-1.7 another contract")
         require("registered bytes" in refused(INTAKE.confirm, case, found[0]["id"], "A. Reporter"), "changed material was confirmed")
 
+        # A link where a folder of the case should be: nothing is copied through it.
+        leak = Path(tmp) / "leak"
+        leak.mkdir()
+        (case / "intake" / "datasets").symlink_to(leak, target_is_directory=True)
+        table = outside / "payments.csv"
+        table.write_text("payee,amount\n", encoding="utf-8")
+        require("link" in refused(INTAKE.add, case, table) and not any(leak.iterdir()), "material was copied out of the case through a link")
+        (case / "intake" / "datasets").unlink()
+
+        # A refused edit leaves the file where the register says it is.
+        loose = INTAKE.add(case, outside / "memo.txt") if (outside / "memo.txt").write_text("A memo.\n", encoding="utf-8") else None
+        require("not valid" in refused(INTAKE.set_fields, case, loose["id"], {"kind": "field_note", "captured_by": 12}), "a malformed field was stored")
+        require((case / loose["content_ref"]).is_file() and loose["content_ref"] == "intake/unsorted/memo.txt",
+                "a refused edit moved the file away from where the register names it")
+
         # propose: a passage is the material's own words at one place, or
         # nothing is recorded. It starts with no rights at all.
         claim = {"proposition": "Dock worker 1 says the night shift was told in March to stop opening containers.",
@@ -107,6 +124,10 @@ def main() -> int:
         paraphrase = {"passages": [{"text": "the boss told nights to stop checking", "language": "en", "claims": [claim]}]}
         require("word for word" in refused(INTAKE.propose, case, filled["id"], paraphrase), "a paraphrase was recorded as a passage")
         require(not (case / "data" / "intake-claims.json").exists(), "a refused proposal wrote the file")
+        # A look-alike character is not the material's own word.
+        circled = INTAKE.add(case, outside / "sum.txt", kind="field_note") if (outside / "sum.txt").write_text("The amount is \u2460 million.\n", encoding="utf-8") else None
+        lookalike = {"passages": [{"text": "The amount is 1 million.", "language": "en", "claims": [claim]}]}
+        require("word for word" in refused(INTAKE.propose, case, circled["id"], lookalike), "a passage the material does not hold was accepted")
         stored = INTAKE.propose(case, filled["id"], {"passages": [{"text": quote, "language": "en", "direct_quote": True, "claims": [claim]}]},
                                 actor="agent", model="local-12b")
         passage, drawn = stored["passages"][0], stored["claims"][0]
@@ -188,6 +209,16 @@ def main() -> int:
                 "a protected case is not written to its folder's own wiki")
         require("own wiki" in refused(WIKI.destination, protected, elsewhere, error=WIKI.DestinationError), "a protected case was sent to another wiki")
         require(WIKI.destination(case, elsewhere) == elsewhere, "an ordinary case lost its wiki")
+        # The protected wiki as a link to another wiki: nothing is written through it.
+        linked = Path(tmp).resolve() / "linked" / "cases_protected" / "harbour"
+        linked.mkdir(parents=True)
+        elsewhere.mkdir()
+        (linked.parent / "wiki").symlink_to(elsewhere, target_is_directory=True)
+        require("link" in refused(WIKI.destination, linked, None, error=WIKI.DestinationError) and not any(elsewhere.iterdir()),
+                "a protected case was written into another wiki through a link")
+        alias = Path(tmp).resolve() / "plain-name"
+        alias.symlink_to(protected.parent, target_is_directory=True)
+        require(PROTECTED.protected_case(alias / "harbour"), "a link to the protected folder is not protected")
 
         (case / "intake" / "interviews" / "call.txt").write_text("Rewritten after approval.\n", encoding="utf-8")
         require(build().returncode == 2, "a batch was built from material that changed after it was registered")

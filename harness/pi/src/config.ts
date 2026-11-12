@@ -1,7 +1,7 @@
 // Launch configuration. The harness reads its configuration only from the
 // environment the caller sets; nothing comes from the member's own Pi config.
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { basename, isAbsolute, resolve } from 'node:path';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
@@ -242,7 +242,15 @@ function newsroomRoutes(env: Env): { routes: Route[]; pipelineRoute: Route } {
 export const PROTECTED_CASES_FOLDER = 'cases_protected';
 export const PROTECTED_MARKER = '.spotlight-protected';
 function protectedCases(casesRoot: string): boolean {
-	return basename(casesRoot) === PROTECTED_CASES_FOLDER || existsSync(resolve(casesRoot, PROTECTED_MARKER));
+	// The folder as named and the folder it really is: a link under another
+	// name does not take the protection off.
+	const roots = [casesRoot];
+	try {
+		roots.push(realpathSync(casesRoot));
+	} catch {
+		// Not created yet: only its name can say.
+	}
+	return roots.some((root) => basename(root) === PROTECTED_CASES_FOLDER || existsSync(resolve(root, PROTECTED_MARKER)));
 }
 
 // Sensitive mode is on when SPOTLIGHT_SENSITIVE is "true" or the checkout's
@@ -288,6 +296,12 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	const dataDir = required(env, 'SPOTLIGHT_HARNESS_DATA');
 	if (!isAbsolute(casesRoot)) throw new ConfigError('SPOTLIGHT_CASES_ROOT must be an absolute path.');
 	if (!isAbsolute(dataDir)) throw new ConfigError('SPOTLIGHT_HARNESS_DATA must be an absolute path.');
+	const inProtectedCases = protectedCases(resolve(casesRoot));
+	// The newsroom edition registers every case with the newsroom's service
+	// and reads its knowledge, which a protected case must not do.
+	if (inProtectedCases && edition === 'newsroom') {
+		throw new ConfigError('a protected case does not run in the newsroom edition: the case would be registered with the newsroom\'s service. Run it in the solo edition.');
+	}
 	// SPOTLIGHT_CASE_ID wins; otherwise the chat id binds the case.
 	const caseId = chatId && !env.SPOTLIGHT_CASE_ID?.trim() ? bindChatCase(resolve(casesRoot), resolve(dataDir), chatId) : required(env, 'SPOTLIGHT_CASE_ID');
 	if (!CASE_ID.test(caseId) || caseId === '.' || caseId === '..') {
@@ -311,7 +325,6 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	const modelTier = readModelTier(env);
 	// Sensitive mode is what keeps a case off every cloud service today (no
 	// swarm, no cloud decision model, no web tools), so a protected case has it.
-	const inProtectedCases = protectedCases(resolve(casesRoot));
 	const sensitive = sensitiveMode(env) || inProtectedCases;
 	const research = researchSwitch(env);
 	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId) : refuseEditorialInSolo(env);

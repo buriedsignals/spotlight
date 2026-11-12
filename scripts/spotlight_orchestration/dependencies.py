@@ -146,7 +146,10 @@ MATERIAL_FILES = ("data/journalist-input.json", "data/intake-claims.json")
 def material_only_case(case: Path) -> bool:
     """A case with approved material and no brief: no investigation will run,
     so its material goes from intake straight to Ingest."""
-    if case_path(case, "brief-directions.txt").is_file() or not case_path(case, "data/journalist-input.json").is_file():
+    # Any trace of an investigation rules it out: a case restored without its
+    # brief must not have its ingest approval bound to the material alone.
+    investigation = ("brief-directions.txt", "data/methodology.json", "data/findings.json")
+    if any(case_path(case, name).is_file() for name in investigation) or not case_path(case, "data/journalist-input.json").is_file():
         return False
     try:
         claims = json.loads(case_path(case, "data/intake-claims.json").read_bytes())

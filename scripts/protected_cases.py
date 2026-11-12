@@ -8,6 +8,7 @@ protectedCases): a case there always runs in sensitive mode.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 FOLDER = "cases_protected"
@@ -16,8 +17,10 @@ WIKI = "wiki"
 
 
 def protected_case(case: Path) -> bool:
-    root = case.resolve().parent
-    return root.name == FOLDER or (root / MARKER).exists()
+    # The folder as named and the folder it really is: a link under another
+    # name does not take the protection off.
+    roots = {Path(os.path.abspath(case)).parent, case.resolve().parent}
+    return any(root.name == FOLDER or (root / MARKER).exists() for root in roots)
 
 
 def protected_wiki(case: Path) -> Path:

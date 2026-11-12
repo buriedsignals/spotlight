@@ -75,6 +75,11 @@ def main() -> int:
         require(status()["phase"] == "brief", f"a case with no approved material left the start: {status()}")
         approved_material(case, "call", f"In March {QUOTE}.\n")
 
+        # A trace of an investigation rules the shortcut out, brief or no brief.
+        (case / "data" / "findings.json").write_text("{}", encoding="utf-8")
+        require(status()["phase"] == "brief", f"a case with findings took the material-only path: {status()}")
+        (case / "data" / "findings.json").unlink()
+
         # Approved material alone puts the case at the ingest decision.
         pending = status()
         require(pending["phase"] == "ingest" and pending["ingest"] == {"state": "pending", "resume_at": "decision"},

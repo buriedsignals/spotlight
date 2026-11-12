@@ -192,6 +192,9 @@ def destination(case: Path, requested: Path | None) -> Path:
     wiki = protected_wiki(case)
     if requested is not None and requested != wiki:
         raise DestinationError(f"a protected case is written only to its folder's own wiki ({wiki})")
+    # A link here would send protected records into another wiki.
+    if wiki.is_symlink() or (wiki / NAMESPACE).is_symlink():
+        raise DestinationError(f"{wiki} is a link, not the protected folder's own wiki; nothing is written through it")
     (wiki / NAMESPACE).mkdir(parents=True, exist_ok=True)
     return wiki
 

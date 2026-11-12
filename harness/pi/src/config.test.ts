@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
 import { ConfigError, checkNewsroomInstall, checkRouteSecrets, childEnv, maxOutputTokens, piSettings, readConfig, resolverEnv, routeFor, secretValues } from './config.ts';
@@ -228,6 +228,21 @@ test('a case in a protected cases folder runs in sensitive mode, which no settin
 	t.after(() => rm(marked, { recursive: true, force: true }));
 	writeFileSync(join(marked, '.spotlight-protected'), '');
 	assert.equal(start(marked, optedIn).config.sensitive, true, 'a marker file protects a folder of any name');
+
+	// A link under another name is still the protected folder.
+	const home = mkdtempSync(join(tmpdir(), 'spotlight-alias-'));
+	t.after(() => rm(home, { recursive: true, force: true }));
+	mkdirSync(join(home, 'cases_protected'));
+	symlinkSync(join(home, 'cases_protected'), join(home, 'cases'), 'dir');
+	assert.equal(start(join(home, 'cases'), optedIn).config.sensitive, true, 'a link to the protected folder is protected');
+
+	// The newsroom edition would register the case with the newsroom's service.
+	assert.throws(() => start('/work/cases_protected', {
+		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
+		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'own', base_url: 'https://own.newsroom.example/v1', model: 'm', inference: 'own' }]),
+	}), /does not run in the newsroom edition/);
 });
 
 test('the Research switch reaches every pi process as on or off, so a stall round meets D1 with it', () => {
