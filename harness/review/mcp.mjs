@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Small stdio MCP server for hosts that run Spotlight in a chat app. Its two
-// tools, open_spotlight_review and open_spotlight_wiki_changes, open the
-// review page in the member's browser (like Splash's open_splash) and return
+// Small stdio MCP server for hosts that run Spotlight in a chat app. Its
+// tools, open_spotlight_review, open_spotlight_wiki_changes and
+// open_spotlight_intake, open the review page in the member's browser (like Splash's open_splash) and return
 // only that they did: never the URL.
 // Newline-delimited JSON-RPC 2.0 on stdin/stdout; nothing else is written to
 // stdout.
@@ -9,7 +9,14 @@ import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createReviewSessionManager } from "./session.mjs";
-import { createReviewOpener, createWikiChangesOpener, describeOpenResult, describeWikiChangesResult } from "./open.mjs";
+import {
+  createIntakeOpener,
+  createReviewOpener,
+  createWikiChangesOpener,
+  describeIntakeResult,
+  describeOpenResult,
+  describeWikiChangesResult,
+} from "./open.mjs";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const MAX_LINE = 1 << 20;
@@ -34,11 +41,20 @@ const WIKI_TOOL = {
   inputSchema: CASE_DIR_SCHEMA,
 };
 
-export function createMcpHandler({ open, openWiki }) {
-  if (typeof open !== "function" || typeof openWiki !== "function") throw new Error("the MCP server needs its openers");
+const INTAKE_TOOL = {
+  name: "open_spotlight_intake",
+  title: "Open Spotlight material intake",
+  description:
+    "Open the Material intake page for one Spotlight case in the member's browser, so the member checks the record of each item of material they brought (interview, email, note, document) and keeps, edits or drops each claim taken from it. Works whether or not a gate is pending. The member decides on the page; when they say they are done, resolve the case again. Pass only the absolute case directory.",
+  inputSchema: CASE_DIR_SCHEMA,
+};
+
+export function createMcpHandler({ open, openWiki, openIntake }) {
+  if ([open, openWiki, openIntake].some((opener) => typeof opener !== "function")) throw new Error("the MCP server needs its openers");
   const tools = {
     [REVIEW_TOOL.name]: [REVIEW_TOOL, open, describeOpenResult],
     [WIKI_TOOL.name]: [WIKI_TOOL, openWiki, describeWikiChangesResult],
+    [INTAKE_TOOL.name]: [INTAKE_TOOL, openIntake, describeIntakeResult],
   };
   return async function handle(message) {
     if (!message || typeof message !== "object" || message.jsonrpc !== "2.0") {
@@ -82,9 +98,13 @@ export function createMcpHandler({ open, openWiki }) {
 
 async function serve() {
   const casesRoot = process.env.SPOTLIGHT_CASES_ROOT ?? "";
-  // One session manager: both tools open the same review server.
+  // One session manager: every tool opens the same review server.
   const sessions = createReviewSessionManager({ casesRoot });
-  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }) });
+  const handle = createMcpHandler({
+    open: createReviewOpener({ sessions }),
+    openWiki: createWikiChangesOpener({ sessions }),
+    openIntake: createIntakeOpener({ sessions }),
+  });
   let buffer = "";
   process.stdin.setEncoding("utf8");
   for await (const chunk of process.stdin) {

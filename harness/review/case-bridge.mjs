@@ -11,6 +11,8 @@ const MAX_OUTPUT = 8 << 20;
 // Exit codes of scripts/spotlight_orchestration/cli.py.
 export const SEAM_REFUSED = 3;
 export const SEAM_DIGEST_CHANGED = 4;
+// Exit code of scripts/intake.py for a request it refuses.
+const INTAKE_REFUSED = 2;
 
 // Stand-in for Bun.which: the first executable regular file on PATH.
 export function which(command, pathValue = process.env.PATH ?? "") {
@@ -159,6 +161,43 @@ export function createCaseBridge({
       ]);
       if (result.code !== 0) throw seamError(result);
     },
+  });
+}
+
+// The material register and its claims, through scripts/intake.py only: the
+// page never reads or writes the case's files itself.
+export function createIntakeBridge({
+  caseDir,
+  checkoutRoot = CHECKOUT_ROOT,
+  python = spotlightPython({ root: checkoutRoot }),
+  env = safeChildEnvironment(),
+} = {}) {
+  if (!isAbsolute(caseDir ?? "")) throw new Error("the case directory must be an absolute path");
+  if (!python) throw new Error("python3 is required for the review server");
+  const script = join(checkoutRoot, "scripts", "intake.py");
+
+  async function run(args, input = "") {
+    const result = await runBounded(python, ["-E", "-s", script, caseDir, ...args], { cwd: checkoutRoot, env, input });
+    if (result.code === 0) return JSON.parse(result.stdout);
+    const refused = result.code === INTAKE_REFUSED;
+    const message = refused ? result.stderr.replace(/^intake:\s*/, "").trim() : "";
+    throw Object.assign(new Error(message.slice(0, 2048) || "the material could not be read or saved"), { code: refused ? "refused" : "intake-failed" });
+  }
+
+  // The person a confirmation or approval is recorded for, then the write.
+  async function asDecider(by, write) {
+    const { by: name } = await run(["decider", ...(by === undefined ? [] : [`--by=${by}`])]);
+    return write(name);
+  }
+
+  return Object.freeze({
+    view: () => run(["view"]),
+    set: (id, fields) => run(["set", id], JSON.stringify(fields)),
+    confirm: (id, by) => asDecider(by, (name) => run(["confirm", id, `--by=${name}`])),
+    approve: (id, by) => asDecider(by, (name) => run(["approve", id, `--by=${name}`])),
+    decide: (claim, action, fields) => run(["decide", claim, action], action === "edit" ? JSON.stringify(fields) : ""),
+    rights: (passage, rights) => run(["rights", passage], JSON.stringify(rights)),
+    keepAll: (id) => run(["keep-all", id]),
   });
 }
 

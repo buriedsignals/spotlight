@@ -20,6 +20,9 @@ Usage:
   python3 scripts/intake.py {CASE_DIR} rights JP1 < rights.json
   python3 scripts/intake.py {CASE_DIR} approve JI1 --by NAME
   python3 scripts/intake.py {CASE_DIR} claims
+  python3 scripts/intake.py {CASE_DIR} view
+  python3 scripts/intake.py {CASE_DIR} keep-all JI1
+  python3 scripts/intake.py {CASE_DIR} decider [--by NAME]
 
 - add copies a file into the case and drafts its record; scan drafts a record
   for every file already dropped under intake/. A file whose kind the name
@@ -52,6 +55,11 @@ Passages and claims (no investigation is involved, and no verdict is given):
 - approve is the journalist's approval of the kept claims of one confirmed
   record, once none is left undecided. Any later change to that material's
   passages or claims removes the approval.
+- The review page's three: view returns what the page shows (the register, the
+  passages each with a few lines of context from the file they were taken from,
+  the claims and the approvals); keep-all keeps every claim of one material
+  that is still undecided; decider names who a page's confirmation or approval
+  is recorded for: the fixed Member in the solo edition, else the name given.
 
 Exit codes: 0 = done (the register, or the record, as JSON on stdout);
 2 = refused (the reason is on stderr).
@@ -74,9 +82,10 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import schema_check  # noqa: E402
-from evidence_anchors import locate_quote, normalized  # noqa: E402
+from evidence_anchors import locate_quote, normalized, source_lines  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
+from spotlight_orchestration.review import SOLO_DECIDER, ingest_mode  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 
 TARGET = "data/journalist-input.json"
@@ -103,6 +112,10 @@ KIND_BY_SUFFIX = {
 }
 SENSITIVITIES = ("case_only", "internal", "publishable")
 ACTORS = {"journalist": "journalist", "agent": "agent_candidate"}
+# What the review page shows of a passage: its lines, and a few around them.
+CONTEXT_LINES = 3
+MAX_PASSAGE_LINES = 40
+MAX_LINE_CHARS = 2000
 SETTABLE = ("kind", "kind_detail", "captured_by", "source", "rights_holder", "original_sensitivity", "passage_defaults")
 
 
@@ -453,6 +466,26 @@ def set_rights(case: Path, passage_id: str, rights: Any) -> dict[str, Any]:
     return passage
 
 
+def _claims_of(doc: dict[str, Any], record_id: str) -> list[dict[str, Any]]:
+    passages = {passage["id"] for passage in doc["passages"] if passage["input_id"] == record_id}
+    return [claim for claim in doc["claims"] if claim["passage_id"] in passages]
+
+
+def keep_all(case: Path, record_id: str) -> list[dict[str, Any]]:
+    """The journalist keeps every claim of one material that is still undecided."""
+    with transaction(case) as descriptor:
+        _record(_load(case), record_id)
+        doc = _load_claims(case)
+        proposed = [claim for claim in _claims_of(doc, record_id) if claim["state"] == "proposed"]
+        if not proposed:
+            raise Refused(f"{record_id} has no claim left to decide")
+        for claim in proposed:
+            claim["state"] = "kept"
+        doc["approvals"].pop(record_id, None)
+        _publish(case, doc, descriptor, CLAIMS)
+    return proposed
+
+
 def approve(case: Path, record_id: str, by: str) -> dict[str, Any]:
     """The journalist's approval of one confirmed record's kept claims."""
     if not by.strip():
@@ -461,8 +494,7 @@ def approve(case: Path, record_id: str, by: str) -> dict[str, Any]:
         if _record(_load(case), record_id)["state"] != "confirmed":
             raise Refused(f"{record_id} is not confirmed yet: its record is approved first, then its claims")
         doc = _load_claims(case)
-        passages = {passage["id"] for passage in doc["passages"] if passage["input_id"] == record_id}
-        claims = [claim for claim in doc["claims"] if claim["passage_id"] in passages]
+        claims = _claims_of(doc, record_id)
         undecided = [claim["id"] for claim in claims if claim["state"] == "proposed"]
         if undecided:
             raise Refused(f"{record_id} has claims not yet kept or dropped: {', '.join(undecided)}")
@@ -472,6 +504,51 @@ def approve(case: Path, record_id: str, by: str) -> dict[str, Any]:
         doc["approvals"][record_id] = {"by": by.strip(), "at": _now(), "claims": kept}
         _publish(case, doc, descriptor, CLAIMS)
     return doc["approvals"][record_id]
+
+
+def _context(case: Path, passage: dict[str, Any]) -> dict[str, Any] | None:
+    """The passage's own lines with a few around them, numbered as the anchor
+    numbers them. None when its file is no longer a plain file under intake/
+    or no longer has the bytes the passage was taken from."""
+    anchor = passage["anchor_ref"]
+    try:
+        path = _material_file(case, case / anchor["path"])
+    except Refused:
+        return None
+    if _sha256(path) != passage["anchor_sha256"]:
+        return None
+    lines = source_lines(path)
+    first = max(1, anchor["line_start"] - CONTEXT_LINES)
+    shown_end = min(anchor["line_end"], anchor["line_start"] + MAX_PASSAGE_LINES - 1)
+    truncated = shown_end < anchor["line_end"]
+    last = min(len(lines), shown_end if truncated else shown_end + CONTEXT_LINES)
+    return {
+        "lines": [{"n": n, "text": lines[n - 1][:MAX_LINE_CHARS], "in_passage": anchor["line_start"] <= n <= anchor["line_end"]}
+                  for n in range(first, last + 1)],
+        "truncated": truncated,
+    }
+
+
+def view(case: Path) -> dict[str, Any]:
+    """Everything the review page shows of a case's material, in one read."""
+    claims = _load_claims(case)
+    return {
+        "name_required": ingest_mode() == "newsroom",
+        "inputs": _load(case)["inputs"],
+        "passages": [{**passage, "context": _context(case, passage)} for passage in claims["passages"]],
+        "claims": claims["claims"],
+        "approvals": claims["approvals"],
+    }
+
+
+def decider(by: str | None) -> dict[str, str]:
+    """Who a page's decision is recorded for: the solo edition's fixed Member,
+    or, in the newsroom edition, the name the person entered."""
+    if ingest_mode() != "newsroom":
+        return {"by": SOLO_DECIDER}
+    if not (by or "").strip():
+        raise Refused("enter your name before deciding")
+    return {"by": by.strip()}
 
 
 def _stdin_json() -> Any:
@@ -510,6 +587,9 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("rights").add_argument("id")
     commands.add_parser("list")
     commands.add_parser("claims")
+    commands.add_parser("view")
+    commands.add_parser("keep-all").add_argument("id")
+    commands.add_parser("decider").add_argument("--by")
     args = parser.parse_args(argv)
     try:
         if args.command == "add":
@@ -532,6 +612,12 @@ def main(argv: list[str] | None = None) -> int:
             result = approve(args.case, args.id, args.by)
         elif args.command == "claims":
             result = _load_claims(args.case)
+        elif args.command == "view":
+            result = view(args.case)
+        elif args.command == "keep-all":
+            result = keep_all(args.case, args.id)
+        elif args.command == "decider":
+            result = decider(args.by)
         else:
             result = _load(args.case)
     except (Refused, OrchestrationError, schema_check.SchemaError) as exc:

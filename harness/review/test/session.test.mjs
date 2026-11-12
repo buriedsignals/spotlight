@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { CHECKOUT_ROOT, which } from "../case-bridge.mjs";
 import { createMcpHandler } from "../mcp.mjs";
-import { createReviewOpener, createWikiChangesOpener } from "../open.mjs";
+import { createIntakeOpener, createReviewOpener, createWikiChangesOpener } from "../open.mjs";
 import { createReviewSessionManager } from "../session.mjs";
 import { api, approveMethodology, buildCase, change, fakeBsig, openSession, recordingOpener, tempRoot } from "./helpers.mjs";
 
@@ -129,10 +129,10 @@ test("open_spotlight_review opens the page and its result carries no URL", async
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "methodology");
   const { sessions, record } = manager(t, root);
-  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }) });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }), openIntake: createIntakeOpener({ sessions }) });
 
   const listed = await handle({ jsonrpc: "2.0", id: 1, method: "tools/list" });
-  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes"]);
+  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes", "open_spotlight_intake"]);
 
   for (const id of [2, 3]) {
     const result = await handle({
@@ -160,7 +160,7 @@ test("open_spotlight_wiki_changes opens the Wiki changes view with no gate pendi
   approveMethodology(caseDir);
   const fake = fakeBsig(root, { changes: [change("c1", "a")] });
   const { sessions, record } = manager(t, root, { env: fake.env });
-  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }) });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }), openIntake: createIntakeOpener({ sessions }) });
   const call = (id) => handle({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "open_spotlight_wiki_changes", arguments: { case_dir: caseDir } } });
 
   const result = await call(1);
@@ -216,7 +216,7 @@ test("an Engine failure is reported, not taken for nothing staged, and the gate 
   const caseDir = buildCase(root, "case", "methodology");
   const fake = fakeBsig(root, { fail: "wiki: permission denied", changes: [] });
   const { sessions, record } = manager(t, root, { env: fake.env });
-  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }) });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }), openIntake: createIntakeOpener({ sessions }) });
   const result = await handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_spotlight_wiki_changes", arguments: { case_dir: caseDir } } });
   assert.equal(result.result.structuredContent.review, "wiki-unreadable");
   // Engine's own text never reaches the model.
@@ -331,5 +331,53 @@ test("the stdio MCP server answers initialize and lists its tools", async () => 
   await new Promise((settle) => child.on("exit", settle));
   assert.equal(lines.length, 2);
   assert.equal(lines[0].result.serverInfo.name, "spotlight-review");
-  assert.deepEqual(lines[1].result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes"]);
+  assert.deepEqual(lines[1].result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes", "open_spotlight_intake"]);
+});
+
+test("open_spotlight_intake opens the Intake view with no gate pending, and returns no URL", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  approveMethodology(caseDir);
+  const { sessions, record } = manager(t, root);
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }), openIntake: createIntakeOpener({ sessions }) });
+
+  const result = await handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_spotlight_intake", arguments: { case_dir: caseDir } } });
+  assert.equal(result.result.isError, false);
+  assert.equal(result.result.structuredContent.review, "opened");
+  const url = openedUrls(record).at(-1);
+  assert.equal(new URL(url).searchParams.get("view"), "intake");
+  for (const secret of [url, new URL(url).port, new URL(url).hash.slice(1), "127.0.0.1", "http"])
+    assert.ok(!JSON.stringify(result).includes(secret), `tool result leaks ${secret}`);
+
+  const { view, origin, cookie } = await viewThrough(url);
+  assert.equal(view.gate, "");
+  const material = await api(origin, cookie)("/api/intake/view");
+  assert.equal(material.status, 200);
+  assert.deepEqual(JSON.parse(material.text).inputs, []);
+});
+
+test("open_spotlight_intake leaves a page that is already open alone", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const { sessions, record } = manager(t, root);
+  assert.equal((await createReviewOpener({ sessions })({ caseDir })).status, "opened");
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createIntakeOpener({ sessions })({ caseDir }), { status: "already-open" });
+  assert.equal(openedUrls(record).length, 1);
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
+test("open_spotlight_intake refuses a case outside the authorized root and opens nothing", async (t) => {
+  const root = tempRoot(t);
+  mkdirSync(join(root, "cases"));
+  const outside = buildCase(root, "outside", "methodology");
+  const { sessions, record } = manager(t, root, { casesRoot: join(root, "cases") });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }), openIntake: createIntakeOpener({ sessions }) });
+
+  const result = await handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_spotlight_intake", arguments: { case_dir: outside } } });
+  assert.equal(result.result.isError, true);
+  assert.equal(result.result.structuredContent.review, "start-failed");
+  assert.equal(sessions.status().active, false);
+  assert.deepEqual(openedUrls(record), []);
 });

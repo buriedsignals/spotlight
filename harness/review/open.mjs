@@ -67,6 +67,35 @@ export function createWikiChangesOpener(options = {}) {
   };
 }
 
+// The member's material: the same page, opened on its Intake view whether or
+// not a gate is pending. A page already open for the case is left alone (its
+// Material intake button leads there): reopening it would end the member's
+// session and lose what they typed.
+export function createIntakeOpener(options = {}) {
+  const sessions = options.sessions ?? createReviewSessionManager(options);
+  return async function openIntake({ caseDir: rawCaseDir }) {
+    let caseDir;
+    try {
+      caseDir = await sessions.authorize(rawCaseDir);
+    } catch {
+      return { status: "start-failed" };
+    }
+    return openPage(sessions, caseDir, "intake", (running) =>
+      running.active ? { status: running.caseDir === caseDir ? "already-open" : "other-review-open" } : null,
+    );
+  };
+}
+
+export function describeIntakeResult(result) {
+  if (result.status === "opened")
+    return "The Material intake page is open in the member's browser. Ask them to check each item of material and decide each claim there, then to say here when they are done. Nothing is approved until they do it. The page address is private to the member's browser.";
+  if (result.status === "already-open")
+    return "A review page for this case is already open in the member's browser. Ask them to press its Material intake button.";
+  if (result.status === "other-review-open")
+    return "A Spotlight review page for another case is open in the member's browser. Ask them to finish it first; nothing was opened.";
+  return describeOpenResult(result);
+}
+
 export function describeWikiChangesResult(result) {
   if (result.status === "opened")
     return "The Wiki changes page is open in the member's browser. Ask them to apply or discard each staged change there; nothing reaches the wiki until they do. The page address is private to the member's browser.";

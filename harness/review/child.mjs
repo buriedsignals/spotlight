@@ -4,7 +4,7 @@
 // control channel: the child reports {event:"ready", url}, lifecycle events and
 // {event:"closed"}; the parent sends {command:"reopen"} or {command:"close"}.
 // Nothing written here carries case text.
-import { createCaseBridge, createWikiBridge } from "./case-bridge.mjs";
+import { createCaseBridge, createIntakeBridge, createWikiBridge } from "./case-bridge.mjs";
 import { startReviewServer } from "./server.mjs";
 
 const MAX_CONTROL_BYTES = 4096;
@@ -66,16 +66,15 @@ async function main() {
     if (!ALLOWED.has(argv[index]) || index + 1 >= argv.length)
       throw new Error("the review child received unsupported arguments");
   }
-  const bridge = createCaseBridge({
-    caseDir: option(argv, "--case-dir"),
-    casesRoot: option(argv, "--cases-root", ""),
-  });
+  const caseDir = option(argv, "--case-dir");
+  const bridge = createCaseBridge({ caseDir, casesRoot: option(argv, "--cases-root", "") });
   const lifecycle = [];
   let announced = false;
   const server = await startReviewServer({
     bridge,
     wiki: createWikiBridge(),
-    view: option(argv, "--view", "") === "wiki" ? "wiki" : "",
+    intake: createIntakeBridge({ caseDir }),
+    view: ["wiki", "intake"].find((name) => name === option(argv, "--view", "")) ?? "",
     idleMs: numberOption(argv, "--idle-ms", 45 * 60_000),
     overallMs: numberOption(argv, "--overall-ms", 8 * 60 * 60_000),
     onLifecycle(value) {

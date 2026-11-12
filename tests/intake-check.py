@@ -192,6 +192,54 @@ def main() -> int:
         (case / "intake" / "interviews" / "call.txt").write_text("Rewritten after approval.\n", encoding="utf-8")
         require(build().returncode == 2, "a batch was built from material that changed after it was registered")
 
+        # The review page's reads and its one bulk write. A passage comes with
+        # a few lines around it, from the file it was taken from and only while
+        # that file still has the bytes it was taken from.
+        long = outside / "long.txt"
+        long.write_text("".join(f"line {n}\n" for n in range(1, 4)) + "the foreman signed the second shift off\nthe foreman kept no log\n"
+                        + "".join(f"line {n}\n" for n in range(6, 12)), encoding="utf-8")
+        page_record = INTAKE.add(case, long, kind="interview")
+        INTAKE.set_fields(case, page_record["id"], COMPLETE)
+        both = {"statement": {"subject": {"text": "the foreman"}, "predicate": "signed off"}}
+        INTAKE.propose(case, page_record["id"], {"passages": [{"text": "the foreman signed the second shift off\nthe foreman kept no log", "language": "en",
+                       "claims": [{"proposition": "The foreman signed off a shift.", **both}, {"proposition": "The foreman kept no log.", **both}]}]})
+        os.environ["SPOTLIGHT_CONFIG"] = str(solo)
+        shown = INTAKE.view(case)
+        page_passage = next(p for p in shown["passages"] if p["input_id"] == page_record["id"])
+        numbered = [(line["n"], line["in_passage"]) for line in page_passage["context"]["lines"]]
+        require(numbered == [(1, False), (2, False), (3, False), (4, True), (5, True), (6, False), (7, False), (8, False)],
+                f"the passage is not shown in its context: {numbered}")
+        require(page_passage["context"]["lines"][3]["text"] == "the foreman signed the second shift off" and not page_passage["context"]["truncated"],
+                f"{page_passage['context']}")
+        require(shown["name_required"] is False and any(r["id"] == page_record["id"] for r in shown["inputs"]), "the view lacks the register or the edition")
+        kept = INTAKE.keep_all(case, page_record["id"])
+        require(len(kept) == 2 and all(c["state"] == "kept" for c in kept), f"keep_all did not keep both claims: {kept}")
+        require("no claim left" in refused(INTAKE.keep_all, case, page_record["id"]), "keep_all passed with nothing left to decide")
+        require("no material record" in refused(INTAKE.keep_all, case, "JI99"), "keep_all took an unknown record")
+        INTAKE.confirm(case, page_record["id"], "A. Reporter")
+        INTAKE.approve(case, page_record["id"], "A. Reporter")
+        INTAKE.decide(case, kept[0]["id"], "drop")
+        require(page_record["id"] not in INTAKE.view(case)["approvals"], "an approval outlived a decision")
+        # The file the passage came from changed, or became a link: no context is shown.
+        long_copy = case / page_record["content_ref"]
+        original = long_copy.read_bytes()
+        long_copy.write_bytes(original + b"added later\n")
+        require(next(p for p in INTAKE.view(case)["passages"] if p["input_id"] == page_record["id"])["context"] is None, "context was read from changed bytes")
+        long_copy.write_bytes(original)
+        outside_copy = outside / "secret.txt"
+        outside_copy.write_bytes(original)
+        long_copy.unlink()
+        long_copy.symlink_to(outside_copy)
+        require(next(p for p in INTAKE.view(case)["passages"] if p["input_id"] == page_record["id"])["context"] is None, "context was read through a link")
+        # Who a page's decision is recorded for follows the edition.
+        require(INTAKE.decider("anyone") == {"by": "Member"}, "the solo edition took a name")
+        os.environ["SPOTLIGHT_CONFIG"] = str(newsroom)
+        try:
+            require(INTAKE.decider(" A. Reporter ") == {"by": "A. Reporter"} and INTAKE.view(case)["name_required"] is True, "the newsroom edition did not ask for a name")
+            require("name" in refused(INTAKE.decider, None) and "name" in refused(INTAKE.decider, "  "), "the newsroom edition accepted no name")
+        finally:
+            del os.environ["SPOTLIGHT_CONFIG"]
+
         # The command line refuses with exit 2 and leaves the register alone.
         before = (case / "data" / "journalist-input.json").read_bytes()
         result = subprocess.run([sys.executable, str(ROOT / "scripts" / "intake.py"), str(case), "confirm", "JI9", "--by", "x"],

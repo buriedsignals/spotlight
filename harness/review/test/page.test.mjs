@@ -7,7 +7,9 @@ import { runInNewContext } from "node:vm";
 import { createCaseBridge } from "../case-bridge.mjs";
 import { buildCase, tempRoot } from "./helpers.mjs";
 
-async function renderClient(view) {
+// routes answer a path with a function of the request body returning { status, body }.
+// The requests the page made are kept on the returned document as `posts`.
+async function renderClient(view, { search = "", boot = {}, routes = {} } = {}) {
   let document;
   class Node {
     constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; }
@@ -33,22 +35,31 @@ async function renderClient(view) {
     createElement: (tag) => new Node(tag),
     createTextNode: (text) => { const node = new Node("#text"); node.textContent = text; return node; },
   };
-  document.getElementById("boot").textContent = "{}";
+  document.getElementById("boot").textContent = JSON.stringify(boot);
+  document.posts = [];
   runInNewContext(readFileSync(new URL("../page/app.js", import.meta.url), "utf8"), {
     document,
-    location: { hash: "", search: "", pathname: "/" },
+    location: { hash: "", search, pathname: "/" },
     history: { replaceState() {} },
     URL,
     URLSearchParams,
     setTimeout,
     clearTimeout,
-    fetch: async (path) => ({ status: 200, json: async () => {
-      if (path === "/api/view") return view;
-      if (path === "/api/wiki-changes") return { changes: [] };
-      if (path === "/api/passages") return { available: false };
-      if (path === "/session") return {};
-      throw new Error(`Unexpected client request: ${path}`);
-    } }),
+    fetch: async (path, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      document.posts.push({ path, body });
+      if (routes[path]) {
+        const answer = routes[path](body);
+        return { status: answer.status, json: async () => answer.body };
+      }
+      return { status: 200, json: async () => {
+        if (path === "/api/view") return view;
+        if (path === "/api/wiki-changes") return { changes: [] };
+        if (path === "/api/passages") return { available: false };
+        if (path === "/session") return {};
+        throw new Error(`Unexpected client request: ${path}`);
+      } };
+    },
   });
   await new Promise(setImmediate);
   return document;
@@ -258,3 +269,92 @@ test("recorded evidence reads as formatted text: no raw markdown, no live HTML, 
   assert.match(words(await shown("snake_case_name costs 2 * 3 * 4")), /snake_case_name costs 2 \* 3 \* 4/);
 });
 
+
+// Intake page: the material is untrusted, so it must reach the page as text.
+const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+const nodes = (node, test) => [...(test(node) ? [node] : []), ...(node.children ?? []).flatMap((child) => (typeof child === "object" ? nodes(child, test) : []))];
+const NOTHING_PENDING = { gate: "", pending_gate: "", gate_label: "Wiki changes" };
+const HOSTILE = "<img src=x onerror=alert(1)> the foreman signed it";
+
+function material({ record = {}, claim = {}, approvals = {}, nameRequired = false } = {}) {
+  return {
+    name_required: nameRequired,
+    inputs: [{ id: "JI1", state: "draft", kind: "interview", captured_by: "A. Reporter", source: { pseudonym: "Dock worker 1" }, rights_holder: { label: "A. Reporter" },
+      original_sensitivity: "case_only", content_ref: "intake/interviews/call.txt", provenance: { method: "journalist" }, ...record }],
+    passages: [{ id: "JP1", input_id: "JI1", text: HOSTILE, anchor_ref: { path: "intake/interviews/call.txt", line_start: 2, line_end: 2 }, rights: { attribution: "background" },
+      context: { truncated: false, lines: [{ n: 1, text: "line before", in_passage: false }, { n: 2, text: HOSTILE, in_passage: true }, { n: 3, text: "line after", in_passage: false }] } }],
+    claims: [{ id: "JC1", passage_id: "JP1", proposition: "The <b>foreman</b> signed off.", state: "proposed", ...claim }],
+    approvals,
+  };
+}
+
+const intakePage = (data, { routes = {}, edition = {} } = {}) =>
+  renderClient(NOTHING_PENDING, { search: "?view=intake", boot: { intake: true }, routes: { "/api/intake/view": () => ({ status: 200, body: { ...data, ...edition } }), ...routes } });
+
+test("the Intake page shows each claim above its passage in context, with the passage's lines marked and its text inert", async () => {
+  const page = await intakePage(material());
+  const app = page.getElementById("app");
+  assert.equal(nodes(app, (node) => node.tag === "img").length, 0, "material became markup");
+  const shown = words(app);
+  assert.ok(shown.includes("The <b>foreman</b> signed off."));
+  assert.ok(shown.includes("intake/interviews/call.txt, line 2"));
+  assert.ok(shown.includes("Attribution: Background") && shown.includes("Publishable: no"));
+  const context = nodes(app, (node) => node.tag === "pre")[0];
+  const lines = context.children;
+  assert.deepEqual(lines.map((node) => [node.className, node.text.trim()]), [["", "1  line before"], ["hit", `2  ${HOSTILE}`], ["", "3  line after"]]);
+  // Keep, Edit and Drop come with every claim.
+  for (const name of ["keep", "edit", "drop"]) assert.ok(page.getElementById(`${name}-JC1`), name);
+});
+
+test("a decision is sent at once, and a refusal shows beside the claim and leaves it undecided", async () => {
+  const page = await intakePage(material(), { routes: { "/api/intake/decide": () => ({ status: 422, body: { message: "no material claim JC1" } }) } });
+  await page.getElementById("keep-JC1").listeners.click();
+  assert.deepEqual(page.posts.find((post) => post.path === "/api/intake/decide").body, { claim: "JC1", action: "keep" });
+  const card = nodes(page.getElementById("app"), (node) => node.tag === "article")[0];
+  assert.ok(nodes(card, (node) => node.attributes?.role === "alert").some((node) => node.text === "no material claim JC1"));
+  assert.ok(words(card).includes("To decide"), "the claim was shown as decided though nothing was saved");
+});
+
+test("editing a claim sends the proposition alone, and rights are sent as the form states them", async () => {
+  const page = await intakePage(material());
+  await page.getElementById("edit-JC1").listeners.click();
+  page.getElementById("claim-text-JC1").listeners.input({ target: { value: "The foreman signed off the shift." } });
+  await page.getElementById("save-claim-JC1").listeners.click();
+  assert.deepEqual(page.posts.find((post) => post.path === "/api/intake/decide").body, { claim: "JC1", action: "edit", proposition: "The foreman signed off the shift." });
+
+  page.getElementById("rights-JP1-attribution").listeners.change({ target: { value: "on_record" } });
+  page.getElementById("rights-JP1-consent").listeners.change({ target: { value: "written" } });
+  page.getElementById("rights-JP1-content").listeners.change({ target: { checked: true } });
+  await page.getElementById("save-rights-JP1").listeners.click();
+  assert.deepEqual(page.posts.find((post) => post.path === "/api/intake/rights").body,
+    { passage: "JP1", rights: { attribution: "on_record", consent: { publish_content: true, publish_direct_quotes: false, obtained_via: "written" } } });
+});
+
+test("approving needs a confirmed record and no claim left undecided; a confirmed record is read-only", async () => {
+  const state = async (data) => {
+    const page = await intakePage(data);
+    return { approve: page.getElementById("approve-JI1").attributes["aria-disabled"], form: Boolean(page.getElementById("record-JI1-kind")), keepAll: Boolean(page.getElementById("keep-all-JI1")) };
+  };
+  const confirmed = { state: "confirmed", confirmed_by: "Member", confirmed_at: "2026-11-12T10:00:00Z" };
+  assert.deepEqual(await state(material()), { approve: "true", form: true, keepAll: true });
+  assert.deepEqual(await state(material({ record: confirmed })), { approve: "true", form: false, keepAll: true });
+  assert.deepEqual(await state(material({ record: confirmed, claim: { state: "kept" } })), { approve: "false", form: false, keepAll: false });
+});
+
+test("the solo Intake page asks for no name; the newsroom page asks and sends it with a confirmation", async () => {
+  const solo = await intakePage(material());
+  assert.equal(solo.getElementById("intake-name"), null);
+  await solo.getElementById("confirm-JI1").listeners.click();
+  assert.deepEqual(solo.posts.find((post) => post.path === "/api/intake/confirm").body, { id: "JI1" });
+
+  const newsroom = await intakePage(material({ nameRequired: true }));
+  newsroom.getElementById("intake-name").listeners.input({ target: { value: "A. Reporter" } });
+  await newsroom.getElementById("confirm-JI1").listeners.click();
+  assert.deepEqual(newsroom.posts.find((post) => post.path === "/api/intake/confirm").body, { id: "JI1", by: "A. Reporter" });
+});
+
+test("a gate page offers the Intake page only when the server has one", async (t) => {
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "methodology") }).view("methodology");
+  assert.ok((await renderClient(view, { boot: { intake: true } })).getElementById("show-intake"));
+  assert.equal((await renderClient(view)).getElementById("show-intake"), null);
+});

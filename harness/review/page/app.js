@@ -1281,6 +1281,7 @@ function retryWiki(event) {
 // Draws only the wiki section beside a gate, so nothing the member is typing
 // is replaced; with no gate the page is the wiki section.
 function showWiki() {
+  if (intakeOn) return;
   if (!view.gate) return render(view);
   const section = wikiError ? wikiErrorSection() : wikiChanges?.length ? wikiSection() : null;
   const current = document.getElementById("wiki-section");
@@ -1424,10 +1425,390 @@ async function loadEntities(digest) {
   if (view?.digest === digest) render(view);
 }
 
+// ---------------------------------------------------------------- intake
+
+// Material intake: each item of material, the claims taken from it and the
+// approval. Every action is saved at once through intake.py; a refusal is
+// shown beside the action it came from and nothing is assumed saved.
+const KIND_LABELS = {
+  interview: "Interview",
+  source_email: "Source email",
+  field_note: "Field note",
+  document: "Document",
+  dataset: "Dataset",
+  photo_or_video: "Photo or video",
+  other: "Other",
+};
+const ATTRIBUTION_LABELS = {
+  on_record: "On the record",
+  background: "Background",
+  not_for_attribution: "Not for attribution",
+  off_record: "Off the record",
+};
+const SENSITIVITY_LABELS = { case_only: "Stays in the case", internal: "Internal", publishable: "Publishable" };
+const CONSENT_LABELS = {
+  written: "In writing",
+  recorded_oral: "Spoken and recorded",
+  unrecorded_oral: "Spoken, not recorded",
+  other: "Another way",
+};
+const CLAIM_STATE_TONES = { proposed: "none", kept: "good", dropped: "bad" };
+const CLAIM_STATE_LABELS = { proposed: "To decide", kept: "Kept", dropped: "Dropped" };
+
+let intakeOn = false;
+let intake = null;
+// Who confirms and approves, in the newsroom edition; the solo edition asks for none.
+let intakeName = "";
+// What the member typed in each form, by the key of its action, until it is saved.
+let drafts = {};
+// Refusals by the key of the action they came from.
+let intakeErrors = {};
+
+function draftOf(key, make) {
+  drafts[key] ??= make();
+  return drafts[key];
+}
+
+function rightsState(rights = {}) {
+  const consent = rights.consent ?? {};
+  return {
+    attribution: rights.attribution ?? "",
+    sensitivity: rights.sensitivity ?? "",
+    obtained_via: consent.obtained_via ?? "",
+    detail: consent.obtained_via_detail ?? "",
+    publish_content: Boolean(consent.publish_content),
+    publish_direct_quotes: Boolean(consent.publish_direct_quotes),
+  };
+}
+
+// Consent is sent whenever any part of it is filled, so a half-filled one is refused rather than dropped.
+function rightsFrom(state) {
+  const rights = {};
+  if (state.attribution) rights.attribution = state.attribution;
+  if (state.sensitivity) rights.sensitivity = state.sensitivity;
+  if (state.obtained_via || state.publish_content || state.publish_direct_quotes) {
+    rights.consent = {
+      publish_content: state.publish_content,
+      publish_direct_quotes: state.publish_direct_quotes,
+      ...(state.obtained_via ? { obtained_via: state.obtained_via } : {}),
+      ...(state.detail.trim() ? { obtained_via_detail: state.detail.trim() } : {}),
+    };
+  }
+  return rights;
+}
+
+function recordState(record) {
+  const source = record.source ?? {};
+  return {
+    kind: record.kind ?? "",
+    kind_detail: record.kind_detail ?? "",
+    source_type: source.entity_id === undefined ? "pseudonym" : "entity_id",
+    source_value: source.entity_id ?? source.pseudonym ?? "",
+    captured_by: record.captured_by ?? "",
+    holder: record.rights_holder?.label ?? "",
+    original_sensitivity: record.original_sensitivity,
+    defaults: rightsState(record.passage_defaults),
+  };
+}
+
+// Only what is filled in; intake.py keeps the rest as it was.
+function recordFields(record, state) {
+  const fields = { original_sensitivity: state.original_sensitivity, passage_defaults: rightsFrom(state.defaults) };
+  if (state.kind) fields.kind = state.kind;
+  if (state.kind === "other" && state.kind_detail.trim()) fields.kind_detail = state.kind_detail.trim();
+  if (state.captured_by.trim()) fields.captured_by = state.captured_by.trim();
+  if (state.source_value.trim()) fields.source = { [state.source_type]: state.source_value.trim() };
+  if (state.holder.trim()) fields.rights_holder = { ...record.rights_holder, label: state.holder.trim() };
+  return fields;
+}
+
+function textInput(id, value, onInput) {
+  return el("input", { type: "text", id, maxlength: "500", value, on: { input: (event) => onInput(event.target.value) } });
+}
+
+function selectInput(id, choices, value, onChange, blank) {
+  return el(
+    "select",
+    { id, on: { change: (event) => onChange(event.target.value) } },
+    blank === undefined ? null : el("option", { value: "", text: blank, selected: !value }),
+    Object.entries(choices).map(([name, label]) => el("option", { value: name, text: label, selected: name === value })),
+  );
+}
+
+function labelled(id, label, control) {
+  return el("div", {}, el("label", { for: id, text: label }), control);
+}
+
+function checkInput(id, label, checked, onChange) {
+  return el("label", { className: "choice" }, el("input", { type: "checkbox", id, checked, on: { change: (event) => onChange(event.target.checked) } }), label);
+}
+
+function rightsFields(prefix, state) {
+  return [
+    labelled(`${prefix}-attribution`, "Attribution", selectInput(`${prefix}-attribution`, ATTRIBUTION_LABELS, state.attribution, (value) => (state.attribution = value), "Not stated")),
+    labelled(`${prefix}-sensitivity`, "Sensitivity", selectInput(`${prefix}-sensitivity`, SENSITIVITY_LABELS, state.sensitivity, (value) => (state.sensitivity = value), "Not stated")),
+    labelled(`${prefix}-consent`, "How consent was obtained", selectInput(`${prefix}-consent`, CONSENT_LABELS, state.obtained_via, (value) => (state.obtained_via = value), "Not recorded")),
+    labelled(`${prefix}-detail`, "Consent detail (needed for \"Another way\")", textInput(`${prefix}-detail`, state.detail, (value) => (state.detail = value))),
+    checkInput(`${prefix}-content`, "The content may be published", state.publish_content, (value) => (state.publish_content = value)),
+    checkInput(`${prefix}-quotes`, "Direct quotes may be published", state.publish_direct_quotes, (value) => (state.publish_direct_quotes = value)),
+  ];
+}
+
+function rightsSummary(rights = {}) {
+  const consent = rights.consent;
+  return [
+    `Attribution: ${ATTRIBUTION_LABELS[rights.attribution] ?? "not stated"}`,
+    consent?.publish_content ? `Publishable: yes (direct quotes: ${consent.publish_direct_quotes ? "yes" : "no"})` : "Publishable: no",
+    `Sensitivity: ${SENSITIVITY_LABELS[rights.sensitivity] ?? "not stated"}`,
+  ].join(" · ");
+}
+
+function intakeFailure(key) {
+  return intakeErrors[key] ? el("p", { className: "warning", role: "alert", text: intakeErrors[key] }) : null;
+}
+
+// Runs the steps in order, stopping at the first refusal. What was saved
+// before it stays saved, so the material is read again either way.
+async function intakeAct(key, steps, done) {
+  if (busy || ended) return;
+  warn("");
+  delete intakeErrors[key];
+  setBusy(true);
+  say("Saving…");
+  try {
+    let saved = 0;
+    for (const [path, body] of steps) {
+      const { status, data } = await post(`/api/intake/${path}`, body);
+      if (status === 403) return;
+      if (status !== 200) {
+        intakeErrors[key] = data.message || "That was refused. Nothing was saved.";
+        say(saved ? "Partly saved." : "Not saved.");
+        break;
+      }
+      saved += 1;
+    }
+    if (saved === steps.length) {
+      delete drafts[key];
+      intakeErrors = {};
+      say(done);
+    }
+    if (saved) await loadIntake();
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function loadIntake() {
+  const { status, data } = await post("/api/intake/view", {});
+  if (status === 200) intake = data;
+  else if (status !== 403) warn(data.message || "The material could not be read.");
+}
+
+// The name goes with a confirmation or approval only where the edition asks for it.
+function byName() {
+  return intake.name_required ? { by: intakeName } : {};
+}
+
+function recordForm(record) {
+  const state = draftOf(record.id, () => recordState(record));
+  const id = (name) => `record-${record.id}-${name}`;
+  const save = (confirm) => () =>
+    intakeAct(
+      record.id,
+      [["set", { id: record.id, fields: recordFields(record, state) }], ...(confirm ? [["confirm", { id: record.id, ...byName() }]] : [])],
+      confirm ? "Record confirmed." : "Saved.",
+    );
+  return [
+    record.provenance?.method === "agent_candidate" ? el("p", { className: "muted", text: "An agent filled in some of this. Check each field before you confirm." }) : null,
+    labelled(id("kind"), "Kind of material", selectInput(id("kind"), KIND_LABELS, state.kind, (value) => (state.kind = value), "Not chosen")),
+    labelled(id("detail"), "What kind, when it is \"Other\"", textInput(id("detail"), state.kind_detail, (value) => (state.kind_detail = value))),
+    labelled(id("source-type"), "The source is identified by", selectInput(id("source-type"), { pseudonym: "A pseudonym", entity_id: "An entity id" }, state.source_type, (value) => (state.source_type = value))),
+    labelled(id("source"), "Source", textInput(id("source"), state.source_value, (value) => (state.source_value = value))),
+    labelled(id("captured"), "Who captured it", textInput(id("captured"), state.captured_by, (value) => (state.captured_by = value))),
+    labelled(id("holder"), "Who holds the rights", textInput(id("holder"), state.holder, (value) => (state.holder = value))),
+    labelled(id("sensitivity"), "How sensitive the original is", selectInput(id("sensitivity"), SENSITIVITY_LABELS, state.original_sensitivity, (value) => (state.original_sensitivity = value))),
+    el("h4", { text: "What each passage taken from this material starts with" }),
+    rightsFields(`defaults-${record.id}`, state.defaults),
+    el("button", { type: "button", id: `save-${record.id}`, className: "secondary", "aria-disabled": busy ? "true" : "false", text: "Save changes", on: { click: save(false) } }),
+    el("button", { type: "button", id: `confirm-${record.id}`, "aria-disabled": busy ? "true" : "false", text: "Confirm record", on: { click: save(true) } }),
+    intakeFailure(record.id),
+  ];
+}
+
+function confirmedRecord(record) {
+  const source = record.source ?? {};
+  return el(
+    "div",
+    {},
+    el(
+      "dl",
+      {},
+      el("dt", { text: "Kind" }), el("dd", { text: KIND_LABELS[record.kind] ?? "" }),
+      el("dt", { text: "Source" }), el("dd", { text: source.entity_id ? `Entity ${source.entity_id}` : `${source.pseudonym ?? ""} (pseudonym)` }),
+      el("dt", { text: "Captured by" }), el("dd", { text: record.captured_by ?? "" }),
+      el("dt", { text: "Rights held by" }), el("dd", { text: record.rights_holder?.label ?? "" }),
+      el("dt", { text: "Original" }), el("dd", { text: SENSITIVITY_LABELS[record.original_sensitivity] ?? "" }),
+      el("dt", { text: "Passages start with" }), el("dd", { text: rightsSummary(record.passage_defaults) }),
+    ),
+    el("p", { className: "muted", text: `Confirmed by ${record.confirmed_by}, ${record.confirmed_at}. A confirmed record no longer changes.` }),
+  );
+}
+
+function contextLines(passage) {
+  const { path, line_start: from, line_end: to } = passage.anchor_ref;
+  const where = from === to ? `${path}, line ${from}` : `${path}, lines ${from}–${to}`;
+  if (!passage.context)
+    return [
+      el("p", { className: "muted", text: `${where}. The surrounding lines are not shown: the file has changed since this passage was taken, or cannot be read.` }),
+      el("p", { className: "quote", text: passage.text }),
+    ];
+  return [
+    el("p", { className: "muted", text: where }),
+    el(
+      "pre",
+      { className: "diff context", "aria-label": "The passage in its context" },
+      passage.context.lines.map((line) => el("span", { className: line.in_passage ? "hit" : "", text: `${String(line.n).padStart(4)}  ${line.text}\n` })),
+    ),
+    passage.context.truncated ? el("p", { className: "muted", text: "The passage continues beyond these lines." }) : null,
+  ];
+}
+
+function rightsEditor(passage) {
+  const state = draftOf(passage.id, () => rightsState(passage.rights));
+  return fold(`rights-${passage.id}`, "Change the rights for this passage", [
+    el("p", { className: "muted", text: "These apply to every claim taken from this passage." }),
+    rightsFields(`rights-${passage.id}`, state),
+    el("button", { type: "button", id: `save-rights-${passage.id}`, className: "secondary", "aria-disabled": busy ? "true" : "false", text: "Save rights",
+      on: { click: () => intakeAct(passage.id, [["rights", { passage: passage.id, rights: rightsFrom(state) }]], "Rights saved.") } }),
+    intakeFailure(passage.id),
+  ], { open: Boolean(intakeErrors[passage.id]) });
+}
+
+function claimEditor(claim) {
+  const state = draftOf(claim.id, () => ({ text: claim.proposition }));
+  return [
+    el("label", { for: `claim-text-${claim.id}`, text: "The claim, in your words (saving it keeps the claim)" }),
+    el("textarea", { id: `claim-text-${claim.id}`, maxlength: "4000", value: state.text, on: { input: (event) => (state.text = event.target.value) } }),
+    el("button", { type: "button", id: `save-claim-${claim.id}`, "aria-disabled": busy ? "true" : "false", text: "Save the claim",
+      on: { click: () => intakeAct(claim.id, [["decide", { claim: claim.id, action: "edit", proposition: state.text }]], "Claim saved.") } }),
+    el("button", { type: "button", className: "secondary", text: "Cancel", on: { click: () => { delete drafts[claim.id]; render(view); } } }),
+  ];
+}
+
+function claimCard(claim, passage) {
+  const editing = Boolean(drafts[claim.id]);
+  const decide = (action, done) => () => intakeAct(claim.id, [["decide", { claim: claim.id, action }]], done);
+  return el(
+    "article",
+    { className: "card", "aria-labelledby": `claim-${claim.id}` },
+    pill(CLAIM_STATE_TONES[claim.state], CLAIM_STATE_LABELS[claim.state]),
+    el("p", { className: "lede", id: `claim-${claim.id}`, text: claim.proposition }),
+    passage ? contextLines(passage) : el("p", { className: "muted", text: "The passage this claim came from is missing." }),
+    passage ? el("p", { className: "meta", text: rightsSummary(passage.rights) }) : null,
+    passage ? rightsEditor(passage) : null,
+    editing
+      ? claimEditor(claim)
+      : [
+          el("button", { type: "button", id: `keep-${claim.id}`, "aria-disabled": busy ? "true" : "false", text: "Keep", on: { click: decide("keep", "Claim kept.") } }),
+          el("button", { type: "button", id: `edit-${claim.id}`, className: "secondary", "aria-disabled": busy ? "true" : "false", text: "Edit", on: { click: () => { draftOf(claim.id, () => ({ text: claim.proposition })); render(view); } } }),
+          el("button", { type: "button", id: `drop-${claim.id}`, className: "secondary", "aria-disabled": busy ? "true" : "false", text: "Drop", on: { click: decide("drop", "Claim dropped.") } }),
+        ],
+    intakeFailure(claim.id),
+  );
+}
+
+function approvalBlocker(record, claims) {
+  if (record.state !== "confirmed") return "Confirm the record before approving its claims.";
+  const undecided = claims.filter((claim) => claim.state === "proposed").length;
+  if (undecided) return `${undecided} ${undecided === 1 ? "claim still needs" : "claims still need"} Keep, Edit or Drop.`;
+  if (!claims.some((claim) => claim.state === "kept")) return "Keep at least one claim to approve.";
+  return "";
+}
+
+function approvalControls(record, claims) {
+  const approval = intake.approvals[record.id];
+  const blocker = approvalBlocker(record, claims);
+  const undecided = claims.filter((claim) => claim.state === "proposed").length;
+  const key = `approve-${record.id}`;
+  const noName = intake.name_required && !intakeName.trim();
+  const approve = () => {
+    if (blocker) return warn(blocker);
+    if (noName) {
+      intakeErrors[key] = "Enter your name before approving.";
+      return render(view);
+    }
+    return intakeAct(key, [["approve", { id: record.id, ...byName() }]], "Approved.");
+  };
+  return [
+    approval ? el("p", { className: "meta", text: `Approved by ${approval.by}, ${approval.at}: ${approval.claims.length} ${approval.claims.length === 1 ? "claim" : "claims"}.` }) : null,
+    blocker && !approval ? el("p", { id: `approve-reason-${record.id}`, className: "muted", text: blocker }) : null,
+    undecided
+      ? el("button", { type: "button", id: `keep-all-${record.id}`, className: "secondary", "aria-disabled": busy ? "true" : "false", text: `Keep all (${undecided})`,
+          on: { click: () => intakeAct(`keep-all-${record.id}`, [["keep-all", { id: record.id }]], "All kept.") } })
+      : null,
+    el("button", { type: "button", id: `approve-${record.id}`, "aria-disabled": busy || blocker ? "true" : "false", "aria-describedby": blocker ? `approve-reason-${record.id}` : undefined,
+      text: approval ? "Approve again" : "Approve this material", on: { click: approve } }),
+    intakeFailure(`keep-all-${record.id}`),
+    intakeFailure(key),
+  ];
+}
+
+function materialSection(record) {
+  const passages = new Map(intake.passages.filter((passage) => passage.input_id === record.id).map((passage) => [passage.id, passage]));
+  const claims = intake.claims.filter((claim) => passages.has(claim.passage_id));
+  const draft = record.state === "draft";
+  return el(
+    "section",
+    { "aria-labelledby": `material-${record.id}` },
+    el("h2", { id: `material-${record.id}`, text: `${KIND_LABELS[record.kind] ?? "Material"}: ${record.content_ref.split("/").pop()}` }),
+    pill(draft ? "warn" : "good", draft ? "Record not confirmed" : "Record confirmed"),
+    pill(intake.approvals[record.id] ? "good" : "none", intake.approvals[record.id] ? "Claims approved" : "Claims not approved"),
+    fold(`record-${record.id}`, el("h3", { text: "The record" }), draft ? recordForm(record) : confirmedRecord(record), { open: draft }),
+    el("h3", { text: `Claims (${claims.length})` }),
+    claims.length ? claims.map((claim) => claimCard(claim, passages.get(claim.passage_id))) : el("p", { className: "muted", text: "No claims have been drawn from this material yet." }),
+    approvalControls(record, claims),
+  );
+}
+
+function intakeNameField() {
+  if (!intake.name_required) return null;
+  return el("div", {}, el("label", { for: "intake-name", text: "Your name (recorded when you confirm a record or approve claims)" }),
+    el("input", { type: "text", id: "intake-name", autocomplete: "name", maxlength: "200", value: intakeName, on: { input: (event) => (intakeName = event.target.value) } }));
+}
+
+function intakeLink() {
+  if (!boot.intake) return null;
+  return el("button", { type: "button", id: "show-intake", className: "secondary", text: "Material intake", on: { click: () => switchView(true) } });
+}
+
+function renderIntake() {
+  title.textContent = "Spotlight review: Material intake";
+  if (!intake) return app.replaceChildren(el("p", { text: "Loading the material…" }));
+  app.replaceChildren(
+    ...[
+      view.gate ? el("button", { type: "button", id: "show-gate", className: "secondary", text: "Back to the review", on: { click: () => switchView(false) } }) : null,
+      el("p", { text: "This is the material you brought to the case. Check what is recorded about each item, then decide what to do with each claim taken from it. Everything you do here is saved at once." }),
+      intakeNameField(),
+      ...(intake.inputs.length ? intake.inputs.map(materialSection) : [el("p", { text: "No material has been added to this case yet." })]),
+    ].filter(Boolean),
+  );
+}
+
+// The page shows either the gate (or the wiki changes) or the material.
+async function switchView(toIntake) {
+  intakeOn = toIntake;
+  await load();
+}
+
 // ---------------------------------------------------------------- render
 
 function render(next) {
   view = next;
+  if (intakeOn) {
+    keepFocus(renderIntake);
+    app.setAttribute("aria-busy", busy ? "true" : "false");
+    return;
+  }
   if (view.gate && (passages.gate !== view.gate || passages.digest !== view.digest)) loadPassages(view.gate, view.digest).catch(() => {});
   if (view.gate && entityKey() && entities.digest !== view.digest) loadEntities(view.digest).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
@@ -1435,17 +1816,20 @@ function render(next) {
     // No gate pending: the page shows only the staged wiki changes.
     if (!view.gate) {
       app.replaceChildren(
-        wikiError
-          ? wikiErrorSection()
-          : wikiChanges === null
-            ? el("p", { text: "Loading the wiki changes…" })
-            : wikiChanges.length
-              ? wikiSection()
-              : el("p", { text: "No wiki changes are waiting. You can close this page." }),
+        ...[
+          intakeLink(),
+          wikiError
+            ? wikiErrorSection()
+            : wikiChanges === null
+              ? el("p", { text: "Loading the wiki changes…" })
+              : wikiChanges.length
+                ? wikiSection()
+                : el("p", { text: "No wiki changes are waiting. You can close this page." }),
+        ].filter(Boolean),
       );
       return;
     }
-    const parts = [];
+    const parts = [intakeLink()];
     if (readOnly()) parts.push(receiptSection());
     if (view.model_warning) parts.push(el("p", { className: "warning", text: view.model_warning }));
     if (view.blocking.length) {
@@ -1483,7 +1867,9 @@ async function load() {
     if (status !== 403) warn(data.message || "The review could not load.");
     return;
   }
+  if (intakeOn) await loadIntake();
   render(data);
+  if (intakeOn) return say("Material loaded. Everything you do here is saved at once.");
   if (view.gate) say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
   // The gate shows at once; the staged wiki changes follow when Engine answers.
   await loadWiki();
@@ -1606,6 +1992,7 @@ async function requestFollowUp() {
 async function start() {
   const capability = location.hash.slice(1);
   const showWiki = new URLSearchParams(location.search).get("view") === "wiki";
+  intakeOn = Boolean(boot.intake) && new URLSearchParams(location.search).get("view") === "intake";
   history.replaceState(null, "", location.pathname);
   const { status } = await post("/session", { capability });
   if (status !== 200) return;

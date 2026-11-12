@@ -113,6 +113,23 @@ with no candidates or in newsroom mode the section does not appear. Lookups
 run four at a time, each within 10 s and all within 30 s; a failed or late
 lookup marks only that mention ("Could not look up") and the gate stays usable.
 
+## Material intake
+
+A second view, opened with or without a pending gate, for the material a
+journalist brought to the case (`scripts/intake.py`). Per item it shows the
+record (editable while a draft, then confirmed and read-only), each claim with
+its passage in context (a few lines around the passage's own, highlighted),
+the passage's rights, Keep / Edit / Drop, and the material's approval, with
+"Keep all". Every action is one `intake.py` call under `/api/intake/<action>`
+(view, set, confirm, decide, rights, keep-all, approve), saved at once; the
+server validates ids and body shape, and a refusal (exit 2) comes back as 422
+with its reason, shown beside the action. Context lines are read by
+`intake.py view` only from plain files under the case's `intake/` folder, and
+only while the file still has the bytes the passage was taken from. The solo
+edition records the fixed `Member`; the newsroom edition asks for a name and
+`intake.py decider` refuses a blank one. The same capability, Host and Origin
+checks apply as to every other route.
+
 ## Wiki changes
 
 When Engine is installed, the page also lists the wiki writes an agent staged
@@ -173,7 +190,7 @@ args:    ["<checkout>/harness/review/mcp.mjs"]
 env:     SPOTLIGHT_CASES_ROOT=<case workspace root>   (optional; refuses cases outside it)
 ```
 
-It exposes two tools that return "page opened" text and no URL.
+It exposes three tools that return "page opened" text and no URL.
 `open_spotlight_review({case_dir})` opens the pending gate. The member says in
 chat when they are done, and the agent resolves the case, which reads the
 decision from disk. `open_spotlight_wiki_changes({case_dir})`, called after the
@@ -181,6 +198,10 @@ agent stages a wiki write, opens the same page on its Wiki changes view,
 starting the server if none runs; with nothing staged it opens nothing. A
 page already open for the case is left alone, so the member's session and
 unsaved input survive; the agent asks them to reload it.
+`open_spotlight_intake({case_dir})` opens the Material intake view the same
+way (also `createIntakeOpener` in `open.mjs` for a harness), whether or not a
+gate is pending, and leaves an open page alone: its "Material intake" button
+leads there.
 
 ## Tests
 
