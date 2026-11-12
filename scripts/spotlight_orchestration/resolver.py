@@ -11,8 +11,10 @@ from . import research
 from .dependencies import (
     current_hashes,
     digest_receipt_matches,
+    ingest_digest,
     investigation_gate_approval_matches,
     investigation_gate_dependencies,
+    material_only_case,
     outputs_match,
     provenance_matches,
     review_is_fresh,
@@ -145,11 +147,86 @@ def _research_paused(status: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _ingest_status(
+    case: Path,
+    state: dict[str, Any],
+    status: dict[str, Any],
+    ledger: dict[str, Any],
+    dependency_digest: str,
+    data_descriptor: int | None,
+) -> dict[str, Any]:
+    """The Ingest section: the decision, bound to ``dependency_digest`` and
+    backed by the nonce ledger, then the request and the seal."""
+
+    def backed(gate: str, receipt: object, *, require_bound: bool = False) -> bool:
+        return decision_backed(case, gate, receipt, ledger, require_bound=require_bound)
+
+    marker = load_ingestion_marker(case, data_descriptor)
+    marker_status = marker.get("status")
+    ingest = state["decisions"].get("ingest")
+    if not digest_receipt_matches(ingest, dependency_digest) or not backed("ingest", ingest):
+        if (
+            digest_receipt_matches(marker, dependency_digest)
+            # The marker is written outside the resolver too (the ingest step
+            # records its receipt there), so it counts only with a ledger entry
+            # bound to this decision and digest. A v1 state that recorded the
+            # decision is carried by its own legacy-bound receipt above.
+            and backed("ingest", marker, require_bound=True)
+            and marker_status
+            in {
+                "requested",
+                "completed",
+            }
+        ):
+            detail = (
+                {"state": "completed", "resume_at": "seal"}
+                if marker_status == "completed"
+                else {"state": "requested", "resume_at": "ingest"}
+            )
+            return {**status, "status": "active", "next_phase": "ingest", "ingest": detail}
+        return {
+            **status,
+            "next_phase": "ingest",
+            "ingest": {"state": "pending", "resume_at": "decision"},
+        }
+    decision = ingest.get("decision")
+    if decision == "requested":
+        detail = (
+            {"state": "completed", "resume_at": "seal"}
+            if marker_status == "completed"
+            else {"state": "requested", "resume_at": "ingest"}
+        )
+        return {**status, "status": "active", "next_phase": "ingest", "ingest": detail}
+    if decision in {"completed", "declined"} and outputs_match(case, ingest):
+        return {
+            "schema_version": STATUS_VERSION,
+            "status": "completed",
+            "next_phase": "complete",
+            "ingest": {"state": decision, "resume_at": "complete"},
+        }
+    if decision == "completed" and marker_status == "completed":
+        return {
+            **status,
+            "status": "active",
+            "next_phase": "ingest",
+            "ingest": {"state": "completed", "resume_at": "seal"},
+        }
+    return {
+        **status,
+        "next_phase": "ingest",
+        "ingest": {"state": "pending", "resume_at": "decision"},
+    }
+
+
 def status_for(
     case: Path, state: dict[str, Any], data_descriptor: int | None = None
 ) -> dict[str, Any]:
     status = {"schema_version": STATUS_VERSION, "status": "pending", "next_phase": "brief"}
     if not case_path(case, "brief-directions.txt").is_file():
+        if material_only_case(case):
+            # No investigation will run: the material goes straight to Ingest.
+            ledger = effective_ledger(case, state, data_descriptor)
+            return _ingest_status(case, state, status, ledger, ingest_digest(case), data_descriptor)
         return status
     if not case_path(case, "data/methodology.json").is_file():
         return {**status, "next_phase": "methodology"}
@@ -257,61 +334,7 @@ def status_for(
     ):
         return {**status, "next_phase": "report"}
 
-    marker = load_ingestion_marker(case, data_descriptor)
-    marker_status = marker.get("status")
-    ingest = state["decisions"].get("ingest")
-    if not digest_receipt_matches(ingest, dependency_digest) or not backed("ingest", ingest):
-        if (
-            digest_receipt_matches(marker, dependency_digest)
-            # The marker is written outside the resolver too (the ingest step
-            # records its receipt there), so it counts only with a ledger entry
-            # bound to this decision and digest. A v1 state that recorded the
-            # decision is carried by its own legacy-bound receipt above.
-            and backed("ingest", marker, require_bound=True)
-            and marker_status
-            in {
-                "requested",
-                "completed",
-            }
-        ):
-            detail = (
-                {"state": "completed", "resume_at": "seal"}
-                if marker_status == "completed"
-                else {"state": "requested", "resume_at": "ingest"}
-            )
-            return {**status, "status": "active", "next_phase": "ingest", "ingest": detail}
-        return {
-            **status,
-            "next_phase": "ingest",
-            "ingest": {"state": "pending", "resume_at": "decision"},
-        }
-    decision = ingest.get("decision")
-    if decision == "requested":
-        detail = (
-            {"state": "completed", "resume_at": "seal"}
-            if marker_status == "completed"
-            else {"state": "requested", "resume_at": "ingest"}
-        )
-        return {**status, "status": "active", "next_phase": "ingest", "ingest": detail}
-    if decision in {"completed", "declined"} and outputs_match(case, ingest):
-        return {
-            "schema_version": STATUS_VERSION,
-            "status": "completed",
-            "next_phase": "complete",
-            "ingest": {"state": decision, "resume_at": "complete"},
-        }
-    if decision == "completed" and marker_status == "completed":
-        return {
-            **status,
-            "status": "active",
-            "next_phase": "ingest",
-            "ingest": {"state": "completed", "resume_at": "seal"},
-        }
-    return {
-        **status,
-        "next_phase": "ingest",
-        "ingest": {"state": "pending", "resume_at": "decision"},
-    }
+    return _ingest_status(case, state, status, ledger, dependency_digest, data_descriptor)
 
 
 def _missing_for(status: dict[str, Any]) -> list[str]:

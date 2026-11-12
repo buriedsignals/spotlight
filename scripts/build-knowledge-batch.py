@@ -17,6 +17,15 @@ case, deterministically:
   an attributed claim without one is refused;
 - assessments from the fact-check, with the reviewer's flag dispositions.
 
+A case's material (scripts/intake.py) needs no proposal: every claim the
+journalist approved in data/intake-claims.json is added with its material's
+record, its exact passage with the passage's rights, a grounding record and
+a position (the material's source asserts it). Such a claim reports what the
+source said, so it gets no assessment. A case that holds only material, with
+no findings, builds from that alone. In the newsroom edition the material is
+left out: its service does not accept journalist input yet, so it stays in
+the case.
+
 Ids come from data/knowledge-ids.json, so a rebuild after review edits reuses
 them; a new id is random, never derived from content. A record already
 admitted at an unchanged content is not resubmitted; a changed one gets the
@@ -62,8 +71,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import schema_check  # noqa: E402
+from intake import passage_in_lines  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
+from spotlight_orchestration.dependencies import material_only_case  # noqa: E402
+from spotlight_orchestration.intake_decisions import counted_approvals  # noqa: E402
+from spotlight_orchestration.review import ingest_mode  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 from verdicts import FLAG_CODES, VERDICTS_1_1  # noqa: E402
 from evidence_anchors import fact_checker_acquired, fetch_registry, normalized as _normalized  # noqa: E402
@@ -79,6 +92,12 @@ IDS = "data/knowledge-ids.json"
 BATCH = "data/knowledge-batch.json"
 DRAFT = "data/knowledge-batch-draft.json"
 MENTIONS = "data/knowledge-mentions.json"
+INPUTS = "data/journalist-input.json"
+INTAKE_CLAIMS = "data/intake-claims.json"
+# A passage of journalist input carries all three (Batch 1.1, source_expression).
+PASSAGE_RIGHTS = ("attribution", "consent", "sensitivity")
+INPUT_FIELDS = ("kind", "kind_detail", "captured_by", "captured_at", "source", "rights_holder", "original_sensitivity",
+                "content_ref", "content_sha256", "derivatives", "provenance")
 MENTION_KEYS = ("entity_type", "identifiers")
 INTERFACE_VERSION = "1"
 LANGUAGE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
@@ -92,7 +111,7 @@ ROUTES = {
 FETCHED = ("full_text", "open_access", "archive_copy")
 # Id prefix per record type: the prefix names the type.
 PREFIX = {
-    "evidence": "evidence", "source_expression": "passage", "claim": "claim",
+    "evidence": "evidence", "journalist_input": "input", "source_expression": "passage", "claim": "claim",
     "claim_source_expression": "grounding", "source_position": "position", "assessment": "assessment",
     "event": "event", "claim_event_membership": "membership", "story_arc": "arc",
     "event_story_arc_membership": "arc-membership",
@@ -209,12 +228,61 @@ class Ids:
 
 
 def build(case: Path, models: dict[str, str], draft: bool, proposal: Any = None) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    newsroom = ingest_mode() == "newsroom"
+    if newsroom and material_only_case(case):
+        raise BuildError("this case holds only material, which the newsroom edition keeps in the case: there is nothing to build")
+    material = [] if newsroom else approved_material(case)
+    if material and proposal is None and not (case / "data" / "findings.json").exists():
+        # A case that holds only material: no investigation ran, so there is
+        # nothing of one to read or to validate.
+        return _build(case, models, draft, {"claims": []}, {"project": case.name}, {}, {}, {}, {}, material)
     try:
         findings, fact_check, expressions_doc, bundle, positions_doc = _case_inputs(case)
     except BuildError as exc:
         raise CaseNotReady(str(exc)) from exc
     proposal = _load(case, PROPOSAL) if proposal is None else proposal
-    return _build(case, models, draft, proposal, findings, fact_check, expressions_doc, bundle, positions_doc)
+    check_proposal(proposal)
+    return _build(case, models, draft, proposal, findings, fact_check, expressions_doc, bundle, positions_doc, material)
+
+
+def _file_sha(case: Path, relative: str) -> str | None:
+    target = (case / relative).resolve()
+    if case.resolve() not in target.parents or not target.is_file():
+        return None
+    return hashlib.sha256(target.read_bytes()).hexdigest()
+
+
+def approved_material(case: Path) -> list[dict[str, Any]]:
+    """Each approved claim of the case's material with its passage and its
+    material's record, checked against the files as they are now. An approval
+    the Intake page's code does not back, or whose content changed, is none."""
+    register = _load(case, INPUTS, required=False)
+    intake = _load(case, INTAKE_CLAIMS, required=False)
+    if not isinstance(register, dict) or not isinstance(intake, dict):
+        return []
+    inputs = {r["id"]: r for r in register.get("inputs", [])}
+    passages = {p["id"]: p for p in intake.get("passages", [])}
+    claims = {c["id"]: c for c in intake.get("claims", [])}
+    out = []
+    for input_id, approval in sorted(counted_approvals(case).items()):
+        record = inputs[input_id]
+        if _file_sha(case, record["content_ref"]) != record["content_sha256"]:
+            raise BuildError(f"material {input_id}: {record['content_ref']} no longer has the registered bytes")
+        for claim_id in approval["claims"]:
+            claim = claims.get(claim_id)
+            passage = passages.get(claim["passage_id"]) if claim else None
+            if claim is None or claim.get("state") != "kept" or passage is None or passage.get("input_id") != input_id:
+                raise BuildError(f"material {input_id}: approved claim {claim_id} is missing, or no longer kept")
+            anchor = passage["anchor_ref"]
+            if _file_sha(case, anchor["path"]) != passage["anchor_sha256"]:
+                raise BuildError(f"material passage {passage['id']}: {anchor['path']} changed since the passage was taken")
+            if not passage_in_lines(case / anchor["path"], passage["text"], anchor["line_start"], anchor["line_end"]):
+                raise BuildError(f"material passage {passage['id']} is not in {anchor['path']} word for word")
+            missing = [name for name in PASSAGE_RIGHTS if name not in (passage.get("rights") or {})]
+            if missing:
+                raise BuildError(f"material passage {passage['id']} has no {', '.join(missing)}; the journalist sets them before Ingest")
+            out.append({"claim": claim, "passage": passage, "input": record})
+    return out
 
 
 def _case_inputs(case: Path) -> tuple[Any, Any, Any, Any, Any]:
@@ -238,8 +306,7 @@ def _case_inputs(case: Path) -> tuple[Any, Any, Any, Any, Any]:
 
 
 def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findings: Any, fact_check: Any,
-           expressions_doc: Any, bundle: Any, positions_doc: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
-    check_proposal(proposal)
+           expressions_doc: Any, bundle: Any, positions_doc: Any, material: list[dict[str, Any]] | None = None) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     review = _review_items(_load(case, REVIEW, required=False))
     ids = Ids(_load(case, IDS, required=False))
 
@@ -256,7 +323,7 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
             raise BuildError(f"no model given for {actor}; pass --model {actor}=ID")
         return {"method": "agent_candidate", "model": model}
 
-    analyst = {"method": "agent_candidate", "model": proposal["model"]}
+    analyst = {"method": "agent_candidate", "model": proposal.get("model")}
     selected = lambda key: not (isinstance(review.get(f"record:{key}"), dict) and review[f"record:{key}"].get("final") is False)  # noqa: E731
     finding_ids = {f.get("id") for f in findings.get("findings", []) if isinstance(f, dict)}
     expressions = {e["id"]: e for e in expressions_doc.get("expressions", []) if isinstance(e, dict) and isinstance(e.get("id"), str)}
@@ -481,6 +548,34 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
             assessment["flags"] = flags
         emit("assessment", claim["key"], assessment)
 
+    # The case's material: what its source said, as the journalist approved it.
+    for unit in material or []:
+        claim, passage, record = unit["claim"], unit["passage"], unit["input"]
+        key = f"material:{claim['id']}"
+        if not selected(key):
+            continue
+        origin = {"type": "journalist_input", **emit("journalist_input", record["id"], {k: copy.deepcopy(record[k]) for k in INPUT_FIELDS if k in record})}
+        if "derivative_id" in passage["anchor_ref"]:
+            origin["derivative_id"] = passage["anchor_ref"]["derivative_id"]
+        passage_ref_ = emit("source_expression", f"material:{passage['id']}", {
+            "text": passage["text"], "language": passage["language"], "direct_quote": passage["direct_quote"], "origin_ref": origin,
+            **({"speaker": passage["speaker"]} if "speaker" in passage else {}),
+            **{name: copy.deepcopy(passage["rights"][name]) for name in PASSAGE_RIGHTS}, "provenance": passage["provenance"]})
+        statement = copy.deepcopy(claim["statement"])
+        for part in ("subject", "object"):
+            if part in statement:
+                statement[part] = mention(statement[part], "text")
+        # The claim's origin is its own entry in the case's material claims.
+        ref = emit("claim", key, {"origin": {"finding_id": claim["id"]}, "proposition": claim["proposition"],
+                                  "origin_source_expression_ref": passage_ref_, "language": passage["language"],
+                                  "statement": statement, "provenance": claim["provenance"]})
+        emit("claim_source_expression", f"{key}:{passage['id']}", {
+            "claim_ref": ref, "source_expression_ref": passage_ref_, "role": "supports", "provenance": claim["provenance"]})
+        source = record["source"]
+        emit("source_position", f"{key}:source", {
+            "claim_ref": ref, "actor": {"label": passage.get("speaker") or source.get("pseudonym") or source["entity_id"]},
+            "stance": "asserts", "source_expression_refs": [passage_ref_], "provenance": claim["provenance"]})
+
     event_refs: dict[str, dict[str, Any]] = {}
     for event in proposal.get("events", []):
         members = [k for k in event["claim_keys"] if k in claim_refs]
@@ -589,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"build-knowledge-batch: refused: {PROPOSAL} is not JSON: {exc}", file=sys.stderr)
             return 2
         try:
-            build(Path(args.case_dir), {"investigator": "check", "fact-checker": "check"}, True, proposal)
+            build(Path(args.case_dir).resolve(), {"investigator": "check", "fact-checker": "check"}, True, proposal)
         except CaseNotReady as exc:
             print(f"build-knowledge-batch: the case cannot be built: {exc}", file=sys.stderr)
             return 3
@@ -602,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     models = dict(item.split("=", 1) for item in args.model if "=" in item)
     try:
-        result = write(Path(args.case_dir), models, "review" if args.review else "draft" if args.draft else "final")
+        result = write(Path(args.case_dir).resolve(), models, "review" if args.review else "draft" if args.draft else "final")
     except (BuildError, OrchestrationError, OSError) as exc:
         print(f"build-knowledge-batch: refused: {exc}", file=sys.stderr)
         return 2

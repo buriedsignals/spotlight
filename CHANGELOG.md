@@ -4,6 +4,38 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Material intake and protected cases
+
+- A journalist can bring material into a case: interviews, source emails,
+  notes, documents, datasets, photos and video, one file under `intake/` in a
+  folder per kind, with a record in `data/journalist-input.json`
+  (`schemas/journalist-input.schema.json`). `scripts/intake.py` is the only
+  writer. Passages are taken from the material word for word, claims are drawn
+  from passages (`data/intake-claims.json`,
+  `schemas/intake-claims.schema.json`), and the journalist confirms each
+  record, keeps, edits or drops each claim, sets each passage's attribution,
+  consent and sensitivity, and approves the kept claims on the review server's
+  Intake page. It is an optional side step with no investigation and no
+  verdict. The Pi harness has no model tool for it yet (issue #293).
+- Approved claims enter the knowledge batch as what the source said, with the
+  material's `journalist_input` record, the exact passage and the source's
+  position, and no assessment. Batch 1.1 validation gains rules J1 to J3
+  (`scripts/validate-knowledge-batch.py`). A case that holds only material goes
+  from intake approval straight to the Ingest decision. In the newsroom edition
+  the material is held in the case, since the newsroom's service does not
+  accept it yet.
+- A cases folder named `cases_protected`, or one holding a
+  `.spotlight-protected` file, is protected. The Pi harness runs its cases in
+  sensitive mode with no setting to turn that off, and `wiki-destination.py`
+  writes them to the folder's own wiki (`<cases folder>/wiki`) only. A batch
+  with a `case_only` passage is written from a protected case only. The
+  protection is enforced in the Pi harness; the folder is not encrypted, so a
+  runtime with a shell can still read it. The harness's file tools refuse
+  writes to `intake/`, `data/journalist-input.json` and
+  `data/intake-claims.json`.
+- Documented in `AGENTS.md` ("Material intake", "Protected cases") and
+  `docs/material-intake.md`.
+
 ### Added — What a fact-check verdict rests on
 
 - The Investigation gate and Report pages show one line under each finding's

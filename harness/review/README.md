@@ -113,6 +113,59 @@ with no candidates or in newsroom mode the section does not appear. Lookups
 run four at a time, each within 10 s and all within 30 s; a failed or late
 lookup marks only that mention ("Could not look up") and the gate stays usable.
 
+## Material intake
+
+A second view, opened with or without a pending gate, for the material a
+journalist brought to the case (`scripts/intake.py`). Each item is an expandable
+section; the first item not yet approved is open, and approving one closes it,
+marks it Approved and opens the next. Inside an item, one folded line says what
+is recorded about it and its rights (prefilled, for example "Dock worker 1
+(pseudonym) · yes, not attributed by name · direct quotes not allowed · consent
+spoken, on the recording"). Opening it shows six plain-language fields: kind of
+material, how the source is shown (a pseudonym or a real name), whether it may be
+published, direct quotes, how consent was given and who holds the rights. They
+apply to every claim of the item; there is no per-claim or per-passage rights
+control. One button shows the words around every passage of the item, taken
+from the file the passage came from; no line numbers are shown. Each claim is a
+card with a tick box (ticked means keep), its sentence (click to rewrite it in
+place), its structure as tags (who, did, what, from the claim's statement) and
+its passage. A claim the model suggested leaving out (`leave_out` on the claim)
+arrives unticked and dimmed with the reason. At the bottom: how many are kept
+and left out, and one button, "Approve N claims".
+
+The routes, all POST under `/api/intake/`, with the same capability, Host and
+Origin checks as every other route:
+
+- `view` returns `intake.py view`: the register with each record's plain
+  choices and summary, the choices offered, the passages with the words around
+  them, the claims and the counted approvals.
+- `rewrite` saves a claim's new sentence through `intake.py decide ... edit`
+  (the proposition only; the claim's decision is left as it was). The page sends
+  it when the sentence loses focus and has changed.
+- `approve-material` approves one item in a single request. The server runs, in
+  order: `intake.py material-rights` (the item's rights, written to the record
+  while it is a draft and then to every passage of the item), `intake.py decide`
+  for each claim (keep when ticked, drop when not), `confirm` unless the record
+  is already confirmed, and `approve`. It checks first that the page sent exactly
+  the claims the item has and that at least one is ticked. The first refusal
+  stops it: the answer is 422 with the reason and the step that refused
+  (`rights`, `claims`, `confirm` or `approve`), what earlier steps saved stays
+  saved, and nothing after the refusal runs. A closed tab does not stop a
+  request already received.
+
+The page sends no digest and no code. For each of `confirm` and `approve` the
+server reads the digest from `intake.py view` after the earlier steps are saved,
+asks `intake.py code` for a one-time code for that material and action, keeps
+it in that call, and passes both to the command; the page never receives it.
+The code is stored hashed in the case's nonce ledger and spent with the
+decision. The view lists a record whose confirmation, or an approval whose code
+and digest the ledger does not back, as not yet decided. The words around a
+passage are read by `intake.py view` only from plain files under the case's
+`intake/` folder, and only while the file still has the bytes the passage was
+taken from. The solo edition records the fixed `Member`; the newsroom edition
+asks for a name once at the top of the page, requires it before approving, and
+`intake.py decider` refuses a blank one.
+
 ## Wiki changes
 
 When Engine is installed, the page also lists the wiki writes an agent staged
@@ -173,7 +226,7 @@ args:    ["<checkout>/harness/review/mcp.mjs"]
 env:     SPOTLIGHT_CASES_ROOT=<case workspace root>   (optional; refuses cases outside it)
 ```
 
-It exposes two tools that return "page opened" text and no URL.
+It exposes three tools that return "page opened" text and no URL.
 `open_spotlight_review({case_dir})` opens the pending gate. The member says in
 chat when they are done, and the agent resolves the case, which reads the
 decision from disk. `open_spotlight_wiki_changes({case_dir})`, called after the
@@ -181,6 +234,10 @@ agent stages a wiki write, opens the same page on its Wiki changes view,
 starting the server if none runs; with nothing staged it opens nothing. A
 page already open for the case is left alone, so the member's session and
 unsaved input survive; the agent asks them to reload it.
+`open_spotlight_intake({case_dir})` opens the Material intake view the same
+way (also `createIntakeOpener` in `open.mjs` for a harness), whether or not a
+gate is pending, and leaves an open page alone: its "Material intake" button
+leads there.
 
 ## Tests
 

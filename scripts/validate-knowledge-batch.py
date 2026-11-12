@@ -27,6 +27,12 @@ Rules (Batch 1.1's cross-record rules, numbered as in its specification):
 
 The specification has no C11, and its C12 concerns retractions, which the
 core does not carry.
+
+Journalist input (the specification's semantic rules, section 3):
+
+  J1   its source is an entity or a pseudonym, never both
+  J2   one original is never both evidence and journalist input
+  J3   a later journalist-input version keeps the original hash
 Passing proves structure and references, not truth: people still review.
 
 Exit codes: 0 = pass; 3 = at least one rule fails; 2 = unreadable input.
@@ -51,6 +57,7 @@ from verdicts import FLAG_CODES  # noqa: E402
 # Batch array -> record type.
 ARRAYS = {
     "evidence": "evidence",
+    "journalist_inputs": "journalist_input",
     "source_expressions": "source_expression",
     "claims": "claim",
     "claim_source_expressions": "claim_source_expression",
@@ -259,11 +266,14 @@ def validate(batch: Any, admitted: list[Any]) -> list[str]:
                 passage = known.get(target) if target[0] == "source_expression" else None
                 if passage is not None and "translation_of_ref" in passage:
                     errors.append(f"C5: {label(k)} {field} uses translated passage {label(target)}; point at the original")
-        # C6
-        if record_type == "evidence" and isinstance(version, int) and version > 1:
+        # C6, J3
+        if record_type in ("evidence", "journalist_input") and isinstance(version, int) and version > 1:
             first = next((known[(record_type, record_id, v)] for v in range(1, version) if (record_type, record_id, v) in known), None)
             if first is not None and first.get("content_sha256") != record.get("content_sha256"):
-                errors.append(f"C6: {label(k)} changes the original content_sha256")
+                errors.append(f"{'C6' if record_type == 'evidence' else 'J3'}: {label(k)} changes the original content_sha256")
+        # J1
+        if record_type == "journalist_input" and isinstance(record.get("source"), dict) and len(record["source"]) != 1:
+            errors.append(f"J1: {label(k)} source names an entity and a pseudonym; a protected source has only a pseudonym")
         # C8, C9
         if record_type == "assessment":
             for flag in record.get("flags") or []:
@@ -297,6 +307,14 @@ def validate(batch: Any, admitted: list[Any]) -> list[str]:
     for k in submitted:
         if k[0] == "event" and k not in members:
             errors.append(f"C7: {label(k)} has no claim membership")
+
+    # J2
+    originals = {record_type: {record.get("content_sha256") for (kind, _id, _v), record in known.items() if kind == record_type}
+                 for record_type in ("evidence", "journalist_input")}
+    for k, record in submitted.items():
+        other = "journalist_input" if k[0] == "evidence" else "evidence" if k[0] == "journalist_input" else None
+        if other and record.get("content_sha256") in originals[other]:
+            errors.append(f"J2: {label(k)} has the same original as a {other.replace('_', ' ')} record; one original is one or the other")
 
     # C10
     pairs: dict[tuple[str, tuple[str, ...]], str] = {}

@@ -140,6 +140,35 @@ def require_investigation_gate_digest(case: Path) -> str:
     return str(snapshot["dependency_digest"])
 
 
+MATERIAL_FILES = ("data/journalist-input.json", "data/intake-claims.json")
+
+
+def material_only_case(case: Path) -> bool:
+    """A case with approved material and no brief: no investigation will run,
+    so its material goes from intake straight to Ingest. An approval counts
+    only when the Intake page's nonce backs it (intake_decisions)."""
+    # Any trace of an investigation rules it out: a case restored without its
+    # brief must not have its ingest approval bound to the material alone.
+    investigation = ("brief-directions.txt", "data/methodology.json", "data/findings.json")
+    if any(case_path(case, name).is_file() for name in investigation) or not case_path(case, "data/journalist-input.json").is_file():
+        return False
+    # Imported here: intake_decisions reads the review ledger, and review imports this module.
+    from .intake_decisions import counted_approvals
+    return bool(counted_approvals(case))
+
+
+def ingest_digest(case: Path) -> str:
+    """What the ingest decision binds: the investigation's dependency digest,
+    or for a material-only case the register and the approved claims, so a
+    later approval or change takes the request back."""
+    if not material_only_case(case):
+        return require_investigation_gate_digest(case)
+    digest = hashlib.sha256()
+    for relative in MATERIAL_FILES:
+        digest.update(case_path(case, relative).read_bytes())
+    return digest.hexdigest()
+
+
 def provenance_matches(case: Path, dependency_digest: str) -> bool:
     path = case_path(case, "data/provenance-manifest.json")
     if not path.is_file():

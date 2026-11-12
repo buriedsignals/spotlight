@@ -19,8 +19,9 @@ If you are new to Spotlight, read in this order:
 8. **[vulnerabilities.md](vulnerabilities.md)** — shell-safety vulnerabilities and v2 mitigations
 9. **[sensitivity.md](sensitivity.md)** — design doc (not yet implemented): protecting sensitive material via physical separation, escalation, and one-way declassification
 10. **[knowledge-destination.md](knowledge-destination.md)** — where approved claims, events and story arcs go, how prior work is searched, and what happened to the 1.0 graph
-11. **[monitoring.md](monitoring.md)** — monitoring recommendations and explicit Mycroft handoff
-12. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
+11. **[material-intake.md](material-intake.md)**: bringing your own interviews, emails, notes and documents into a case, what the Intake page asks, and protected cases
+12. **[monitoring.md](monitoring.md)** — monitoring recommendations and explicit Mycroft handoff
+13. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 
 Report drafting is documented in `skills/report-drafting/SKILL.md`. It can add
 an optional flow, hierarchy, network, or loop diagram from existing recorded

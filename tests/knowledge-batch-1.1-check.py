@@ -26,6 +26,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "knowledge-batch-1.1.sample.json").read_text(encoding="utf-8"))
+INPUT = {
+    "id": "input:dock-interview", "version": 1, "kind": "interview", "captured_by": "A. Reporter", "captured_at": "2026-03-14T09:00:00Z",
+    "source": {"pseudonym": "Dock worker 1"}, "rights_holder": {"label": "A. Reporter"}, "original_sensitivity": "case_only",
+    "content_ref": "intake/interviews/call.txt", "content_sha256": "1" * 64, "provenance": {"method": "journalist"},
+}
 CORE = json.loads((ROOT / "schemas" / "knowledge-batch-1.1.schema.json").read_text(encoding="utf-8"))
 _SPEC = importlib.util.spec_from_file_location("validate_knowledge_batch", ROOT / "scripts" / "validate-knowledge-batch.py")
 RULES = importlib.util.module_from_spec(_SPEC)
@@ -50,9 +55,19 @@ def check_schemas() -> None:
         return
     assert not schema_errors(CORE, FIXTURE), schema_errors(CORE, FIXTURE)
     newsroom = []
-    doc = copy.deepcopy(FIXTURE)
-    doc["journalist_inputs"] = [{"id": "input:x", "version": 1}]
-    newsroom.append(("journalist_inputs", doc))
+    # A passage of journalist input carries its rights; one of evidence carries none.
+    material = copy.deepcopy(FIXTURE)
+    material["journalist_inputs"] = [INPUT]
+    material["source_expressions"][1].update({
+        "origin_ref": {"type": "journalist_input", "id": INPUT["id"], "version": 1}, "attribution": "background", "sensitivity": "internal",
+        "consent": {"publish_content": True, "publish_direct_quotes": False, "obtained_via": "recorded_oral"}})
+    assert not schema_errors(CORE, material), schema_errors(CORE, material)
+    without_rights = copy.deepcopy(material)
+    del without_rights["source_expressions"][1]["consent"]
+    assert schema_errors(CORE, without_rights), "core schema accepted a passage of journalist input with no consent"
+    with_rights = copy.deepcopy(FIXTURE)
+    with_rights["source_expressions"][0]["attribution"] = "on_record"
+    assert schema_errors(CORE, with_rights), "core schema accepted attribution on a passage of evidence"
     doc = copy.deepcopy(FIXTURE)
     doc["source_expressions"][1]["translation_of_ref"] = {"id": "passage:permit-night-discharge", "version": 1}
     newsroom.append(("translation_of_ref", doc))
@@ -120,6 +135,9 @@ def check_rules() -> None:
         ("C4:", mutated(setv(["source_expressions", 0, "origin_ref", "derivative_id"], "ocr")), []),
         ("C5:", mutated(setv(["source_expressions", 1, "translation_of_ref"], {"id": "passage:x", "version": 1})), []),
         ("C6:", follow_up(evidence=[dict(FIXTURE["evidence"][0], version=2, content_sha256="0" * 64)]), [FIXTURE]),
+        ("J1:", follow_up(journalist_inputs=[dict(INPUT, source={"entity_id": "org:1", "pseudonym": "Dock worker 1"})]), [FIXTURE]),
+        ("J2:", follow_up(journalist_inputs=[dict(INPUT, content_sha256=FIXTURE["evidence"][0]["content_sha256"])]), [FIXTURE]),
+        ("J3:", follow_up(journalist_inputs=[dict(INPUT, version=2, content_sha256="0" * 64)]), [FIXTURE, follow_up(journalist_inputs=[INPUT])]),
         ("C7: event 'event:permit-granted' v1 has no claim membership", mutated(lambda d: d.pop("claim_event_memberships")), []),
         ("C8:", mutated(setv(["assessments", 0, "flags", 0, "code"], "looks_wrong")), []),
         ("C9:", mutated(lambda d: d["source_positions"][0].__setitem__("claim_ref", {"id": "claim:other", "version": 1})

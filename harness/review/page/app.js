@@ -678,6 +678,26 @@ function reportContent(content) {
   ];
 }
 
+// A claim from the case's material says what it rests on: the passage, the
+// material it was taken from and the passage's rights.
+function ingestRecord(record) {
+  const basis = record.basis;
+  return el(
+    "li",
+    {},
+    `${record.type} ${record.id} v${record.version}: ${record.text}`,
+    basis
+      ? el(
+          "div",
+          { className: "muted", id: `basis-${record.id}` },
+          el("p", { className: "quote", text: basis.passage }),
+          el("p", { text: `From the ${basis.material}.` }),
+          el("p", { text: basis.rights.join(" · ") }),
+        )
+      : null,
+  );
+}
+
 function ingestContent(content, items) {
   const batch = content.batch ?? {};
   const records = batch.records ?? [];
@@ -695,7 +715,7 @@ function ingestContent(content, items) {
       el("h2", { id: "batch-heading", text: "Knowledge batch" }),
       stateLine ? el("p", { text: stateLine }) : null,
       records.length
-        ? list(records.map((record) => `${record.type} ${record.id} v${record.version}: ${record.text}`), "")
+        ? el("ul", {}, records.map(ingestRecord))
         : el("p", { className: "muted", text: "No batch preview is available for this case. Deciding here records only whether to ingest." }),
     ),
     newsroomSubmission(content.submission),
@@ -1281,6 +1301,7 @@ function retryWiki(event) {
 // Draws only the wiki section beside a gate, so nothing the member is typing
 // is replaced; with no gate the page is the wiki section.
 function showWiki() {
+  if (intakeOn) return;
   if (!view.gate) return render(view);
   const section = wikiError ? wikiErrorSection() : wikiChanges?.length ? wikiSection() : null;
   const current = document.getElementById("wiki-section");
@@ -1424,10 +1445,271 @@ async function loadEntities(digest) {
   if (view?.digest === digest) render(view);
 }
 
+// ---------------------------------------------------------------- intake
+
+// Material intake: one expandable section per item of material, with what is
+// recorded about it and its rights, the claims taken from it and one approval.
+// The material is untrusted: everything from it is inserted as text. What the
+// member changes is kept here until the item is approved, which saves it all
+// in one request; rewriting a claim is saved when its sentence loses focus.
+// A refusal is shown beside the button it came from, and nothing is assumed saved.
+const PLAIN_TEXT_FIELDS = ["kind_detail", "source", "holder"];
+const CHOICE_FIELDS = ["kind", "source_as", "publish", "quotes", "consent"];
+
+let intakeOn = false;
+let intake = null;
+// Who approves, in the newsroom edition; the solo edition asks for none.
+let intakeName = "";
+// What the member changed in each item, by item id, until it is approved:
+// its fields, each claim's tick, a claim's typed sentence, and whether the
+// words around each passage are shown.
+let drafts = {};
+// Refusals by the key of the action they came from (an item or a claim).
+let intakeErrors = {};
+// The items open on the page; null until the first one is chosen.
+let openItems = null;
+// A claim's rewrite in progress, so an approval waits for it.
+let rewriting = null;
+
+function claimsOf(id) {
+  const passages = new Set(intake.passages.filter((passage) => passage.input_id === id).map((passage) => passage.id));
+  return intake.claims.filter((claim) => passages.has(claim.passage_id));
+}
+
+function itemDraft(record) {
+  drafts[record.id] ??= {
+    fields: Object.fromEntries([...CHOICE_FIELDS.map((name) => [name, record.plain[name] ?? intake.restrictive[name] ?? ""]), ...PLAIN_TEXT_FIELDS.map((name) => [name, record.plain[name]])]),
+    // A claim the model suggested leaving out arrives unticked.
+    keep: Object.fromEntries(claimsOf(record.id).map((claim) => [claim.id, claim.state === "proposed" ? !claim.leave_out : claim.state === "kept"])),
+    sentences: {},
+    around: false,
+  };
+  return drafts[record.id];
+}
+
+function intakeFailure(key) {
+  return intakeErrors[key] ? el("p", { className: "warning", role: "alert", text: intakeErrors[key] }) : null;
+}
+
+function isApproved(id) {
+  return Boolean(intake.approvals[id]);
+}
+
+// Runs one request. Whatever it saved is read again either way, and the page
+// is drawn again with what the member changed still in place. `onSaved` runs
+// before that drawing, so a section is not drawn open and then closed in one go.
+async function intakeCall(key, path, body, done, onSaved) {
+  if (busy || ended) return false;
+  warn("");
+  delete intakeErrors[key];
+  setBusy(true);
+  say("Saving…");
+  let saved = false;
+  try {
+    const { status, data } = await post(`/api/intake/${path}`, body);
+    if (status === 403) return false;
+    saved = status === 200;
+    if (saved) say(done);
+    else {
+      intakeErrors[key] = data.message || "That was refused. Nothing was saved.";
+      say("Not approved.");
+    }
+    await loadIntake();
+    if (saved) onSaved?.();
+  } finally {
+    setBusy(false);
+  }
+  return saved;
+}
+
+async function loadIntake() {
+  const { status, data } = await post("/api/intake/view", {});
+  if (status === 200) intake = data;
+  else if (status !== 403) warn(data.message || "The material could not be read.");
+}
+
+function option(choice, selected) {
+  return el("option", { value: choice.value, text: choice.label, selected });
+}
+
+function choiceField(record, name, label) {
+  const draft = itemDraft(record);
+  const id = `item-${record.id}-${name}`;
+  const options = intake.choices[name].map((choice) => option(choice, choice.value === draft.fields[name]));
+  return el("select", { id, disabled: record.state === "confirmed", "aria-label": label, on: { change: (event) => { draft.fields[name] = event.target.value; if (name === "kind") render(view); } } },
+    name === "kind" && !draft.fields.kind ? el("option", { value: "", text: "Not chosen", selected: true }) : null, options);
+}
+
+function textField(record, name, label) {
+  const draft = itemDraft(record);
+  return el("input", { type: "text", id: `item-${record.id}-${name}`, maxlength: "500", value: draft.fields[name], "aria-label": label,
+    disabled: record.state === "confirmed", on: { input: (event) => (draft.fields[name] = event.target.value) } });
+}
+
+// The six things recorded about a material and its rights; every claim of the material takes them.
+function rightsFold(record) {
+  const draft = itemDraft(record);
+  const { plain } = record;
+  const unset = [plain.publish, plain.quotes, plain.consent].includes(null);
+  const hint = record.state === "confirmed" ? "This item is confirmed, so its rights no longer change." : "These apply to every claim below. Change a field only if it is wrong.";
+  return fold(`rights-${record.id}`, plain.summary, [
+    el("p", { className: "muted", text: hint }),
+    unset && record.state !== "confirmed" ? el("p", { className: "muted", text: "The rights are not set yet, so the most restrictive choices are selected." }) : null,
+    el("div", { className: "facts" },
+      el("label", {}, "Kind of material", choiceField(record, "kind", "Kind of material")),
+      draft.fields.kind === "other" ? el("label", {}, "What kind", textField(record, "kind_detail", "What kind")) : null,
+      el("label", {}, "The source is shown as", choiceField(record, "source_as", "The source is shown as"), textField(record, "source", "The source's name or pseudonym")),
+      el("label", {}, "May be published", choiceField(record, "publish", "May be published")),
+      el("label", {}, "Direct quotes", choiceField(record, "quotes", "Direct quotes")),
+      el("label", {}, "How consent was given", choiceField(record, "consent", "How consent was given")),
+      el("label", {}, "Who holds the rights", textField(record, "holder", "Who holds the rights")),
+    ),
+  ], { className: "fold strip" });
+}
+
+// The claim's structure, from its statement: who, what they did, and to what.
+function claimTags(claim) {
+  const { subject, predicate, object } = claim.statement;
+  return [["Who", subject?.text], ["Did", predicate], ["What", object?.text]]
+    .filter(([, value]) => value)
+    .map(([label, value]) => el("span", { className: "tag" }, el("b", { text: label }), value));
+}
+
+function passageQuote(passage) {
+  const { before = "", after = "" } = passage.context ?? {};
+  return el("p", { className: "passage quote" },
+    el("span", { className: "around", text: before }),
+    el("mark", { text: passage.text }),
+    el("span", { className: "around", text: passage.context ? after : " (The words around this passage are not shown: the file has changed since it was taken, or cannot be read.)" }));
+}
+
+// Saves a claim's new sentence once it loses focus and has changed. An
+// unchanged or emptied one is put back without drawing the page again, which
+// would replace a button the member is pressing.
+async function rewriteClaim(record, claim, sentence, node) {
+  const draft = itemDraft(record);
+  const text = sentence.trim();
+  if (!text || text === claim.proposition) {
+    delete draft.sentences[claim.id];
+    node.textContent = claim.proposition;
+    return;
+  }
+  rewriting = intakeCall(claim.id, "rewrite", { claim: claim.id, proposition: text }, "Claim saved.").then((saved) => {
+    if (saved) delete draft.sentences[claim.id];
+  });
+  await rewriting;
+}
+
+function claimCard(record, claim, passage) {
+  const draft = itemDraft(record);
+  const kept = draft.keep[claim.id];
+  return el("div", { className: `card${kept ? "" : " left-out"}` },
+    el("div", { className: "claim-head" },
+      el("input", { type: "checkbox", id: `keep-${claim.id}`, checked: kept, "aria-label": "Keep this claim", on: { change: (event) => { draft.keep[claim.id] = event.target.checked; render(view); } } }),
+      el("p", { className: "lede", id: `claim-${claim.id}`, contenteditable: "true", spellcheck: "false", role: "textbox", "aria-label": "The claim; click to rewrite it",
+        text: draft.sentences[claim.id] ?? claim.proposition,
+        on: {
+          input: (event) => (draft.sentences[claim.id] = event.target.textContent),
+          keydown: (event) => { if (event.key === "Enter") { event.preventDefault(); event.target.blur(); } },
+          blur: (event) => rewriteClaim(record, claim, event.target.textContent, event.target),
+        } })),
+    el("div", { className: "claim-body" },
+      el("p", {}, claimTags(claim), claim.leave_out ? el("span", { className: "pill tone-warn", text: `Suggested to leave out: ${claim.leave_out}` }) : null),
+      passage ? passageQuote(passage) : el("p", { className: "muted", text: "The passage this claim came from is missing." }),
+      intakeFailure(claim.id)));
+}
+
+async function approveItem(id) {
+  await rewriting;
+  const record = intake.inputs.find((input) => input.id === id);
+  const draft = itemDraft(record);
+  if (intake.name_required && !intakeName.trim()) intakeErrors[id] = "Enter your name before approving.";
+  else if (!Object.values(draft.keep).includes(true)) intakeErrors[id] = "Keep at least one claim to approve.";
+  else {
+    delete intakeErrors[id];
+    await intakeCall(id, "approve-material", { id, ...(intake.name_required ? { by: intakeName } : {}), choices: draft.fields, keep: draft.keep, seen: intake.seen[id] }, "Approved.", () => openNext(id));
+    return;
+  }
+  render(view);
+}
+
+// An approved item closes and the next one still to review opens; the
+// approved item's draft is dropped so it shows what was saved.
+function openNext(id) {
+  delete drafts[id];
+  openItems.delete(id);
+  const next = intake.inputs.find((input) => !isApproved(input.id));
+  if (next) openItems.add(next.id);
+}
+
+function itemTitle(record) {
+  const kind = intake.choices.kind.find((choice) => choice.value === record.plain.kind)?.label ?? "Material";
+  return `${kind}: ${record.content_ref.split("/").pop()}`;
+}
+
+function itemSection(record) {
+  const draft = itemDraft(record);
+  const claims = claimsOf(record.id);
+  const passages = new Map(intake.passages.filter((passage) => passage.input_id === record.id).map((passage) => [passage.id, passage]));
+  const kept = claims.filter((claim) => draft.keep[claim.id]).length;
+  const approval = intake.approvals[record.id];
+  return el("details", { className: "material", open: openItems.has(record.id), on: { toggle: (event) => (event.target.open ? openItems.add(record.id) : openItems.delete(record.id)) } },
+    el("summary", {}, el("h2", { text: itemTitle(record) }), pill(approval ? "good" : "none", approval ? "Approved" : "To review"),
+      el("span", { className: "muted", text: `${kept} of ${claims.length} claims kept` })),
+    el("div", { className: `inside${draft.around ? " context" : ""}` },
+      rightsFold(record),
+      el("div", { className: "tools" }, el("h3", { text: "Claims taken from it" }),
+        claims.length
+          ? el("button", { type: "button", id: `around-${record.id}`, className: "secondary", text: draft.around ? "Hide what was said around each" : "Show what was said around each",
+              on: { click: () => { draft.around = !draft.around; render(view); } } })
+          : null),
+      claims.length ? claims.map((claim) => claimCard(record, claim, passages.get(claim.passage_id))) : el("p", { className: "muted", text: "No claims have been drawn from this material yet." }),
+      approval ? el("p", { className: "meta", text: `Approved by ${approval.by}, ${approval.at}: ${approval.claims.length} ${approval.claims.length === 1 ? "claim" : "claims"}.` }) : null,
+      el("div", { className: "approve" },
+        el("span", { className: "muted", text: `${kept} kept, ${claims.length - kept} left out` }),
+        el("button", { type: "button", id: `approve-${record.id}`, "aria-disabled": busy || !kept ? "true" : "false", text: `Approve ${kept} ${kept === 1 ? "claim" : "claims"}`, on: { click: () => approveItem(record.id) } })),
+      intakeFailure(record.id)));
+}
+
+function intakeNameField() {
+  if (!intake.name_required) return null;
+  return el("div", {}, el("label", { for: "intake-name", text: "Your name (recorded when you approve an item)" }),
+    el("input", { type: "text", id: "intake-name", autocomplete: "name", maxlength: "200", value: intakeName, on: { input: (event) => (intakeName = event.target.value) } }));
+}
+
+function intakeLink() {
+  if (!boot.intake) return null;
+  return el("button", { type: "button", id: "show-intake", className: "secondary", text: "Material intake", on: { click: () => switchView(true) } });
+}
+
+function renderIntake() {
+  title.textContent = "Spotlight review: Material intake";
+  if (!intake) return app.replaceChildren(el("p", { text: "Loading the material…" }));
+  openItems ??= new Set(intake.inputs.filter((input) => !isApproved(input.id)).slice(0, 1).map((input) => input.id));
+  app.replaceChildren(
+    ...[
+      view.gate ? el("button", { type: "button", id: "show-gate", className: "secondary", text: "Back to the review", on: { click: () => switchView(false) } }) : null,
+      intakeNameField(),
+      ...(intake.inputs.length ? intake.inputs.map(itemSection) : [el("p", { text: "No material has been added to this case yet." })]),
+    ].filter(Boolean),
+  );
+}
+
+// The page shows either the gate (or the wiki changes) or the material.
+async function switchView(toIntake) {
+  intakeOn = toIntake;
+  await load();
+}
+
 // ---------------------------------------------------------------- render
 
 function render(next) {
   view = next;
+  if (intakeOn) {
+    keepFocus(renderIntake);
+    app.setAttribute("aria-busy", busy ? "true" : "false");
+    return;
+  }
   if (view.gate && (passages.gate !== view.gate || passages.digest !== view.digest)) loadPassages(view.gate, view.digest).catch(() => {});
   if (view.gate && entityKey() && entities.digest !== view.digest) loadEntities(view.digest).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
@@ -1435,17 +1717,20 @@ function render(next) {
     // No gate pending: the page shows only the staged wiki changes.
     if (!view.gate) {
       app.replaceChildren(
-        wikiError
-          ? wikiErrorSection()
-          : wikiChanges === null
-            ? el("p", { text: "Loading the wiki changes…" })
-            : wikiChanges.length
-              ? wikiSection()
-              : el("p", { text: "No wiki changes are waiting. You can close this page." }),
+        ...[
+          intakeLink(),
+          wikiError
+            ? wikiErrorSection()
+            : wikiChanges === null
+              ? el("p", { text: "Loading the wiki changes…" })
+              : wikiChanges.length
+                ? wikiSection()
+                : el("p", { text: "No wiki changes are waiting. You can close this page." }),
+        ].filter(Boolean),
       );
       return;
     }
-    const parts = [];
+    const parts = [intakeLink()];
     if (readOnly()) parts.push(receiptSection());
     if (view.model_warning) parts.push(el("p", { className: "warning", text: view.model_warning }));
     if (view.blocking.length) {
@@ -1483,7 +1768,9 @@ async function load() {
     if (status !== 403) warn(data.message || "The review could not load.");
     return;
   }
+  if (intakeOn) await loadIntake();
   render(data);
+  if (intakeOn) return say(`${intake.inputs.filter((input) => !isApproved(input.id)).length} of ${intake.inputs.length} items to review. What you change is saved when you approve an item.`);
   if (view.gate) say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
   // The gate shows at once; the staged wiki changes follow when Engine answers.
   await loadWiki();
@@ -1606,6 +1893,7 @@ async function requestFollowUp() {
 async function start() {
   const capability = location.hash.slice(1);
   const showWiki = new URLSearchParams(location.search).get("view") === "wiki";
+  intakeOn = Boolean(boot.intake) && new URLSearchParams(location.search).get("view") === "intake";
   history.replaceState(null, "", location.pathname);
   const { status } = await post("/session", { capability });
   if (status !== 200) return;

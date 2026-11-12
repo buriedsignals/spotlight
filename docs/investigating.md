@@ -353,6 +353,11 @@ invoke the ingest handler with the exact case and configured destination. A
 decline records `decideIngest: declined`. The ingest skill is not a standalone
 entry point.
 
+A case can also hold material the journalist brought (interviews, emails, notes,
+documents). Its approved claims join the Ingest batch, and a case with material
+and no brief goes from intake approval straight to this decision. See
+[material-intake.md](material-intake.md) and `AGENTS.md` ("Material intake").
+
 ## Evidence grounding — the rule that applies across all phases
 
 Every finding must be grounded in a scraped file. This is non-negotiable.

@@ -27,6 +27,7 @@ from .dependencies import (
     investigation_gate_dependencies,
     approval_matches,
     current_hashes,
+    ingest_digest,
     investigation_gate_approval_matches,
     require_investigation_gate_digest,
     rework_snapshot,
@@ -697,7 +698,7 @@ def decide_ingest(
     if decision == "completed" and detail != {"state": "completed", "resume_at": "seal"}:
         raise OrchestrationError("ingestion has not produced a completed receipt to seal")
 
-    dependency_digest = require_investigation_gate_digest(case)
+    dependency_digest = ingest_digest(case)
     marker = load_ingestion_marker(case, data_descriptor)
     if decision == "completed":
         # Sealing the projection receipt is model-side; it carries forward the

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import json
 import sys
 
@@ -30,6 +31,7 @@ from . import (
 )
 from .contract import RECORDABLE_ATTEMPTS
 from . import review
+from .dependencies import material_only_case
 from .review import REVIEW_GATES, ReviewDigestChanged
 
 # Exit code the review server reads as "the record changed; reload the page".
@@ -136,8 +138,10 @@ NEWSROOM_INGEST = (
 )
 
 
-def _with_newsroom_note(status: dict[str, object]) -> dict[str, object]:
-    if status.get("next_phase") != "ingest":
+def _with_newsroom_note(status: dict[str, object], case_dir: str) -> dict[str, object]:
+    # A case that holds only material has no analyst step and, in the
+    # newsroom edition, nothing to submit: the note would mislead.
+    if status.get("next_phase") != "ingest" or material_only_case(Path(case_dir).resolve()):
         return status
     try:
         newsroom = review.ingest_mode() == "newsroom"
@@ -149,7 +153,7 @@ def _with_newsroom_note(status: dict[str, object]) -> dict[str, object]:
 def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     boundary = {"authorized_cases_root": args.authorized_cases_root}
     if args.command == "status":
-        return _with_newsroom_note(resolve(args.case_dir, **boundary))
+        return _with_newsroom_note(resolve(args.case_dir, **boundary), args.case_dir)
     if args.command == "review-view":
         return review_view(args.case_dir, args.gate, **boundary)
     if args.command == "review-passages":

@@ -1,0 +1,291 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/journalist-input.schema.json",
+  "schema_version": "1.0",
+  "title": "Spotlight material register",
+  "description": "data/journalist-input.json: one record per item of material a journalist brought to the case (an interview, a source's email, notes, a document, a dataset, a photo or video). Written only by scripts/intake.py. A confirmed record carries every field of journalist_input in Knowledge Batch 1.1 except id and version, which the batch builder assigns.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "inputs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/input"
+      }
+    }
+  },
+  "definitions": {
+    "nonempty_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "captured_at",
+        "original_sensitivity",
+        "content_ref",
+        "content_sha256",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^JI[1-9][0-9]*$"
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "confirmed"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "interview",
+            "source_email",
+            "field_note",
+            "document",
+            "dataset",
+            "photo_or_video",
+            "other"
+          ]
+        },
+        "kind_detail": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "captured_by": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entity_id": {
+              "$ref": "#/definitions/nonempty_text"
+            },
+            "pseudonym": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "entity_id"
+              ]
+            },
+            {
+              "required": [
+                "pseudonym"
+              ]
+            }
+          ]
+        },
+        "rights_holder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label"
+          ],
+          "properties": {
+            "label": {
+              "$ref": "#/definitions/nonempty_text"
+            },
+            "entity_id": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          }
+        },
+        "original_sensitivity": {
+          "enum": [
+            "case_only",
+            "internal",
+            "publishable"
+          ]
+        },
+        "content_ref": {
+          "type": "string",
+          "pattern": "^intake/[^/]+/[^/]+$"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method"
+          ],
+          "properties": {
+            "method": {
+              "enum": [
+                "journalist",
+                "agent_candidate"
+              ]
+            },
+            "model": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          }
+        },
+        "confirmed_by": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "confirmed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "channel",
+            "nonce_sha256"
+          ],
+          "properties": {
+            "channel": {
+              "const": "page"
+            },
+            "nonce_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "description": "The hash of the one-time code the Intake page spent to confirm this record, as kept in data/review-nonces.json. A confirmed record counts only while this code backs it."
+        },
+        "dependency_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "The digest of the record's fields (all but its state, confirmation and derivatives) that the page showed and the code was spent on."
+        },
+        "passage_defaults": {
+          "$ref": "#/definitions/passage_rights",
+          "description": "What the journalist said once for this material; each passage taken from it starts with these rights."
+        },
+        "derivatives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type",
+              "content_ref",
+              "content_sha256"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^D[1-9][0-9]*$"
+              },
+              "type": {
+                "$ref": "#/definitions/nonempty_text"
+              },
+              "content_ref": {
+                "type": "string",
+                "pattern": "^intake/[^/]+/[^/]+$"
+              },
+              "content_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "state": {
+            "const": "confirmed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "kind",
+          "captured_by",
+          "source",
+          "rights_holder",
+          "confirmed_by",
+          "confirmed_at"
+        ]
+      }
+    },
+    "passage_rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "The rights of a passage taken from the material, as Batch 1.1 keeps them on a source expression. Absent means the most restrictive: off the record, kept in the case, no consent to publish.",
+      "properties": {
+        "attribution": {
+          "enum": [
+            "on_record",
+            "background",
+            "not_for_attribution",
+            "off_record"
+          ]
+        },
+        "sensitivity": {
+          "enum": [
+            "case_only",
+            "internal",
+            "publishable"
+          ]
+        },
+        "consent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "publish_content",
+            "publish_direct_quotes",
+            "obtained_via"
+          ],
+          "properties": {
+            "publish_content": {
+              "type": "boolean"
+            },
+            "publish_direct_quotes": {
+              "type": "boolean"
+            },
+            "obtained_via": {
+              "enum": [
+                "written",
+                "recorded_oral",
+                "unrecorded_oral",
+                "other"
+              ]
+            },
+            "obtained_via_detail": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          },
+          "if": {
+            "properties": {
+              "obtained_via": {
+                "const": "other"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "obtained_via_detail"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

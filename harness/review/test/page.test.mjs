@@ -7,7 +7,9 @@ import { runInNewContext } from "node:vm";
 import { createCaseBridge } from "../case-bridge.mjs";
 import { buildCase, tempRoot } from "./helpers.mjs";
 
-async function renderClient(view) {
+// routes answer a path with a function of the request body returning { status, body }.
+// The requests the page made are kept on the returned document as `posts`.
+async function renderClient(view, { search = "", boot = {}, routes = {} } = {}) {
   let document;
   class Node {
     constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; }
@@ -33,22 +35,31 @@ async function renderClient(view) {
     createElement: (tag) => new Node(tag),
     createTextNode: (text) => { const node = new Node("#text"); node.textContent = text; return node; },
   };
-  document.getElementById("boot").textContent = "{}";
+  document.getElementById("boot").textContent = JSON.stringify(boot);
+  document.posts = [];
   runInNewContext(readFileSync(new URL("../page/app.js", import.meta.url), "utf8"), {
     document,
-    location: { hash: "", search: "", pathname: "/" },
+    location: { hash: "", search, pathname: "/" },
     history: { replaceState() {} },
     URL,
     URLSearchParams,
     setTimeout,
     clearTimeout,
-    fetch: async (path) => ({ status: 200, json: async () => {
-      if (path === "/api/view") return view;
-      if (path === "/api/wiki-changes") return { changes: [] };
-      if (path === "/api/passages") return { available: false };
-      if (path === "/session") return {};
-      throw new Error(`Unexpected client request: ${path}`);
-    } }),
+    fetch: async (path, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      document.posts.push({ path, body });
+      if (routes[path]) {
+        const answer = routes[path](body);
+        return { status: answer.status, json: async () => answer.body };
+      }
+      return { status: 200, json: async () => {
+        if (path === "/api/view") return view;
+        if (path === "/api/wiki-changes") return { changes: [] };
+        if (path === "/api/passages") return { available: false };
+        if (path === "/session") return {};
+        throw new Error(`Unexpected client request: ${path}`);
+      } };
+    },
   });
   await new Promise(setImmediate);
   return document;
@@ -258,3 +269,172 @@ test("recorded evidence reads as formatted text: no raw markdown, no live HTML, 
   assert.match(words(await shown("snake_case_name costs 2 * 3 * 4")), /snake_case_name costs 2 \* 3 \* 4/);
 });
 
+
+// Intake page: the material is untrusted, so it must reach the page as text.
+const words = (node) => [node.text ?? "", ...(node.children ?? []).map((child) => (typeof child === "object" ? words(child) : String(child)))].join(" ");
+const nodes = (node, test) => [...(test(node) ? [node] : []), ...(node.children ?? []).flatMap((child) => (typeof child === "object" ? nodes(child, test) : []))];
+const NOTHING_PENDING = { gate: "", pending_gate: "", gate_label: "Wiki changes" };
+const HOSTILE = "<img src=x onerror=alert(1)> the foreman signed it";
+const DIGEST = "d".repeat(64);
+
+const PLAIN = { kind: "interview", kind_detail: "", source_as: "pseudonym", source: "Dock worker 1", holder: "A. Reporter",
+  publish: "not_attributed", quotes: "not_allowed", consent: "recorded_oral", summary: "Dock worker 1 (pseudonym) \u00b7 yes, not attributed by name" };
+const CHOICES = {
+  kind: [{ value: "interview", label: "Interview" }, { value: "other", label: "Other" }],
+  source_as: [{ value: "pseudonym", label: "A pseudonym" }, { value: "real_name", label: "The source's real name" }],
+  publish: [{ value: "not_attributed", label: "Yes, not attributed by name" }, { value: "off_record", label: "No, off the record" }],
+  quotes: [{ value: "not_allowed", label: "Not allowed" }, { value: "allowed", label: "Allowed" }],
+  consent: [{ value: "recorded_oral", label: "Spoken, on the recording" }, { value: "unrecorded_oral", label: "Spoken, not recorded" }],
+};
+const RESTRICTIVE = { source_as: "pseudonym", publish: "off_record", quotes: "not_allowed", consent: "unrecorded_oral" };
+const STATEMENT = { subject: { text: "the foreman" }, predicate: "signed off", object: { text: "the shift" } };
+
+// Two items of material: the first holds a claim the model suggested leaving out.
+function material({ nameRequired = false, approved = [], plain = {} } = {}) {
+  const item = (id, file) => ({ id, state: "draft", content_ref: `intake/interviews/${file}`, plain: { ...PLAIN, ...plain } });
+  const passage = (id, input, text) => ({ id, input_id: input, text, anchor_ref: { path: "intake/interviews/call.txt", line_start: 2, line_end: 2 }, context: { before: "words before ", after: " words after" } });
+  const claim = (id, passageId, proposition, extra = {}) => ({ id, passage_id: passageId, proposition, statement: STATEMENT, state: "proposed", ...extra });
+  return {
+    name_required: nameRequired, choices: CHOICES, restrictive: RESTRICTIVE,
+    inputs: [item("JI1", "call.txt"), item("JI2", "second.txt")],
+    passages: [passage("JP1", "JI1", HOSTILE), passage("JP2", "JI1", "my brother-in-law is on nights"), passage("JP3", "JI2", "second material")],
+    claims: [claim("JC1", "JP1", "The <b>foreman</b> signed off."), claim("JC2", "JP2", "His brother-in-law works nights.", { leave_out: "it could identify the source" }), claim("JC3", "JP3", "Second claim.")],
+    digests: {},
+    seen: { JI1: "a".repeat(64), JI2: "b".repeat(64) },
+    approvals: Object.fromEntries(approved.map((id) => [id, { by: "Member", at: "2026-11-12T10:00:00Z", claims: ["JC1"] }])),
+  };
+}
+
+const intakePage = (data, { routes = {} } = {}) =>
+  renderClient(NOTHING_PENDING, { search: "?view=intake", boot: { intake: true }, routes: { "/api/intake/view": () => ({ status: 200, body: data }), ...routes } });
+const sections = (page) => nodes(page.getElementById("app"), (node) => node.tag === "details" && node.className === "material");
+const isOpen = (section) => section.attributes.open !== undefined;
+// A person typing: into a text box (its value) or into a claim's sentence (its text).
+const typed = (node, text) => { node[node.tag === "input" ? "value" : "textContent"] = text; node.listeners.input({ target: node }); };
+
+test("the Intake page is a list of expandable items; the first one still to review is open", async () => {
+  const page = await intakePage(material());
+  const [first, second] = sections(page);
+  assert.deepEqual([isOpen(first), isOpen(second)], [true, false]);
+  const closed = words(first.children[0]);
+  assert.ok(closed.includes("Interview: call.txt") && closed.includes("To review") && closed.includes("1 of 2 claims kept"), closed);
+  assert.ok(words(first).includes(PLAIN.summary), "the folded line is not the recorded summary");
+  const fold = nodes(first, (node) => node.tag === "details" && node.className === "fold strip")[0];
+  assert.deepEqual(nodes(fold, (node) => node.tag === "label").map((node) => words(node).trim().split("  ")[0]).slice(0, 2), ["Kind of material", "The source is shown as"]);
+  assert.ok(page.getElementById("approve-JI1"));
+});
+
+test("material reaches the page as text, with no line numbers, and the words around each passage wait for the one button", async () => {
+  const page = await intakePage(material());
+  const app = page.getElementById("app");
+  assert.equal(nodes(app, (node) => node.tag === "img" || node.tag === "pre").length, 0, "material became markup");
+  const [first] = sections(page);
+  assert.ok(words(first).includes("The <b>foreman</b> signed off.") && words(first).includes(HOSTILE));
+  assert.doesNotMatch(words(first), /\bline \d|lines? \d/i);
+  const inside = first.children[1];
+  assert.equal(inside.className, "inside");
+  await page.getElementById("around-JI1").listeners.click();
+  const [reopened] = sections(page);
+  assert.equal(reopened.children[1].className, "inside context");
+  assert.ok(words(reopened).includes("words before") && words(reopened).includes("Hide what was said around each"));
+});
+
+test("a claim the model suggested leaving out arrives unticked with its reason, and the tick decides what is sent", async () => {
+  const page = await intakePage(material(), { routes: { "/api/intake/approve-material": () => ({ status: 200, body: {} }) } });
+  assert.deepEqual(["JC1", "JC2"].map((id) => Boolean(page.getElementById(`keep-${id}`).checked)), [true, false]);
+  assert.ok(words(page.getElementById("app")).includes("Suggested to leave out: it could identify the source"));
+  assert.equal(page.getElementById("approve-JI1").textContent, "Approve 1 claim");
+  page.getElementById("keep-JC2").listeners.change({ target: { checked: true } });
+  assert.equal(page.getElementById("approve-JI1").textContent, "Approve 2 claims");
+  assert.ok(words(page.getElementById("app")).includes("2 kept, 0 left out"));
+  page.getElementById("keep-JC1").listeners.change({ target: { checked: false } });
+  await page.getElementById("approve-JI1").listeners.click();
+  assert.deepEqual(page.posts.find((post) => post.path === "/api/intake/approve-material").body.keep, { JC1: false, JC2: true });
+});
+
+test("approving sends the material's fields and ticks in one request, with no digest or code, then closes it and opens the next", async () => {
+  let approved = [];
+  const page = await intakePage(material(), { routes: {
+    "/api/intake/view": () => ({ status: 200, body: material({ approved }) }),
+    "/api/intake/approve-material": () => { approved = ["JI1"]; return { status: 200, body: { by: "Member" } }; },
+  } });
+  page.getElementById("item-JI1-publish").listeners.change({ target: { value: "off_record" } });
+  typed(page.getElementById("item-JI1-holder"), "B. Holder");
+  await page.getElementById("approve-JI1").listeners.click();
+  const posted = page.posts.filter((post) => post.path.startsWith("/api/intake/") && post.path !== "/api/intake/view");
+  assert.deepEqual(posted.map((post) => post.path), ["/api/intake/approve-material"]);
+  assert.deepEqual(posted[0].body, { id: "JI1", choices: { ...Object.fromEntries(Object.entries(PLAIN).filter(([name]) => name !== "summary")), publish: "off_record", holder: "B. Holder" }, keep: { JC1: true, JC2: false }, seen: "a".repeat(64) });
+  const [first, second] = sections(page);
+  assert.deepEqual([isOpen(first), isOpen(second)], [false, true]);
+  assert.ok(words(first.children[0]).includes("Approved"));
+});
+
+test("a refusal is shown beside the button with its reason, and the item stays open", async () => {
+  const page = await intakePage(material(), { routes: { "/api/intake/approve-material": () => ({ status: 422, body: { code: "refused", step: "confirm", message: "The record could not be confirmed: not complete" } }) } });
+  await page.getElementById("approve-JI1").listeners.click();
+  const [first, second] = sections(page);
+  assert.deepEqual([isOpen(first), isOpen(second)], [true, false]);
+  assert.ok(nodes(first, (node) => node.attributes?.role === "alert").some((node) => node.text === "The record could not be confirmed: not complete"));
+  assert.ok(words(first.children[0]).includes("To review"));
+});
+
+test("a claim is rewritten in place and saved when it loses focus and has changed; a refusal keeps the words", async () => {
+  const page = await intakePage(material(), { routes: { "/api/intake/rewrite": () => ({ status: 422, body: { message: "proposition cannot be empty" } }) } });
+  const sentence = page.getElementById("claim-JC1");
+  sentence.textContent = "The <b>foreman</b> signed off.";
+  await sentence.listeners.blur({ target: sentence });
+  assert.equal(page.posts.filter((post) => post.path === "/api/intake/rewrite").length, 0, "an unchanged sentence was saved");
+  typed(sentence, "The foreman signed the shift off.");
+  await sentence.listeners.blur({ target: sentence });
+  assert.deepEqual(page.posts.find((post) => post.path === "/api/intake/rewrite").body, { claim: "JC1", proposition: "The foreman signed the shift off." });
+  assert.equal(page.getElementById("claim-JC1").textContent, "The foreman signed the shift off.", "the typed words were lost");
+  assert.ok(nodes(page.getElementById("app"), (node) => node.attributes?.role === "alert").some((node) => node.text === "proposition cannot be empty"));
+});
+
+test("when no rights are stored the most restrictive choices are selected and the folded line says so", async () => {
+  const page = await intakePage(material({ plain: { publish: null, quotes: null, consent: null, summary: "Dock worker 1 (pseudonym) \u00b7 rights not set yet" } }));
+  const selected = (id) => nodes(page.getElementById(id), (node) => node.tag === "option" && node.attributes.selected !== undefined).map((node) => node.value);
+  assert.deepEqual([selected("item-JI1-publish"), selected("item-JI1-quotes"), selected("item-JI1-consent")], [["off_record"], ["not_allowed"], ["unrecorded_oral"]]);
+  assert.ok(words(page.getElementById("app")).includes("rights not set yet"));
+});
+
+test("approving with nothing ticked, or without a name in the newsroom edition, sends nothing", async () => {
+  const page = await intakePage(material({ nameRequired: true }));
+  const posts = () => page.posts.filter((post) => post.path === "/api/intake/approve-material").length;
+  await page.getElementById("approve-JI1").listeners.click();
+  assert.ok(words(page.getElementById("app")).includes("Enter your name before approving."));
+  typed(page.getElementById("intake-name"), "A. Reporter");
+  page.getElementById("keep-JC1").listeners.change({ target: { checked: false } });
+  await page.getElementById("approve-JI1").listeners.click();
+  assert.ok(words(page.getElementById("app")).includes("Keep at least one claim to approve."));
+  assert.equal(posts(), 0);
+  page.getElementById("keep-JC1").listeners.change({ target: { checked: true } });
+  await page.getElementById("approve-JI1").listeners.click();
+  assert.equal(page.posts.find((post) => post.path === "/api/intake/approve-material").body.by, "A. Reporter");
+});
+
+test("a confirmed item's fields can no longer be changed", async () => {
+  const data = material();
+  data.inputs[0].state = "confirmed";
+  const page = await intakePage(data);
+  assert.equal(page.getElementById("item-JI1-publish").disabled, true);
+  assert.notEqual(page.getElementById("item-JI2-publish").disabled, true);
+});
+
+test("the Ingest page shows what a claim from material rests on, as text, and nothing under a claim from an investigation", async (t) => {
+  const basis = { passage: HOSTILE, material: "interview, call.txt", rights: ["Attribution: background", "Consent: content may be published, direct quotes may not be published", "Sensitivity: internal"] };
+  const records = [{ type: "claims", id: "claim-1", version: 1, text: "From material.", basis }, { type: "claims", id: "claim-2", version: 1, text: "From an investigation." }];
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "report") }).view("report");
+  const page = await renderClient({ ...view, gate: "ingest", content: { batch: { state: "final", records } }, pending_gate: null, receipt: { decision: "requested", approved_by: "Member" } });
+  const app = page.getElementById("app");
+  assert.equal(nodes(app, (node) => node.tag === "img").length, 0, "the passage became markup");
+  const shown = words(page.getElementById("basis-claim-1"));
+  assert.ok(shown.includes(HOSTILE) && shown.includes("From the interview, call.txt.") && shown.includes("Attribution: background") && shown.includes("direct quotes may not be published"), shown);
+  assert.equal(page.getElementById("basis-claim-2"), null);
+});
+
+test("a gate page offers the Intake page only when the server has one", async (t) => {
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "methodology") }).view("methodology");
+  assert.ok((await renderClient(view, { boot: { intake: true } })).getElementById("show-intake"));
+  assert.equal((await renderClient(view)).getElementById("show-intake"), null);
+});

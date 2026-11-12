@@ -23,7 +23,7 @@ from typing import Any
 from .case_writer import atomic_write_files
 from .claim_basis import claim_basis
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
-from .dependencies import current_hashes, investigation_gate_dependencies
+from .dependencies import current_hashes, ingest_digest, investigation_gate_dependencies, material_only_case
 from . import research_view
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, load_state, read_data_bytes
 
@@ -37,6 +37,9 @@ REVIEW_VERSION = "spotlight-review/v1"
 LEDGER_VERSION = "spotlight-review-nonces/v1"
 LEDGER_FILE = "review-nonces.json"
 REVIEW_GATES = ("methodology", "research", "investigation_gate", "report", "ingest")
+# The Intake page's two decisions on one material. They are not gates of a case:
+# they use the same nonce ledger, and the entry names the material.
+INTAKE_GATES = {"confirm": "intake_confirm", "approve": "intake_approve"}
 DECISIONS = {
     "methodology": ("approved",),
     "research": ("approved",),
@@ -183,7 +186,7 @@ def subject_digest(case: Path, gate: str) -> str:
         # also covers the triage, suggestions and round ledger the page shows.
         return _canonical_sha({"outputs": current_hashes(case, RESEARCH_OUTPUTS),
                                "shown": research_view.shown_hashes(case)})
-    dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
+    dependency = ingest_digest(case) if gate == "ingest" and material_only_case(case) else str(investigation_gate_dependencies(case)["dependency_digest"])
     if gate == "ingest" and activated_case(case):
         bound = {"dependencies": dependency, "batch": _batch_sha256(case)}
         # The mention identifiers decide which register entities the notes
@@ -263,8 +266,11 @@ def _batch_sha256(case: Path) -> str | None:
 
 
 def activated_case(case: Path) -> bool:
+    """A case that builds a Batch 1.1: an investigation under findings
+    contract 1.1, or material alone."""
     findings = _read_case_json(case, "data/findings.json")
-    return isinstance(findings, dict) and findings.get("schema_version") == "1.1" and case_path(case, "data/case-contract.json").is_file()
+    return material_only_case(case) or (
+        isinstance(findings, dict) and findings.get("schema_version") == "1.1" and case_path(case, "data/case-contract.json").is_file())
 
 
 def spotlight_config_path() -> Path:
@@ -312,7 +318,7 @@ def rebuild_ingest_batch(case: Path) -> None:
     """Rebuild the draft and, when nothing is pending, the final batch, after
     a page edit. Runs outside the edit's lock: the builder takes it itself.
     A refusal is recorded in the draft, which the page shows as blocking."""
-    if not activated_case(case) or not case_path(case, INGEST_PROPOSAL).is_file():
+    if not activated_case(case) or not (material_only_case(case) or case_path(case, INGEST_PROPOSAL).is_file()):
         return
     done = subprocess.run([sys.executable, str(SCRIPT_DIR / "build-knowledge-batch.py"), str(case), "--review"],
                           capture_output=True, text=True, check=False)
@@ -334,13 +340,15 @@ def review_digest(case: Path, gate: str, data_descriptor: int | None = None) -> 
     )
 
 
-def issue_nonce(case: Path, data_descriptor: int, gate: str) -> str:
-    """Record a fresh page nonce for one gate and return it to the caller only."""
-    require_gate(gate)
+def issue_nonce(case: Path, data_descriptor: int, gate: str, subject: str | None = None) -> str:
+    """Record a fresh page nonce for one gate (or, with its material as the
+    subject, one intake decision) and return it to the caller only."""
+    if gate not in INTAKE_GATES.values():
+        require_gate(gate)
     ledger = load_ledger(case, data_descriptor)
     # Hex, so a nonce never starts with "-" and passes safely as a CLI argument.
     nonce = secrets.token_hex(32)
-    ledger["nonces"][nonce_sha256(nonce)] = {"gate": gate, "channel": "page", "used": False}
+    ledger["nonces"][nonce_sha256(nonce)] = {"gate": gate, "channel": "page", "used": False, **({"subject": subject} if subject else {})}
     atomic_write_files(
         case, {f"data/{LEDGER_FILE}": ledger_bytes(ledger)}, data_descriptor=data_descriptor
     )
@@ -1110,6 +1118,37 @@ def _report_content(case: Path) -> dict[str, Any]:
     return content
 
 
+ATTRIBUTION_WORDS = {"on_record": "on the record", "background": "background", "not_for_attribution": "not for attribution",
+                     "off_record": "off the record"}
+SENSITIVITY_WORDS = {"case_only": "kept in the case only", "internal": "internal", "publishable": "publishable"}
+
+
+def _material_basis(batch: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """What each claim of the batch that comes from the case's material rests
+    on, by claim id: the passage, the material it was taken from and the
+    passage's attribution, consent and sensitivity in plain words."""
+    records = {array: {r.get("id"): r for r in batch.get(array, []) if isinstance(r, dict)} for array in ("source_expressions", "journalist_inputs")}
+    basis = {}
+    for claim in batch.get("claims", []):
+        passage = records["source_expressions"].get((claim.get("origin_source_expression_ref") or {}).get("id")) or {}
+        origin = passage.get("origin_ref") or {}
+        material = records["journalist_inputs"].get(origin.get("id")) if origin.get("type") == "journalist_input" else None
+        if material is None:
+            continue
+        consent = passage.get("consent") or {}
+        basis[claim.get("id")] = {
+            "passage": _text(passage.get("text")),
+            "material": f"{_text(material.get('kind')).replace('_', ' ')}, {Path(_text(material.get('content_ref'))).name}",
+            "rights": [
+                f"Attribution: {ATTRIBUTION_WORDS.get(passage.get('attribution'), 'not stated')}",
+                "Consent: content " + ("may" if consent.get("publish_content") else "may not") + " be published, direct quotes "
+                + ("may" if consent.get("publish_direct_quotes") else "may not") + " be published",
+                f"Sensitivity: {SENSITIVITY_WORDS.get(passage.get('sensitivity'), 'not stated')}",
+            ],
+        }
+    return basis
+
+
 def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
     """The batch preview the builder made, with one selection per proposed
     record and one disposition per fact-check flag. Legacy (1.0) cases keep
@@ -1120,7 +1159,11 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
     draft = _read_case_json(case, INGEST_DRAFT)
     final = _read_case_json(case, INGEST_BATCH)
     blocking: list[str] = []
-    if not isinstance(proposal, dict):
+    material_only = material_only_case(case)
+    if material_only and ingest_mode() == "newsroom":
+        # The newsroom's service does not take journalist input, so material stays in the case.
+        blocking.append("this case holds only material, which the newsroom edition keeps in the case: there is nothing to ingest")
+    elif not isinstance(proposal, dict) and not material_only:
         blocking.append("the analyst has not proposed a knowledge batch yet")
     elif not isinstance(draft, dict):
         blocking.append("the knowledge batch has not been built yet")
@@ -1135,12 +1178,15 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
             blocking.append("the batch is not rebuilt for the latest edit yet; reload, or ask the agent to rebuild it")
     batch = final if isinstance(final, dict) else (draft or {}).get("batch") if isinstance(draft, dict) else None
     records = []
-    for array in ("claims", "events", "story_arcs", "assessments", "source_positions"):
+    basis = _material_basis(batch) if isinstance(batch, dict) else {}
+    for array in ("claims", "events", "story_arcs", "assessments", "source_positions", "journalist_inputs"):
         for record in (batch or {}).get(array, []) if isinstance(batch, dict) else []:
             if isinstance(record, dict):
                 records.append({"type": array, "id": _text(record.get("id"), 200), "version": record.get("version"),
                                 "text": _text(record.get("proposition") or record.get("title") or record.get("action")
-                                              or record.get("verdict") or (record.get("actor") or {}).get("label"), 2000)})
+                                              or record.get("verdict") or (record.get("actor") or {}).get("label")
+                                              or record.get("content_ref"), 2000),
+                                **({"basis": basis[record.get("id")]} if array == "claims" and record.get("id") in basis else {})})
     items = []
     for array, label in (("claims", "claim"), ("events", "event"), ("story_arcs", "story arc")):
         for record in proposal.get(array, []) if isinstance(proposal, dict) and isinstance(proposal.get(array), list) else []:

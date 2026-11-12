@@ -520,6 +520,9 @@ test('writes outside the case, through a symlink, or to a protected file are ref
 		'data/ingestion.json',
 		'data/report-declined.json',
 		'data/case-contract.json',
+		'data/journalist-input.json',
+		'data/intake-claims.json',
+		'intake/interviews/call.txt',
 		'data/provenance-signing-receipt.json',
 		'evidence/capture-receipt.json',
 	]) {

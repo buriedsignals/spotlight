@@ -66,6 +66,8 @@ activation receipt. Other artifacts retain their schema-specific versions.
 | `source-positions.schema.json` | `{CASE_DIR}/data/source-positions.json` | Who asserts or disputes each finding, with cited passages and verbatim attribution |
 | `case-contract.schema.json` | `{CASE_DIR}/data/case-contract.json` | Sole authoritative activation receipt for findings contract `1.1` |
 | `source-expression-migration.schema.json` | `{CASE_DIR}/data/source-expression-migration.json` | Migration dry-run/apply audit; never an activation signal |
+| `journalist-input.schema.json` | `{CASE_DIR}/data/journalist-input.json` | Register of the material a journalist brought to the case; written only by `scripts/intake.py` |
+| `intake-claims.schema.json` | `{CASE_DIR}/data/intake-claims.json` | Exact passages taken from that material, the claims drawn from them and the journalist's approvals; written only by `scripts/intake.py` |
 | `methodology.schema.json` | `{CASE_DIR}/data/methodology.json` | Investigator PLANNING output — investigation_plan, tools_required, opsec_considerations |
 | `evidence-bundle.schema.json` | `{CASE_DIR}/data/evidence-bundle.json` | Acquisition artifacts, missing-source gates, hashes, and claim links |
 | `investigation-log.schema.json` | `{CASE_DIR}/data/investigation-log.json` | Append-only cycle audit trail |
@@ -205,10 +207,13 @@ decision.
 │   ├── source-positions.json    # actor positions per finding (same writer)
 │   ├── case-contract.json       # activated cases only
 │   ├── source-expression-migration.json # migration audit only
+│   ├── journalist-input.json    # material the journalist brought (scripts/intake.py)
+│   ├── intake-claims.json       # passages and claims taken from it
 │   ├── investigation-log.json
 │   ├── summary.json
 │   ├── anomaly-signals.json  # optional: Anomaly detector runs and signals (leads, never findings)
 │   └── monitoring.json       # optional external-monitor registry
+├── intake/                   # material the journalist brought; one folder per kind
 └── research/
     ├── *.md                  # Scraped web content
     ├── *.json                # Search results

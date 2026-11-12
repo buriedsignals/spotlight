@@ -44,6 +44,19 @@ notes, or material with a stronger threat model, use an operational boundary
 that actually enforces separation: a distinct machine, OS account, encrypted
 volume with independent access control, or an offline environment.
 
+## Protected cases folder
+
+A cases folder named `cases_protected`, or one holding a `.spotlight-protected`
+file, is protected. The Pi harness forces sensitive mode for every case in it,
+and the case is written to that folder's own wiki (`<cases folder>/wiki`), never
+to the member's wiki. Journalist material marked `case_only` is written to a
+wiki only from a protected case. The harness enforces this. A runtime that can
+run shell commands can still read the folder, and the folder is not encrypted.
+`AGENTS.md` ("Protected cases") has the rules, and
+[material-intake.md](material-intake.md) the user's view. This is a rule about
+where a case is written. It does not meet the conditions listed below for a
+separate sensitive knowledge project.
+
 ## Separate sensitive knowledge project
 
 A second OpenKnowledge project is a possible future ingest target, but it is

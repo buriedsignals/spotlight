@@ -11,6 +11,10 @@ import { inlineJson, renderShell } from "./shell.mjs";
 const BODY_LIMIT = 64 << 10;
 const MAX_FOLLOW_UP = 4000;
 const REQUEST_TIMEOUT_MS = 150_000;
+const MATERIAL_ID = /^JI[1-9][0-9]*$/;
+const CLAIM_ID = /^JC[1-9][0-9]*$/;
+const MAX_NAME = 200;
+const MAX_PROPOSITION = 4000;
 const ENTITY_ID = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const MAX_ENTITY_MENTIONS = 50;
 const MAX_CANDIDATES = 10;
@@ -37,6 +41,27 @@ function exactObject(value, fields, label) {
   if (keys.length !== fields.length || fields.some((field) => !keys.includes(field)))
     throw Object.assign(new Error(`${label} has the wrong fields`), { status: 400 });
   return value;
+}
+
+function pattern(value, regex, label) {
+  if (typeof value !== "string" || !regex.test(value))
+    throw Object.assign(new Error(`${label} is not valid`), { status: 400 });
+  return value;
+}
+
+function plainObject(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw Object.assign(new Error(`${label} must be an object`), { status: 400 });
+  return value;
+}
+
+// The name a confirmation or approval is recorded for; intake.py decides
+// whether this edition uses it.
+function optionalName(body) {
+  if (!Object.hasOwn(body, "by")) return undefined;
+  if (typeof body.by !== "string" || body.by.length > MAX_NAME)
+    throw Object.assign(new Error(`Enter a name of at most ${MAX_NAME} characters.`), { status: 400 });
+  return body.by;
 }
 
 function securityHeaders(contentType, nonce = "") {
@@ -99,6 +124,7 @@ async function readJson(request) {
 export async function startReviewServer({
   bridge,
   wiki = null,
+  intake = null,
   view = "",
   host = "127.0.0.1",
   idleMs = DEFAULT_IDLE_MS,
@@ -111,6 +137,7 @@ export async function startReviewServer({
   if (!bridge || ["status", "view", "edit", "issueNonce", "decide", "requestFollowUp"].some((name) => typeof bridge[name] !== "function"))
     throw new Error("the review server requires a case bridge");
   if (host !== "127.0.0.1") throw new Error("the review server binds only 127.0.0.1");
+  if (view === "intake" && !intake) throw new Error("the Intake view requires an intake bridge");
 
   // Staged wiki changes; none without Engine or with a bsig that lacks the verb,
   // so the page hides the view. Any other failure is reported, not hidden.
@@ -136,9 +163,9 @@ export async function startReviewServer({
 
   // The gate this session shows. It stays after a decision so the page can
   // show the receipt read-only. With no gate pending ("" here), the server
-  // starts only for the Wiki changes view, which its opener found non-empty.
+  // starts only for the Wiki changes or Intake view, whose openers chose it.
   let gate = pendingGate(await bridge.status());
-  if (!gate && view !== "wiki")
+  if (!gate && view !== "wiki" && view !== "intake")
     throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
 
   let capability = randomToken();
@@ -419,6 +446,36 @@ export async function startReviewServer({
     return [200, { ...(await bridge.view(gate)), gate_label: GATE_LABELS[gate] }];
   }
 
+  // The Intake view's routes. A claim's rewrite is one intake.py call; one
+  // material's approval is one request that runs its steps in order (see
+  // createIntakeBridge). A refusal travels back as the reason, with the step
+  // it came from, and nothing after that step runs.
+  async function intakeRoute(action, request) {
+    const body = await readJson(request);
+    if (action === "view") {
+      exactObject(body, [], "intake request");
+      return intake.view();
+    }
+    if (action === "rewrite") {
+      const { claim, proposition } = exactObject(body, ["claim", "proposition"], "rewrite");
+      if (typeof proposition !== "string" || !proposition.trim() || proposition.length > MAX_PROPOSITION)
+        throw Object.assign(new Error(`Write the claim in at most ${MAX_PROPOSITION} characters.`), { status: 400 });
+      return intake.decide(pattern(claim, CLAIM_ID, "the claim"), "edit", { proposition });
+    }
+    if (action === "approve-material") {
+      const by = optionalName(plainObject(body, "approval"));
+      const { id, choices, keep, seen } = exactObject(body, by === undefined ? ["id", "choices", "keep", "seen"] : ["id", "by", "choices", "keep", "seen"], "approval");
+      if (typeof seen !== "string" || !/^[0-9a-f]{64}$/.test(seen)) throw Object.assign(new Error("the approval does not say what the page showed"), { status: 400 });
+      plainObject(keep, "the claims");
+      for (const [claim, kept] of Object.entries(keep)) {
+        pattern(claim, CLAIM_ID, "a claim");
+        if (typeof kept !== "boolean") throw Object.assign(new Error("a claim is kept or left out"), { status: 400 });
+      }
+      return intake.approveMaterial(pattern(id, MATERIAL_ID, "the material"), { by, choices: plainObject(choices, "the choices"), keep, seen });
+    }
+    throw Object.assign(new Error("This route does not exist."), { status: 404, code: "not-found" });
+  }
+
   async function handler(request, response) {
     try {
       if (request.headers.host !== expectedHost)
@@ -427,7 +484,7 @@ export async function startReviewServer({
       if (request.method === "GET" && url.pathname === "/") {
         const nonce = randomToken();
         response.writeHead(200, securityHeaders("text/html; charset=utf-8", nonce));
-        return response.end(renderShell({ nonce, boot: { gates: GATE_LABELS } }));
+        return response.end(renderShell({ nonce, boot: { gates: GATE_LABELS, intake: Boolean(intake) } }));
       }
       if (request.method !== "POST")
         return sendJson(response, 405, { code: "method-not-allowed", message: "This route does not support that method." }, { allow: "GET, POST" });
@@ -497,6 +554,8 @@ export async function startReviewServer({
           const [status, body] = await requestFollowUp(await readJson(request));
           return sendJson(response, status, body);
         }
+        if (intake && url.pathname.startsWith("/api/intake/"))
+          return sendJson(response, 200, await intakeRoute(url.pathname.slice("/api/intake/".length), request));
         if (url.pathname === "/api/wiki-changes") {
           exactObject(await readJson(request), [], "wiki changes request");
           return sendJson(response, 200, { changes: await pageWikiChanges() });
@@ -520,7 +579,7 @@ export async function startReviewServer({
     } catch (error) {
       const status = error?.status ?? (error?.code === "refused" ? 422 : 500);
       const message = status === 500 ? "The review request failed." : String(error?.message ?? "The request was refused.").slice(0, 2048);
-      return sendJson(response, status, { code: error?.code ?? "review-error", message });
+      return sendJson(response, status, { code: error?.code ?? "review-error", message, ...(error?.step ? { step: error.step } : {}) });
     }
   }
 
