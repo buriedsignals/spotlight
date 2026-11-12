@@ -86,8 +86,9 @@ def main() -> int:
         require("keeps in the case" in refused.stderr, f"a newsroom build gave no reason: {refused.stderr}")
         shown = json.loads(run("spotlight-orchestration.py", "review-view", "ingest", str(case), env=newsroom).stdout)
         require(any("nothing to ingest" in line for line in shown["blocking"]), f"the newsroom page did not say why: {shown['blocking']}")
-        require("not been built" in " ".join(view()["blocking"]), f"a page with no batch did not block: {view()['blocking']}")
-        run("build-knowledge-batch.py", str(case), "--review", env=env)
+        told = json.loads(run("spotlight-orchestration.py", "status", "--json", str(case), env=newsroom).stdout)
+        require("newsroom_edition" not in told, f"a material-only case was told to draft and submit a batch: {told}")
+        # The approval built the batch: no analyst runs in a case that holds only material.
         page = view()
         require(page["blocking"] == [] and page["content"]["batch"]["state"] == "final", f"the page does not show a final batch: {page}")
         require(any(r["type"] == "claims" and CLAIM["proposition"] in r["text"] for r in page["content"]["batch"]["records"]),

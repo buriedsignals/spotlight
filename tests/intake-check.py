@@ -162,7 +162,7 @@ def main() -> int:
         # The newsroom's service does not take journalist input yet, so there
         # the material stays in the case.
         held = build(newsroom)
-        require(held.returncode == 2 and not (case / "data" / "knowledge-batch.json").exists(), f"a newsroom batch took the material: {held.stdout}{held.stderr}")
+        require(held.returncode == 2 and "keeps in the case" in held.stderr, f"a newsroom batch took the material: {held.stdout}{held.stderr}")
         built = build()
         require(built.returncode == 0, built.stderr)
         batch = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))

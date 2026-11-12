@@ -53,7 +53,8 @@ Passages and claims (no investigation is involved, and no verdict is given):
 - decide is the journalist's keep, drop or edit of one claim; rights sets one
   passage's attribution, consent and sensitivity.
 - approve is the journalist's approval of the kept claims of one confirmed
-  record, once none is left undecided. Any later change to that material's
+  record, once none is left undecided. It rebuilds the case's knowledge batch
+  for the Ingest page. Any later change to that material's
   passages or claims removes the approval.
 - The review page's three: view returns what the page shows (the register, the
   passages each with a few lines of context from the file they were taken from,
@@ -85,7 +86,7 @@ import schema_check  # noqa: E402
 from evidence_anchors import locate_quote, normalized, source_lines  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
-from spotlight_orchestration.review import SOLO_DECIDER, ingest_mode  # noqa: E402
+from spotlight_orchestration.review import SOLO_DECIDER, ingest_mode, rebuild_ingest_batch  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 
 TARGET = "data/journalist-input.json"
@@ -503,6 +504,9 @@ def approve(case: Path, record_id: str, by: str) -> dict[str, Any]:
             raise Refused(f"{record_id} has no kept claim to approve")
         doc["approvals"][record_id] = {"by": by.strip(), "at": _now(), "claims": kept}
         _publish(case, doc, descriptor, CLAIMS)
+    # The Ingest page shows a built batch: a case that holds only material has
+    # no analyst to build it, so the approval does. The builder takes the lock itself.
+    rebuild_ingest_batch(case.resolve())
     return doc["approvals"][record_id]
 
 

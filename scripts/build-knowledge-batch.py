@@ -680,7 +680,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"build-knowledge-batch: refused: {PROPOSAL} is not JSON: {exc}", file=sys.stderr)
             return 2
         try:
-            build(Path(args.case_dir), {"investigator": "check", "fact-checker": "check"}, True, proposal)
+            build(Path(args.case_dir).resolve(), {"investigator": "check", "fact-checker": "check"}, True, proposal)
         except CaseNotReady as exc:
             print(f"build-knowledge-batch: the case cannot be built: {exc}", file=sys.stderr)
             return 3
@@ -693,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     models = dict(item.split("=", 1) for item in args.model if "=" in item)
     try:
-        result = write(Path(args.case_dir), models, "review" if args.review else "draft" if args.draft else "final")
+        result = write(Path(args.case_dir).resolve(), models, "review" if args.review else "draft" if args.draft else "final")
     except (BuildError, OrchestrationError, OSError) as exc:
         print(f"build-knowledge-batch: refused: {exc}", file=sys.stderr)
         return 2
