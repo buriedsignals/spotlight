@@ -31,6 +31,7 @@ import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 from .contract import OrchestrationError, RESEARCH_OUTPUTS, SCRIPT_DIR
 from .research import suggestions_problems
@@ -251,6 +252,13 @@ def _protected(clue: Mapping[str, Any]) -> bool:
     return clue.get("type") in PROTECTED_TYPES or clue.get("source") in ("K6", "C1") or clue.get("always_shown") is True
 
 
+def _lead_title(lead: Mapping[str, Any]) -> str:
+    """A short card title for one lead: its source host and first subjects."""
+    host = (urlparse(lead.get("source_url") or "").hostname or "").removeprefix("www.")
+    subjects = ", ".join(s for s in (lead.get("subjects") or [])[:2] if s)
+    return " · ".join(part for part in (host, subjects) if part)
+
+
 def _clue_views(clues_doc: Mapping[str, Any], triage: Any, leads_by_id: Mapping[str, Mapping[str, Any]], merge: Any) -> list[dict[str, Any]]:
     positions = {lead_id: lead["rank"] for lead_id, lead in leads_by_id.items()}
     clues: list[dict[str, Any]] = []
@@ -284,12 +292,13 @@ def _clue_views(clues_doc: Mapping[str, Any], triage: Any, leads_by_id: Mapping[
             if source is None or (result["lead_id"], kind) in known:
                 continue
             known.add((result["lead_id"], kind))
-            # A triage clue stands for one lead: its title is what that lead
-            # found, and its summary says which question raised it.
+            # A triage clue stands for one lead: a short title names where and
+            # whom, and the summary is what the lead found.
             lead = leads_by_id.get(result["lead_id"]) or {}
             clues.append({
                 "clue_id": f"{source.lower()}-{_text(result['lead_id'], 200)}", "type": kind, "source": source,
-                "title": lead.get("summary") or TRIAGE_CLUE_SUMMARIES[kind], "summary": TRIAGE_CLUE_SUMMARIES[kind],
+                "title": _lead_title(lead) or TRIAGE_CLUE_SUMMARIES[kind],
+                "summary": lead.get("summary") or TRIAGE_CLUE_SUMMARIES[kind],
                 "warning": ABSENCE_WARNING if kind == "change_or_absence" else "",
                 "lead_ids": [_text(result["lead_id"], 200)],
                 "direction_ids": [lead["direction_id"]] if lead.get("direction_id") else [], "attribute": "",
