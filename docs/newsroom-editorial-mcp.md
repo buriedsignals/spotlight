@@ -156,7 +156,10 @@ different batch is refused while one is pending.
 ### `get_knowledge_batch_info`
 
 In: `{batch_id}`. Out: the batch's `id` and `status`, one of `submitted`,
-`reviewed`, `approved`; a tool error when the service holds no such batch.
+`reviewed`, `approved`, and its `review_url`; a tool error when the service
+holds no such batch. A start that recovers a batch the service already
+held opens the review page from this `review_url`, under the same rules as
+the submit answer's.
 
 After a stored batch the harness records the receipts in the case, without
 the review address: `receipts/submission-<batch_id>.json` and

@@ -40,6 +40,8 @@ function defaults(held: Held): Record<string, ToolHandler> {
 	const missing = (what: string) => ({ isError: true as const, text: `no such ${what}` });
 	const caseInfo = (id: string) => ({ id, name: held.cases.get(id), organization_id: '00000000-0000-4000-8000-0000000000aa', batch_infos: [] });
 	const batchInfo = (id: string) => ({ id, case_id: held.batches.get(id), status: 'submitted', created_by: 'journalist@newsroom.example', submitted_at: '2026-11-11T10:00:00Z' });
+	// The status read carries the review address too (fieldpress-app #42).
+	const batchStatus = (id: string) => ({ ...batchInfo(id), review_url: FAKE_REVIEW_URL });
 	return {
 		create_id: () => ({ result: `00000000-0000-4000-8000-${String((held.issued += 1)).padStart(12, '0')}` }),
 		register_case: (args) => {
@@ -61,7 +63,7 @@ function defaults(held: Held): Record<string, ToolHandler> {
 				decision_check_status: 'not_implemented',
 			};
 		},
-		get_knowledge_batch_info: (args) => (held.batches.has(String(args.batch_id)) ? batchInfo(String(args.batch_id)) : missing('batch')),
+		get_knowledge_batch_info: (args) => (held.batches.has(String(args.batch_id)) ? batchStatus(String(args.batch_id)) : missing('batch')),
 		search_knowledge: (args) => ({
 			records: [{ record_id: 'claim:prior-1', kind: 'claim', title: 'Prior reporting on Acme', summary: `Approved record for "${String(args.query)}": Acme paid Doe in 2024.` }],
 		}),

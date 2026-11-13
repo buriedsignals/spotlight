@@ -170,8 +170,9 @@ export class EditorialClient {
 	// receipt): no secret the launcher holds, in keys or values, and no review
 	// capability: no review_url key and no address on a newsroom endpoint
 	// (where review pages live), nor `address` itself. Other addresses, such
-	// as a record's sources, stay. `keepReview` is only for the submit answer,
-	// whose review address the harness itself opens.
+	// as a record's sources, stay. `keepReview` is only for the submit answer
+	// and the batch status, whose review address the harness itself opens;
+	// no model tool calls either.
 	sanitize(value: unknown, options: { address?: string; keepReview?: boolean } = {}, depth = 0): unknown {
 		if (depth > 64) throw new EditorialError('the Editorial MCP answered with a value nested more than 64 levels deep');
 		if (typeof value === 'string') {
@@ -356,24 +357,26 @@ export class EditorialClient {
 		if (result.isError) {
 			throw new EditorialToolError(`${tool}: ${this.#said(text || 'the Editorial MCP reported an error').replace(/(?:\bhttps?:)?\/\/\S+/gi, '[address removed]')}`);
 		}
+		// The two answers whose review address the harness opens itself.
+		const carriesReview = tool === 'start_case_review' || tool === 'get_knowledge_batch_info';
 		const answer = (value: Record<string, unknown>) => {
 			const nonEmpty = (field: unknown) => typeof field === 'string' && field.length > 0;
 			const uuidOf = (field: unknown) => typeof field === 'string' && SAFE_ID.test(field);
 			const malformed =
 				(tool === 'create_id' && !uuidOf(value.result)) ||
 				((tool === 'register_case' || tool === 'get_case_info') && !uuidOf(value.id)) ||
+				(carriesReview && value.rejected !== true && value.review_url !== undefined && !(typeof value.review_url === 'string' && /^https?:$/.test(URL.parse(value.review_url)?.protocol ?? ''))) ||
 				(tool === 'get_knowledge_batch_info' && !(uuidOf(value.id) && nonEmpty(value.status))) ||
 				(tool === 'start_case_review' && value.rejected !== true &&
 					(!(isObject(value.batch) && isObject(value.batch.batch_info) && uuidOf(value.batch.batch_info.id)) ||
-						!(Array.isArray(value.assigned_ids) && value.assigned_ids.every((entry) => isObject(entry) && nonEmpty(entry.type) && nonEmpty(entry.client_id) && uuidOf(entry.uuid))) ||
-						(value.review_url !== undefined && !(typeof value.review_url === 'string' && /^https?:$/.test(URL.parse(value.review_url)?.protocol ?? ''))))) ||
+						!(Array.isArray(value.assigned_ids) && value.assigned_ids.every((entry) => isObject(entry) && nonEmpty(entry.type) && nonEmpty(entry.client_id) && uuidOf(entry.uuid))))) ||
 				// Knowledge answers: the top-level shapes of schemas/editorial-mcp.
 				(tool === 'search_knowledge' && !(Array.isArray(value.records) && value.records.every(isObject))) ||
 				(tool === 'get_record' && !isObject(value.record)) ||
 				(tool === 'traverse' && !(typeof value.root === 'string' && Array.isArray(value.nodes) && Array.isArray(value.edges))) ||
 				(tool === 'coverage' && !(typeof value.record_id === 'string' && isObject(value.coverage)));
 			if (malformed) throw new EditorialError(`${tool}: the Editorial MCP answered outside the contract`);
-			return this.sanitize(value, { keepReview: tool === 'start_case_review' }) as Record<string, unknown>;
+			return this.sanitize(value, { keepReview: carriesReview }) as Record<string, unknown>;
 		};
 		if (isObject(result.structuredContent)) {
 			return answer(result.structuredContent);
@@ -529,7 +532,7 @@ export type SubmitOutcome =
 const REVIEW_ADDRESS_REFUSED =
 	'the case was submitted, but the newsroom returned a review address outside the newsroom\'s allowed endpoints, so Spotlight did not open it. Open the review in the newsroom\'s own tool.';
 const REVIEW_ADDRESS_LOST =
-	'the case was submitted before Spotlight last stopped, so the review address is no longer available. Open the review in the newsroom\'s own tool.';
+	'the newsroom returned no review address for this batch. Open the review in the newsroom\'s own tool.';
 
 // A submission a crash left between its recorded intent and its outcome.
 export async function pendingSubmission(runPackage: RunPackage, caseDir: string): Promise<boolean> {
@@ -576,11 +579,14 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 		}
 		answer = undefined;
 	}
-	const address = typeof answer?.review_url === 'string' ? answer.review_url : undefined;
 	const status = stored ?? (await client.call('get_knowledge_batch_info', { batch_id: batchId }, signal));
 	// The status must be this batch's before the submission is marked
 	// complete; otherwise the intent stays pending.
 	if (status.id !== batchId) throw new EditorialError('get_knowledge_batch_info answered for another batch');
+	// The batch status carries the review address too, so a batch recovered
+	// after a restart still opens its page.
+	const reviewUrl = answer?.review_url ?? status.review_url;
+	const address = typeof reviewUrl === 'string' ? reviewUrl : undefined;
 	const reviewState = String(status.status);
 	// The address is kept nowhere, so the page opens before the submission is
 	// marked complete: if opening fails, the intent stays pending. An address
