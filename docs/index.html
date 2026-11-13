@@ -481,6 +481,10 @@
   }
   .with-lab .nd-gate + .lab { left: calc(50% + 140px + 24px); }
   .lab:hover { border-color: #e7c76a; }
+  .lab.lab-in { grid-template-columns: 1fr; text-align: center; background: var(--paper); border-color: var(--paper); color: var(--paper-fg); }
+  .lab-in::before { border-top-color: var(--line); }
+  .lab-in:hover { border-color: var(--paper); }
+  .lab.lab-in i { color: var(--muted-light); }
   .lab > span { grid-row: span 3; font-size: 20px; }
   .lab b { font-size: 12.5px; font-weight: 600; }
   .lab i { font-style: normal; font-size: 11.5px; color: var(--muted-dark); line-height: 1.35; }
@@ -499,6 +503,8 @@
     .with-lab { flex-direction: column; align-items: center; }
     .lab, .with-lab .nd-gate + .lab { position: relative; left: auto; top: auto; transform: none; margin-top: 14px; width: min(100%, 300px); }
     .lab::before { right: auto; left: 50%; top: -14px; width: 0; height: 14px; border-top: 0; border-left: 1px dashed rgba(231, 199, 106, 0.6); }
+    .lab.lab-in { align-self: flex-end; width: 170px; }
+    .lab-in::before { border-left-color: var(--line); }
   }
   @media (max-width: 640px) {
     .orch { grid-template-columns: 1fr; }
@@ -852,7 +858,10 @@
                 <button type="button" class="nd nd-gate" data-go="report"><b>Report gate</b><i>complete or decline</i></button>
               </div>
               <div class="fx-stop" data-stop="ingest">
-                <button type="button" class="nd nd-phase" data-go="ingest"><em>07</em><b>Ingest</b><i>approved knowledge only</i></button>
+                <div class="with-lab">
+                  <button type="button" class="nd nd-phase" data-go="ingest"><em>07</em><b>Ingest</b><i>approved knowledge only</i></button>
+                  <button type="button" class="lab lab-in" data-go="ingest"><b>Material intake</b><i>your interviews, emails and notes</i></button>
+                </div>
                 <button type="button" class="nd nd-gate" data-go="ingest"><b>Ingest gate</b><i>approve what enters the wiki</i></button>
                 <button type="button" class="nd nd-io nd-out" data-go="ingest"><b>Your wiki</b><i>claims, events, story arcs</i></button>
               </div>
@@ -1079,6 +1088,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
       <section id="sensitive">
         <h2><span class="num">06 — Sensitive mode</span>Local-only investigations first.</h2>
         <p>Spotlight investigations default to open material. For source-protected documents, off-record interview notes, unpublished tip identities, or other sensitive material, use runtime-level sensitive mode so agents work from local case files and intelligence base context instead of live network acquisition.</p>
+        <p>In the local Pi harness, a case kept in a folder named <code>cases_protected</code> runs only on models you run yourself, with no web access.</p>
 
         <div class="callout">
           <div class="callout-tag">Current support</div>
