@@ -251,7 +251,8 @@ def _protected(clue: Mapping[str, Any]) -> bool:
     return clue.get("type") in PROTECTED_TYPES or clue.get("source") in ("K6", "C1") or clue.get("always_shown") is True
 
 
-def _clue_views(clues_doc: Mapping[str, Any], triage: Any, positions: Mapping[str, int], merge: Any) -> list[dict[str, Any]]:
+def _clue_views(clues_doc: Mapping[str, Any], triage: Any, leads_by_id: Mapping[str, Mapping[str, Any]], merge: Any) -> list[dict[str, Any]]:
+    positions = {lead_id: lead["rank"] for lead_id, lead in leads_by_id.items()}
     clues: list[dict[str, Any]] = []
     conflicts = {tuple(sorted(c.get("lead_ids") or [])): c for c in (triage or {}).get("conflicts") or []
                  if isinstance(c, dict)} if isinstance(triage, dict) else {}
@@ -282,11 +283,16 @@ def _clue_views(clues_doc: Mapping[str, Any], triage: Any, positions: Mapping[st
             if source is None or (result["lead_id"], kind) in known:
                 continue
             known.add((result["lead_id"], kind))
+            # A triage clue stands for one lead: the card says what that lead
+            # found, not only which question raised it.
+            lead = leads_by_id.get(result["lead_id"]) or {}
+            finding = lead.get("summary") or ""
             clues.append({
                 "clue_id": f"{source.lower()}-{_text(result['lead_id'], 200)}", "type": kind, "source": source,
-                "summary": TRIAGE_CLUE_SUMMARIES[kind],
+                "summary": f"{finding} ({TRIAGE_CLUE_SUMMARIES[kind]})" if finding else TRIAGE_CLUE_SUMMARIES[kind],
                 "warning": ABSENCE_WARNING if kind == "change_or_absence" else "",
-                "lead_ids": [_text(result["lead_id"], 200)], "direction_ids": [], "attribute": "",
+                "lead_ids": [_text(result["lead_id"], 200)],
+                "direction_ids": [lead["direction_id"]] if lead.get("direction_id") else [], "attribute": "",
                 "model_unsure": False, "protected": kind in PROTECTED_TYPES, "conflict_answer": None,
             })
     worst = len(positions) + 1
@@ -423,9 +429,7 @@ def content(case: Path, saved_items: Mapping[str, Any]) -> tuple[dict[str, Any],
     per_source = Counter(sources.values())
     leads = [_lead_view(by_id[r["lead_id"]], n, r, results.get(r["lead_id"], {}), per_source[sources[r["lead_id"]]] - 1)
              for n, r in enumerate(ranked[:MAX_LEADS], 1)]
-    positions = {lead["lead_id"]: lead["rank"] for lead in leads}
-
-    clues = _clue_views(clues_doc, triage_doc, positions, merge)
+    clues = _clue_views(clues_doc, triage_doc, {lead["lead_id"]: lead for lead in leads}, merge)
     clue_suggestions, direction_suggestions = _suggestions(suggestions)
     planned = _planned_directions(methodology)
     items = [_clue_item(clue, clue_suggestions.get(clue["clue_id"])) for clue in clues]
