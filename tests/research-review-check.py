@@ -4,6 +4,7 @@ review server calls, on an offline case built by the real lane fixture, merge
 and triage (tests/fixtures/review_case.py research)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -238,6 +239,20 @@ class ResearchPage(unittest.TestCase):
                                                               encoding="utf-8")
         self.seam(case, "record-amendment")
         self.assertEqual(json.loads(self.seam(case, "status", "--json").stdout)["phase"], "investigation")
+
+    # ai-lobby 2026-11-13: approved with the suggested marks untouched, nothing was saved and D8 saw no marks.
+    def test_an_approval_without_edits_saves_and_binds_the_marks_the_page_showed(self) -> None:
+        case = self.build()
+        view = self.view(case)
+        self.assertFalse((case / "data/research-review.json").exists())
+        nonce = json.loads(self.seam(case, "issue-review-nonce", "research").stdout)["nonce"]
+        self.seam(case, "approve", "research", *APPROVER, "--nonce", nonce, "--digest", view["digest"])
+        path = case / "data/research-review.json"
+        review = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual({k: v["final"] for k, v in review["items"].items()}, {k: i["final"] for k, i in self.items(view).items()})
+        state = json.loads((case / "data/orchestration.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["approvals"]["research"]["review"]["review_sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(json.loads(self.seam(case, "status", "--json").stdout)["research"]["resume_at"], "amendment")
 
     def test_a_member_adds_a_direction_and_d8_reads_the_marks(self) -> None:
         case = self.build()

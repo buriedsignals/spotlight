@@ -40,7 +40,16 @@ from .research import AMENDMENT_CORRECTION, CYCLE, ROUND_CYCLE
 from .case_contract import bind as bind_case_contract
 from .case_writer import atomic_write_files, restore_files_on_error
 from . import review
-from .review import LEDGER_FILE, consume_nonce, ledger_bytes, load_ledger, record_decision
+from .review import (
+    LEDGER_FILE,
+    consume_nonce,
+    ledger_bytes,
+    load_ledger,
+    record_decision,
+    review_digest,
+    review_sha256,
+    save_shown_review,
+)
 from .storage import (
     LEGACY_LEDGER_KEY,
     case_path,
@@ -114,6 +123,12 @@ def approve(
             f"the Investigation gate still needs: {', '.join(status['missing'])}"
         )
     ledger, binding = consume_nonce(case, data_descriptor, gate, nonce, digest)
+    if gate == "research" and binding["channel"] == "page":
+        # The page shows suggested marks as chosen. Save them before binding,
+        # so D8 reads the marks the member approved even when none was edited.
+        save_shown_review(case, data_descriptor, gate)
+        binding["review_sha256"] = review_sha256(case, gate, data_descriptor)
+        binding["review_digest"] = review_digest(case, gate, data_descriptor)
 
     previous = state["approvals"].get(gate)
     if gate == "methodology":

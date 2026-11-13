@@ -1426,6 +1426,26 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
         current[edit["key"]]["final"] = edit["value"]
         if edit["key"] == RESEARCH_PLAN_ITEM and edit["value"] is False:
             _drop_research_plan(case, data_descriptor)
+    _write_review(case, data_descriptor, gate, review, current)
+    if gate == "ingest" and activated_case(case):
+        # The batch no longer reflects the review: no request may bind it
+        # until the rebuild that follows this edit writes the new one.
+        case_path(case, INGEST_BATCH).unlink(missing_ok=True)
+
+
+def save_shown_review(case: Path, data_descriptor: int, gate: str) -> None:
+    """Save the marks the page shows, suggested ones included, so an approval
+    without a single edit still binds a review that records them."""
+    require_gate(gate)
+    review = load_review(case, gate, data_descriptor)
+    _, _, suggested = _gate_parts(case, gate, review)
+    current = {item["key"]: item for item in _merge_items(suggested, review["items"])}
+    _write_review(case, data_descriptor, gate, review, current)
+
+
+def _write_review(
+    case: Path, data_descriptor: int, gate: str, review: dict[str, Any], current: dict[str, dict[str, Any]]
+) -> None:
     # Items the gate does not show right now (a flag of a deselected claim)
     # keep their saved decision for when they come back.
     stored = {key: value for key, value in review["items"].items() if key not in current}
@@ -1448,7 +1468,3 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
     atomic_write_files(
         case, {f"data/{review_file(gate)}": content}, data_descriptor=data_descriptor
     )
-    if gate == "ingest" and activated_case(case):
-        # The batch no longer reflects the review: no request may bind it
-        # until the rebuild that follows this edit writes the new one.
-        case_path(case, INGEST_BATCH).unlink(missing_ok=True)
