@@ -9,7 +9,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { EditorialClient, EditorialCredentialError, EditorialRefused, editorialClient, ensureCaseRegistered, pendingSubmission, stopsTheNewsroomCase, submitCase } from './editorial.ts';
 import type { RunPackage } from './editorial.ts';
-import { startFakeEditorial } from './test-support/fake-editorial.ts';
+import { FAKE_REVIEW_URL, startFakeEditorial } from './test-support/fake-editorial.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { caseAtIngest, newsroomEnv, requestNewsroomIngest, workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
@@ -285,16 +285,23 @@ test('a batch the case cannot prepare stops the newsroom case, and every call na
 	assert.deepEqual((newsroom.callsOf('start_case_review') as Array<{ request: { case_id: string } }>).map((call) => call.request.case_id), [caseRef]);
 });
 
-test('a review page that does not open leaves the submission pending; the retry finds the batch stored, sends nothing again and tells the member where the review is', async (t) => {
+test('a review page that does not open leaves the submission pending; the retry finds the batch stored, sends nothing again and opens the review address the batch status carries', async (t) => {
 	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, { start_case_review: (args) => stored(args, { review_url: REVIEW_PAGE }) });
 	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => { throw new Error('no browser'); } }), /no browser/);
 	assert.equal(await pendingSubmission(runPackage, caseDir), true);
 
-	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => assert.fail('no address is left to open') });
+	const opened: string[] = [];
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
 	assert.equal(outcome.state, 'submitted');
-	assert.match((outcome as { notice?: string }).notice ?? '', /review address is no longer available.*newsroom's own tool/);
+	assert.deepEqual(opened, [FAKE_REVIEW_URL]);
+	assert.equal((outcome as { notice?: string }).notice, undefined);
 	assert.equal(newsroom.callsOf('start_case_review').length, 1, 'a batch id is sent once');
 	assert.equal(await pendingSubmission(runPackage, caseDir), false);
+	const written: string[] = [];
+	for (const entry of await readdir(caseDir, { recursive: true, withFileTypes: true })) {
+		if (entry.isFile()) written.push(await readFile(join(entry.parentPath, entry.name), 'utf8').catch(() => ''));
+	}
+	assert.ok(!written.join('\n').includes(FAKE_REVIEW_URL), 'the recovered address is nowhere a model can read');
 });
 
 test('a submission cut off before the service stored the batch is sent again under the same batch id', async (t) => {
