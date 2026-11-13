@@ -261,7 +261,8 @@ def _clue_views(clues_doc: Mapping[str, Any], triage: Any, leads_by_id: Mapping[
             continue
         view = {
             "clue_id": _text(clue["clue_id"], 200), "type": clue["type"], "source": _text(clue.get("source"), 120),
-            "summary": _text(clue.get("summary")), "warning": _text(clue.get("warning"), 500),
+            "title": _text(clue.get("summary")), "summary": _text(clue.get("summary")),
+            "warning": _text(clue.get("warning"), 500),
             "lead_ids": [_text(i, 200) for i in clue.get("lead_ids") or []][:50],
             "direction_ids": [_text(i, 200) for i in clue.get("direction_ids") or []][:20],
             "attribute": _text(clue.get("attribute"), 200), "model_unsure": clue.get("model_unsure") is True,
@@ -283,13 +284,12 @@ def _clue_views(clues_doc: Mapping[str, Any], triage: Any, leads_by_id: Mapping[
             if source is None or (result["lead_id"], kind) in known:
                 continue
             known.add((result["lead_id"], kind))
-            # A triage clue stands for one lead: the card says what that lead
-            # found, not only which question raised it.
+            # A triage clue stands for one lead: its title is what that lead
+            # found, and its summary says which question raised it.
             lead = leads_by_id.get(result["lead_id"]) or {}
-            finding = lead.get("summary") or ""
             clues.append({
                 "clue_id": f"{source.lower()}-{_text(result['lead_id'], 200)}", "type": kind, "source": source,
-                "summary": f"{finding} ({TRIAGE_CLUE_SUMMARIES[kind]})" if finding else TRIAGE_CLUE_SUMMARIES[kind],
+                "title": lead.get("summary") or TRIAGE_CLUE_SUMMARIES[kind], "summary": TRIAGE_CLUE_SUMMARIES[kind],
                 "warning": ABSENCE_WARNING if kind == "change_or_absence" else "",
                 "lead_ids": [_text(result["lead_id"], 200)],
                 "direction_ids": [lead["direction_id"]] if lead.get("direction_id") else [], "attribute": "",

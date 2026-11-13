@@ -894,15 +894,16 @@ function clueCard(clue, item, leadsById, index) {
   return el(
     "fieldset",
     { className: "card", "aria-describedby": `${name}-state` },
-    el("legend", { text: `Clue ${index + 1}: ${CLUE_TYPE_LABELS[clue.type] ?? words(clue.type)} (${clue.source})` }),
+    el("legend", { text: `Clue ${index + 1}. ${clue.title || clue.summary}` }),
     el(
       "p",
       {},
+      el("span", { className: "tag", text: `${CLUE_TYPE_LABELS[clue.type] ?? words(clue.type)} (${clue.source})` }),
       item.protected ? el("span", { className: "tag strong", text: "Always pursued" }) : null,
       clue.model_unsure ? el("span", { className: "tag strong", text: "Model unsure" }) : null,
       clue.conflict_answer?.counted ? el("span", { className: "tag", text: `Conflict question: ${words(clue.conflict_answer.value)}` }) : null,
     ),
-    el("p", { className: "quote lede", text: clue.summary }),
+    clue.summary && clue.summary !== clue.title ? el("p", { className: "muted", text: clue.summary }) : null,
     clue.warning ? el("p", {}, el("strong", { text: "Warning: " }), clue.warning) : null,
     urls.length
       ? el("p", { className: "sources" }, "Found at: ", sourceLinks(urls))

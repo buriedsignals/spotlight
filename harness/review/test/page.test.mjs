@@ -438,3 +438,18 @@ test("a gate page offers the Intake page only when the server has one", async (t
   assert.ok((await renderClient(view, { boot: { intake: true } })).getElementById("show-intake"));
   assert.equal((await renderClient(view)).getElementById("show-intake"), null);
 });
+
+// #296: a clue card's heading says what the clue found, not only its type.
+test("a Research clue card is headed by what the clue found", async (t) => {
+  const switched = process.env.SPOTLIGHT_RESEARCH_SWARMS;
+  process.env.SPOTLIGHT_RESEARCH_SWARMS = "on";
+  t.after(() => { if (switched === undefined) delete process.env.SPOTLIGHT_RESEARCH_SWARMS; else process.env.SPOTLIGHT_RESEARCH_SWARMS = switched; });
+  const view = await createCaseBridge({ caseDir: buildCase(tempRoot(t), "case", "research") }).view("research");
+  const premise = view.content.clues.find((clue) => clue.type === "premise_complicated");
+  const page = await renderClient(view);
+  const nodes = (node) => [node, ...(node.children ?? []).flatMap((child) => (typeof child === "object" ? nodes(child) : []))];
+  const legends = nodes(page.getElementById("app")).filter((node) => node.tag === "legend").map((node) => node.text);
+  const heading = legends.find((text) => text.includes(premise.title));
+  assert.ok(premise.title && heading, legends.join(" | "));
+  assert.ok(!heading.includes("Premise complicated"), heading);
+});
