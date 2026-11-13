@@ -119,11 +119,14 @@ class ResearchPage(unittest.TestCase):
         self.assertEqual([(c["type"], c["source"], c["protected"]) for c in content["clues"]],
                          [("watchlist", "K6", True), ("premise_complicated", "C1", True), ("absence", "K5", False)])
         self.assertEqual(content["clues"][2]["warning"].split(":")[0], "Absence is not clearance")
-        # A triage clue is titled with what its lead found and carries the lead's direction (#296).
+        # A triage clue gets a short title (source host and subjects), what its lead found as
+        # its summary, and the lead's direction (#296).
         premise = content["clues"][1]
         lead = next(lead for lead in content["leads"] if lead["lead_id"] == premise["lead_ids"][0])
-        self.assertTrue(lead["summary"])
-        self.assertEqual(premise["title"], lead["summary"])
+        self.assertTrue(lead["summary"] and lead["subjects"])
+        self.assertEqual(premise["summary"], lead["summary"])
+        self.assertIn(lead["subjects"][0], premise["title"])
+        self.assertLess(len(premise["title"]), len(lead["summary"]))
         self.assertEqual(premise["direction_ids"], [lead["direction_id"]])
         sections ={lead["lead_id"]: lead["section"] for lead in content["leads"]}
         self.assertEqual(sections, {"reg-2": "flagged", "court-1": "flagged", "reg-1": "flagged",

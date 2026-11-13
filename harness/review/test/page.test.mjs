@@ -452,4 +452,7 @@ test("a Research clue card is headed by what the clue found", async (t) => {
   const heading = legends.find((text) => text.includes(premise.title));
   assert.ok(premise.title && heading, legends.join(" | "));
   assert.ok(!heading.includes("Premise complicated"), heading);
+  const text = nodes(page.getElementById("app")).map((node) => node.text ?? "").join(" ");
+  assert.ok(text.includes(premise.summary), "the clue's finding is shown inside the card");
+  assert.ok(!text.includes("Triage: this item"), "no canned triage line");
 });
