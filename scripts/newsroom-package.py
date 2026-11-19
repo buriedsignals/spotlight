@@ -2,6 +2,7 @@
 """Prepare a newsroom case's approved batch, and record what the Editorial MCP answered.
 
   python3 scripts/newsroom-package.py register {CASE_DIR}          < reference JSON
+  python3 scripts/newsroom-package.py ids {CASE_DIR}               < {"ids": [UUID, ...]}
   python3 scripts/newsroom-package.py request {CASE_DIR} --case-id ID --batch-id ID --out FILE
   python3 scripts/newsroom-package.py begin {CASE_DIR} --package-sha256 SHA --batch-id ID
   python3 scripts/newsroom-package.py pending {CASE_DIR}
@@ -12,6 +13,11 @@ Newsroom edition only (``knowledge_destination.mode`` is ``newsroom``), for an
 activated case whose ingestion was requested on the ingest page. The Pi
 launcher and harness/pi/src/newsroom-submit.ts run these around the Editorial
 MCP's ``start_case_review``; the contract is docs/newsroom-editorial-mcp.md.
+
+``ids`` gives each record of the approved batch that has none yet a UUID from
+the service's ``create_ids``, keeps it in data/newsroom-ids.json and answers
+how many records still need one. It runs before ``request``, so the request,
+and its sha256, are the same after a crash.
 
 ``request`` writes one JSON object to FILE: ``request`` (the approved batch as
 the service's input, scripts/newsroom_batch.py) and ``request_sha256``.
@@ -28,9 +34,9 @@ of the request) before start_case_review is called, and refuses unless the
 member requested ingestion on the ingest page; ``blocked`` or ``complete``
 then resolves that intent. The service stores a batch id at most once, so a
 pending intent left by a crash is resolved by asking the service whether it
-holds that batch. ``complete`` writes the receipts, the ids the service
-assigned, the submission state and the completed ingest marker (destination
-``newsroom``); the phase then seals it.
+holds that batch. ``complete`` writes the receipts, the submission state and
+the completed ingest marker (destination ``newsroom``); the phase then seals
+it.
 
 Exit codes: 0 = done; 2 = refused (the reason is on stderr).
 """
@@ -59,10 +65,11 @@ from spotlight_orchestration.storage import load_state, read_data_bytes, transac
 
 CASE_REFERENCE = "data/editorial-case.json"
 SUBMISSION = "data/newsroom-submission.json"
-SERVER_IDS = "data/newsroom-ids.json"
+RECORD_IDS = "data/newsroom-ids.json"
 RECEIPTS = "receipts"
 SAFE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
+UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 RECEIPT_NAME = re.compile(r"^(submission|review-status|review)-[A-Za-z0-9._-]{1,200}\.json$")
 
 class Refused(Exception):
@@ -167,10 +174,40 @@ def register(case: Path, payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "already_recorded": False, "case_ref": case_ref}
 
 
-def _server_ids(case: Path, descriptor: int) -> list[dict[str, Any]]:
-    """The ids the service assigned in this case's earlier submissions."""
-    stored = _read_data(case, descriptor, SERVER_IDS) or {}
-    return [entry for entry in stored.get("assigned_ids") or [] if isinstance(entry, dict)]
+def _record_ids(case: Path, descriptor: int) -> newsroom_batch.RecordIds:
+    """The UUID the newsroom knows each of this case's records by."""
+    stored = _read_data(case, descriptor, RECORD_IDS) or {}
+    return {(str(entry.get("type")), str(entry.get("id"))): str(entry.get("uuid"))
+            for entry in stored.get("record_ids") or [] if isinstance(entry, dict)}
+
+
+def keep_ids(case: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Gives the approved batch's records that have no newsroom id one of
+    ``ids`` each, and answers how many still need one. A record keeps its id
+    for good, so a second call with the same batch changes nothing."""
+    _require_newsroom()
+    ids = payload.get("ids")
+    if not (isinstance(ids, list) and all(isinstance(value, str) and UUID4.match(value) for value in ids)):
+        raise Refused("ids must be a list of UUID4 strings")
+    batch = _load(case, review.INGEST_BATCH)
+    with transaction(case) as descriptor:
+        _require_requested(case, descriptor)
+        kept = _record_ids(case, descriptor)
+        without = [(key, version) for key, version in newsroom_batch.record_keys(batch) if key not in kept]
+        for (record_type, record_id), version in without:
+            # A later version belongs to a record the newsroom already holds
+            # under an id only it knows.
+            if version != 1:
+                raise Refused(f"no newsroom id is kept for {record_type} {record_id}, which this batch revises")
+        missing = sorted({key for key, _version in without})
+        fresh = list(dict.fromkeys(value for value in ids if value not in kept.values()))
+        given = dict(zip(missing, fresh))
+        if given:
+            kept.update(given)
+            atomic_write_files(case, {RECORD_IDS: _json_bytes({"schema_version": "1.1", "record_ids": [
+                {"type": record_type, "id": record_id, "uuid": kept[(record_type, record_id)]}
+                for record_type, record_id in sorted(kept)]})}, data_descriptor=descriptor)
+    return {"ok": True, "missing": len(missing) - len(given)}
 
 
 def request(case: Path, case_id: str, batch_id: str) -> dict[str, Any]:
@@ -180,10 +217,9 @@ def request(case: Path, case_id: str, batch_id: str) -> dict[str, Any]:
         raise Refused("the case and batch ids must be the service's ids")
     batch = _load(case, review.INGEST_BATCH)
     with transaction(case) as descriptor:
-        known = {(str(entry.get("type")), str(entry.get("client_id"))): str(entry.get("uuid"))
-                 for entry in _server_ids(case, descriptor)}
+        record_ids = _record_ids(case, descriptor)
     try:
-        converted = newsroom_batch.start_case_review_input(batch, case_id, batch_id, known)
+        converted = newsroom_batch.start_case_review_input(batch, case_id, batch_id, record_ids)
     except newsroom_batch.Refused as exc:
         raise Refused(str(exc)) from None
     return {"request": converted, "request_sha256": _sha(_canonical(converted))}
@@ -267,11 +303,6 @@ def complete(case: Path, package_sha256: str, batch_id: str, payload: dict[str, 
     _require_key(package_sha256)
     if not SAFE_ID.match(batch_id):
         raise Refused("the batch id must be the service's id")
-    assigned = payload.get("assigned_ids")
-    if assigned is not None and not (isinstance(assigned, list) and all(
-            isinstance(entry, dict) and all(isinstance(entry.get(key), str) and entry[key] for key in ("type", "client_id", "uuid"))
-            for entry in assigned)):
-        raise Refused("assigned_ids must be a list of {type, client_id, uuid}, or null")
     receipts = payload.get("receipts")
     if not isinstance(receipts, dict) or not receipts:
         raise Refused("receipts must be a non-empty object")
@@ -299,23 +330,15 @@ def complete(case: Path, package_sha256: str, batch_id: str, payload: dict[str, 
                       "package_sha256": package_sha256, "batch_id": batch_id,
                       "review_state": review_state, "receipts": sorted(f"{RECEIPTS}/{name}" for name in receipts),
                       "at": _now()}
-        files = {"data/ingestion.json": _json_bytes(marker), SUBMISSION: _json_bytes(submission)}
-        # A later batch of this case names these records by the service's ids.
-        # null: the service already held the batch after a crash, so its
-        # answer, and the ids in it, were lost.
-        if assigned is not None:
-            ids = {(entry["type"], entry["client_id"]): entry for entry in [*_server_ids(case, descriptor), *assigned]}
-            files[SERVER_IDS] = _json_bytes({"schema_version": "1.0", "assigned_ids": sorted(
-                ({"type": e["type"], "client_id": e["client_id"], "uuid": e["uuid"]} for e in ids.values()),
-                key=lambda e: (e["type"], e["client_id"]))})
-        atomic_write_files(case, files, data_descriptor=descriptor)
+        atomic_write_files(case, {"data/ingestion.json": _json_bytes(marker), SUBMISSION: _json_bytes(submission)},
+                           data_descriptor=descriptor)
     return {"ok": True, "already_recorded": False}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("register", "pending", "request"):
+    for name in ("register", "pending", "ids", "request"):
         sub.add_parser(name).add_argument("case_dir")
     for flag in ("--case-id", "--batch-id", "--out"):
         sub.choices["request"].add_argument(flag, required=True)
@@ -335,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:
             result = register(case, _object(sys.stdin.read(), "the case reference"))
         elif args.command == "pending":
             result = pending(case)
+        elif args.command == "ids":
+            result = keep_ids(case, _object(sys.stdin.read(), "the ids"))
         elif args.command == "begin":
             result = begin(case, args.package_sha256, args.batch_id)
         elif args.command == "blocked":

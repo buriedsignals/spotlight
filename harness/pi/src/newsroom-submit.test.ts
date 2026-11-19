@@ -32,7 +32,7 @@ test('without the launcher, one command registers the case, sends the approved b
 	// The fake's review address is off the newsroom's endpoint: not opened, and not in the output.
 	assert.match(outcome.notice ?? '', /outside the newsroom's allowed endpoints/);
 	assert.ok(!sent.stdout.includes('editorial.newsroom.example') && !(sent.stdout + sent.stderr).includes(newsroom.token));
-	assert.deepEqual(newsroom.calls.map((call) => call.tool), ['create_id', 'register_case', 'create_id', 'start_case_review', 'get_knowledge_batch_info']);
+	assert.deepEqual(newsroom.calls.map((call) => call.tool), ['create_ids', 'register_case', 'create_ids', 'create_ids', 'start_case_review', 'get_knowledge_batch_info']);
 	assert.deepEqual(newsroom.staged, [outcome.batch_id]);
 	assert.deepEqual((await readdir(join(caseDir, 'receipts'))).sort(), [`review-status-${outcome.batch_id}.json`, `submission-${outcome.batch_id}.json`]);
 	assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'ingestion.json'), 'utf8')).status, 'completed');

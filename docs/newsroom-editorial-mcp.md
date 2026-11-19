@@ -72,26 +72,27 @@ token and are unaffected.
 
 | Tool | When | Called by |
 |---|---|---|
-| `create_id` | Case start and Submit | The harness, once per case and once per batch |
+| `create_ids` | Case start and Submit | The harness: one id per case, one per batch and one per new record |
 | `register_case`, `get_case_info` | Case start | The harness |
 | `search_knowledge`, `get_record`, `traverse`, `coverage` | Brief, Methodology, Investigation cycles, the prior-knowledge research lane | Agents (investigator, fact-checker), the lane runner |
 | `start_case_review` | Ingest, after the member requested it | The harness |
 | `get_knowledge_batch_info` | Right after a stored batch, and when a submission resumes | The harness |
 
 Every id is the service's. The harness keeps each id in the case before it
-uses it, so a lost answer never leaves the service holding a case or a batch
-the case does not know.
+uses it, so a lost answer never leaves the service holding a case, a batch or
+a record the case does not know.
 
-### `create_id`, `register_case`, `get_case_info`
+### `create_ids`, `register_case`, `get_case_info`
 
-- `create_id {}` → `{result: <uuid>}`.
+- `create_ids {count}` → `{result: [<uuid>, ...]}`, 1 to 1000 ids per call.
+  The service does not reserve them.
 - `register_case {case_id, case_name}` → the case, with its `id`. Owner and
   organization come from the sign-in. A `case_id` the service already holds
   is refused.
 - `get_case_info {case_id}` → the case, with its `id`; a tool error when the
   service holds no such case for this organization.
 
-The harness calls `create_id`, stores the id with the Editorial MCP's origin
+The harness calls `create_ids`, stores the id with the Editorial MCP's origin
 in `data/editorial-case.json`, calls `register_case`, then marks the
 reference confirmed. A case that restarts with an unconfirmed reference asks
 `get_case_info` first and registers only if the service does not hold the
@@ -119,11 +120,15 @@ In: `{request}`, the batch as the service's own input.
   model route: the analyst proposes it, the harness builds it and the member
   reviews it on the ingest page, as in the solo edition.
 - `request.case_id` is the registered case and `request.batch_id` comes from
-  `create_id`. A new record carries a `client_id` (its Batch 1.1 id) at
-  version 1; a new version of a record the service holds carries that
-  record's `existing_server_id`. Each reference names its target's type and
-  one of the same two ids. `scripts/newsroom_batch.py` does the conversion
-  from [Batch 1.1](../schemas/knowledge-batch-1.1.schema.json).
+  `create_ids`. Every record carries a permanent UUID as its `id`, the same
+  in every version and every batch of the case, and each reference names its
+  target's type and UUID. Before the request is built the harness asks
+  `create_ids` for one id per record that has none and keeps them in
+  `data/newsroom-ids.json` (`scripts/newsroom-package.py ids`), so a retry
+  sends the same request. A new version of a record whose id the case never
+  kept is refused. `scripts/newsroom_batch.py` does the conversion from
+  [Batch 1.1](../schemas/knowledge-batch-1.1.schema.json), whose own ids stay
+  as they are in the case and in the solo edition.
 - Evidence travels as records (its reference and sha256), not as files.
 - Two things in a Batch 1.1 stay in the case: a claim's `origin` beyond its
   `finding_id`, and an assessment's `flags`.
@@ -135,11 +140,10 @@ Out, one of:
   case stays at Ingest; the harness records the reasons in
   `data/newsroom-submission.json`, tells the member and shows them on the
   ingest page.
-- `{batch, assigned_ids: [{type, client_id, uuid}], review_url?, ...}`: the
-  batch is stored. `review_url` is the member's: the harness opens it in the
-  member's browser (only on one of the newsroom's endpoints) and never
-  returns it to a model or keeps it in the case. The harness keeps
-  `assigned_ids` in `data/newsroom-ids.json` for the case's next batch.
+- `{batch, review_url?, ...}`: the batch is stored. `review_url` is the
+  member's: the harness opens it in the member's browser (only on one of the
+  newsroom's endpoints) and never returns it to a model or keeps it in the
+  case.
 
 The service runs its decision checks on the stored batch and shows their
 flags on the review page. The harness calls nothing for them.
@@ -156,7 +160,7 @@ different batch is refused while one is pending.
 ### `get_knowledge_batch_info`
 
 In: `{batch_id}`. Out: the batch's `id` and `status`, one of `submitted`,
-`reviewed`, `approved`, and its `review_url`; a tool error when the service
+`reviewed`, `admitted`, `rejected`, and its `review_url`; a tool error when the service
 holds no such batch. A start that recovers a batch the service already
 held opens the review page from this `review_url`, under the same rules as
 the submit answer's.

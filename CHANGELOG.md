@@ -4,6 +4,20 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Newsroom edition sends every record under an id from `create_ids`
+
+- The newsroom service dropped `create_id`, `client_id`, `existing_server_id`
+  and `assigned_ids` (fieldpress-app #40). The harness now asks `create_ids`
+  for the case id, the batch id and one UUID per new record, keeps the record
+  ids in `data/newsroom-ids.json` (`scripts/newsroom-package.py ids`) before
+  the request is built, and sends each record and reference under them
+  (`scripts/newsroom_batch.py`). `data/newsroom-ids.json` is now
+  `{record_ids: [{type, id, uuid}]}`; a file in the earlier `assigned_ids`
+  form is not read. Batch 1.1 ids, the solo edition and every skill and
+  prompt file are unchanged.
+- The batch statuses the service reports are `submitted`, `reviewed`,
+  `admitted` and `rejected`.
+
 ### Added — Material intake and protected cases
 
 - A journalist can bring material into a case: interviews, source emails,

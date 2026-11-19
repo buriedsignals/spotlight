@@ -179,7 +179,7 @@ test('newsroom edition: the case is registered once, under an id the service iss
 
 	const stored = JSON.parse(await readFile(join(space.casesRoot, 'case-a', 'data', 'editorial-case.json'), 'utf8')) as { case_ref: string; confirmed: boolean };
 	assert.equal(stored.confirmed, true);
-	assert.deepEqual(editorial.calls.map((call) => [call.tool, call.args]), [['create_id', {}], ['register_case', { case_id: stored.case_ref, case_name: 'Acme payments' }]]);
+	assert.deepEqual(editorial.calls.map((call) => [call.tool, call.args]), [['create_ids', { count: 1 }], ['register_case', { case_id: stored.case_ref, case_name: 'Acme payments' }]]);
 
 	// The same case started as a solo case would split custody: refused.
 	const solo = launch(t, baseEnv(space, fake.baseURL));
@@ -262,7 +262,6 @@ test('newsroom Submit: a batch the newsroom refuses leaves the case at Ingest wi
 		handlers: {
 			start_case_review: (args) => ({
 				batch: { batch_info: { id: (args.request as { batch_id: string }).batch_id, status: 'submitted' }, records: {} },
-				assigned_ids: [],
 				review_url: `${stagingOrigin}/review/rev-1`,
 				note: 'route-auth-token-0123456789',
 			}),
@@ -312,10 +311,10 @@ test('newsroom Submit: a batch the newsroom refuses leaves the case at Ingest wi
 	// The resolve after the submission seals the completed ingest itself (fixed step).
 	assert.deepEqual((lastResolution(second) as { ingest?: unknown }).ingest, { state: 'completed', resume_at: 'complete' });
 	// What travelled is the approved batch, under the registered case and the batch id the service issued.
-	const [{ request: sent }] = staging.callsOf('start_case_review') as Array<{ request: { case_id: string; batch_id: string; claims: Array<{ client_id: string }> } }>;
+	const [{ request: sent }] = staging.callsOf('start_case_review') as Array<{ request: { case_id: string; batch_id: string; claims: unknown[] } }>;
 	const registered = JSON.parse(await readFile(join(stagedCase, 'data', 'editorial-case.json'), 'utf8')) as { case_ref: string };
 	const approved = JSON.parse(await readFile(join(stagedCase, 'data', 'knowledge-batch.json'), 'utf8')) as { claims: Array<{ id: string }> };
-	assert.deepEqual([sent.case_id, sent.batch_id, sent.claims.map((claim) => claim.client_id)], [registered.case_ref, batchId, approved.claims.map((claim) => claim.id)]);
+	assert.deepEqual([sent.case_id, sent.batch_id, sent.claims.length], [registered.case_ref, batchId, approved.claims.length]);
 });
 
 test('newsroom Submit: a case phase the resolver cannot read is an error, never a skip, and nothing is sent', async (t) => {
@@ -429,7 +428,7 @@ test('newsroom Submit: a crash after the newsroom stored the batch resumes on th
 	const [batchId] = editorial.staged;
 	assert.equal(editorial.staged.length, 1, 'the newsroom stored one batch');
 	assert.deepEqual((editorial.callsOf('start_case_review') as Array<{ request: { batch_id: string } }>).map((call) => call.request.batch_id), [batchId]);
-	assert.equal(editorial.callsOf('create_id').length, 2, 'one id for the case, one for the batch');
+	assert.equal(editorial.callsOf('create_ids').length, 3, 'ids are asked for once: for the case, for the batch and for its records');
 	assert.deepEqual((await readdir(join(caseDir, 'receipts'))).sort(), [`review-status-${batchId}.json`, `submission-${batchId}.json`]);
 	const marker = JSON.parse(await readFile(join(caseDir, 'data', 'ingestion.json'), 'utf8')) as { status: string; batch_id: string };
 	assert.deepEqual([marker.status, marker.batch_id], ['completed', batchId]);
