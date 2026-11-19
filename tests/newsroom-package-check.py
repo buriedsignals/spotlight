@@ -65,9 +65,7 @@ class NewsroomPackage(GATES.CaseFixture):
     def test_a_submission_starts_only_after_the_member_requested_ingestion_and_is_recorded_under_its_intent(self) -> None:
         case = self.build("requested", "ingest", "--clean", "--activated", "--proposal")
         key, other, batch = "a" * 64, "b" * 64, "00000000-0000-4000-8000-0000000ba7c4"
-        assigned = [{"type": "claim", "client_id": "claim:1", "uuid": "00000000-0000-4000-8000-00000000c1a1"}]
-        receipts = {"receipts": {f"submission-{batch}.json": {"tool": "start_case_review"}}, "review_state": "submitted",
-                    "assigned_ids": assigned}
+        receipts = {"receipts": {f"submission-{batch}.json": {"tool": "start_case_review"}}, "review_state": "submitted"}
         begin = ("begin", str(case), "--package-sha256", key, "--batch-id", batch)
         complete = ("complete", str(case), "--package-sha256", key, "--batch-id", batch)
         # No member decision on the ingest page yet: nothing starts.
@@ -89,8 +87,6 @@ class NewsroomPackage(GATES.CaseFixture):
         submission = json.loads((case / "data" / "newsroom-submission.json").read_text(encoding="utf-8"))
         self.assertEqual((submission["state"], submission["idempotency_key"]), ("submitted", key))
         self.assertEqual(json.loads((case / "receipts" / f"submission-{batch}.json").read_text(encoding="utf-8")), {"tool": "start_case_review"})
-        # The ids the service assigned are kept for the case's next batch.
-        self.assertEqual(json.loads((case / "data" / "newsroom-ids.json").read_text(encoding="utf-8"))["assigned_ids"], assigned)
         seam = ROOT / "scripts" / "spotlight-orchestration.py"
         status = json.loads(self.run_seam("status", "--json", str(case), script=seam).stdout)
         self.assertEqual(status["ingest"], {"state": "completed", "resume_at": "seal"})
@@ -110,18 +106,53 @@ class NewsroomPackage(GATES.CaseFixture):
         self.assertEqual(plain.returncode, 0, plain.stderr)
         self.assertNotIn("newsroom_edition", json.loads(plain.stdout))
 
-    def test_the_approved_batch_is_prepared_under_the_services_case_and_batch_ids(self) -> None:
+    def keep_ids(self, case: Path, ids: list[str], expect: int = 0) -> subprocess.CompletedProcess[str]:
+        return self.run_with("ids", str(case), payload={"ids": ids}, expect=expect)
+
+    @staticmethod
+    def service_ids(count: int, start: int = 1) -> list[str]:
+        return [f"00000000-0000-4000-8000-{number:012d}" for number in range(start, start + count)]
+
+    def test_each_record_keeps_one_newsroom_id_and_the_batch_is_prepared_under_the_services_ids(self) -> None:
         case = self.build("request", "ingest", "--clean", "--activated", "--proposal")
         approved = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))
+        kept_file = case / "data" / "newsroom-ids.json"
         out = self.root / "request.json"
+        # Nothing is kept before the member requested ingestion.
+        self.assertIn("ingestion has not been requested", self.keep_ids(case, [], expect=2).stderr)
+        self.request_ingest(case)
+        # A record with no newsroom id cannot be sent.
+        self.assertIn("no newsroom id is kept", self.request(case, expect=2).stderr)
+        self.assertIn("UUID4", self.keep_ids(case, ["claim:1"], expect=2).stderr)
+        missing = json.loads(self.keep_ids(case, []).stdout)["missing"]
+        self.assertGreater(missing, len(approved["claims"]))
+        self.assertFalse(kept_file.exists())
+        # Too few ids: the rest are still needed. An id already kept is not given to a second record.
+        first, rest = self.service_ids(1), self.service_ids(missing - 1, start=2)
+        self.assertEqual(json.loads(self.keep_ids(case, first).stdout)["missing"], missing - 1)
+        self.assertEqual(json.loads(self.keep_ids(case, first + rest).stdout)["missing"], 0)
+        kept = json.loads(kept_file.read_text(encoding="utf-8"))["record_ids"]
+        self.assertEqual(sorted(entry["uuid"] for entry in kept), sorted(first + rest))
+        # A record keeps its id: more ids change nothing.
+        before = kept_file.read_bytes()
+        self.assertEqual(json.loads(self.keep_ids(case, self.service_ids(3, start=900)).stdout)["missing"], 0)
+        self.assertEqual(kept_file.read_bytes(), before)
+
         self.run_seam("request", str(case), "--case-id", "case-uuid", "--batch-id", "batch-uuid", "--out", str(out))
         built = json.loads(out.read_text(encoding="utf-8"))
         request = built["request"]
         self.assertEqual((request["case_id"], request["batch_id"]), ("case-uuid", "batch-uuid"))
-        self.assertEqual([claim["client_id"] for claim in request["claims"]], [claim["id"] for claim in approved["claims"]])
+        claim_ids = {entry["id"]: entry["uuid"] for entry in kept if entry["type"] == "claim"}
+        self.assertEqual([claim["id"] for claim in request["claims"]], [claim_ids[claim["id"]] for claim in approved["claims"]])
         # The key the intent is recorded under is the sha256 of exactly what is sent.
         canonical = json.dumps(request, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         self.assertEqual(built["request_sha256"], hashlib.sha256(canonical).hexdigest())
+
+        # A new version of a record the newsroom holds under an id this case never kept is not given a new one.
+        revised = {**approved, "claims": [{**approved["claims"][0], "id": "claim:revised-elsewhere", "version": 2}]}
+        (case / "data" / "knowledge-batch.json").write_text(json.dumps(revised), encoding="utf-8")
+        self.assertIn("claim:revised-elsewhere, which this batch revises", self.keep_ids(case, self.service_ids(1, start=950), expect=2).stderr)
+        self.assertEqual(kept_file.read_bytes(), before)
         # Without an approved batch there is nothing to send.
         (case / "data" / "knowledge-batch.json").unlink()
         refused = self.run_seam("request", str(case), "--case-id", "case-uuid", "--batch-id", "batch-uuid", "--out", str(out), expect=2)
@@ -148,11 +179,14 @@ class StartCaseReviewInput(unittest.TestCase):
 
     PROVENANCE = {"method": "journalist"}
 
-    def convert(self, batch: dict[str, Any], server_ids: dict[tuple[str, str], str] | None = None) -> dict[str, Any]:
-        import newsroom_batch
-        return newsroom_batch.start_case_review_input(batch, "case-uuid", "batch-uuid", server_ids)
+    IDS = {("evidence", "ev:1"): "uuid-ev", ("source_expression", "sx:1"): "uuid-sx",
+           ("claim", "claim:1"): "uuid-claim", ("assessment", "as:1"): "uuid-as"}
 
-    def test_new_records_carry_client_ids_and_typed_references(self) -> None:
+    def convert(self, batch: dict[str, Any], record_ids: dict[tuple[str, str], str]) -> dict[str, Any]:
+        import newsroom_batch
+        return newsroom_batch.start_case_review_input(batch, "case-uuid", "batch-uuid", record_ids)
+
+    def test_records_carry_their_newsroom_ids_and_typed_references(self) -> None:
         request = self.convert({
             "schema_version": "1.1", "batch_id": "local-batch", "case_id": "local-case",
             "source_expressions": [{"id": "sx:1", "version": 1, "text": "Acme paid Doe.", "language": "en", "direct_quote": True,
@@ -165,35 +199,35 @@ class StartCaseReviewInput(unittest.TestCase):
             "assessments": [{"id": "as:1", "version": 1, "claim_ref": {"id": "claim:1", "version": 1}, "verdict": "verified",
                              "basis_refs": [{"type": "source_expression", "id": "sx:1", "version": 1}],
                              "flags": [{"code": "proposition_drift"}], "provenance": self.PROVENANCE}],
-        })
-        sx = {"id": {"type": "source_expression", "client_id": "sx:1"}, "version": 1}
+        }, self.IDS)
+        sx = {"id": {"type": "source_expression", "uuid": "uuid-sx"}, "version": 1}
         self.assertEqual(request, {
             "case_id": "case-uuid", "batch_id": "batch-uuid",
-            "evidence": [{"client_id": "ev:1", "version": 1, "provenance": self.PROVENANCE}],
-            "source_expressions": [{"client_id": "sx:1", "version": 1, "text": "Acme paid Doe.", "language": "en", "is_direct_quote": True,
-                                    "origin_ref": {"id": {"type": "evidence", "client_id": "ev:1"}, "version": 1, "derivative_id": "text"},
+            "evidence": [{"id": "uuid-ev", "version": 1, "provenance": self.PROVENANCE}],
+            "source_expressions": [{"id": "uuid-sx", "version": 1, "text": "Acme paid Doe.", "language": "en", "is_direct_quote": True,
+                                    "origin_ref": {"id": {"type": "evidence", "uuid": "uuid-ev"}, "version": 1, "derivative_id": "text"},
                                     "provenance": self.PROVENANCE}],
-            "claims": [{"client_id": "claim:1", "version": 1, "proposition": "Acme paid Doe.", "finding_id": "F1",
+            "claims": [{"id": "uuid-claim", "version": 1, "proposition": "Acme paid Doe.", "finding_id": "F1",
                         "origin_source_expression_ref": sx, "provenance": self.PROVENANCE}],
-            "assessments": [{"client_id": "as:1", "version": 1, "claim_ref": {"id": {"type": "claim", "client_id": "claim:1"}, "version": 1},
+            "assessments": [{"id": "uuid-as", "version": 1, "claim_ref": {"id": {"type": "claim", "uuid": "uuid-claim"}, "version": 1},
                              "verdict": "verified", "basis_refs": [sx], "provenance": self.PROVENANCE}],
         })
 
-    def test_a_later_version_and_a_reference_to_an_admitted_record_carry_the_services_ids(self) -> None:
+    def test_a_later_version_and_a_reference_to_a_record_outside_the_batch_carry_the_ids_the_case_kept(self) -> None:
         request = self.convert({
             "claims": [{"id": "claim:1", "version": 2, "proposition": "Acme paid Doe twice.",
                         "origin_source_expression_ref": {"id": "sx:1", "version": 1}, "provenance": self.PROVENANCE}],
-        }, {("claim", "claim:1"): "uuid-claim", ("source_expression", "sx:1"): "uuid-sx"})
+        }, self.IDS)
         self.assertEqual(request["claims"], [{
-            "existing_server_id": "uuid-claim", "version": 2, "proposition": "Acme paid Doe twice.",
-            "origin_source_expression_ref": {"id": {"type": "source_expression", "existing_server_id": "uuid-sx"}, "version": 1},
+            "id": "uuid-claim", "version": 2, "proposition": "Acme paid Doe twice.",
+            "origin_source_expression_ref": {"id": {"type": "source_expression", "uuid": "uuid-sx"}, "version": 1},
             "provenance": self.PROVENANCE}])
 
-    def test_a_record_the_service_never_assigned_an_id_is_refused_by_name(self) -> None:
+    def test_a_record_with_no_newsroom_id_is_refused_by_name(self) -> None:
         import newsroom_batch
         with self.assertRaisesRegex(newsroom_batch.Refused, r"claims\[0\]\.origin_source_expression_ref.*source_expression sx:9"):
             self.convert({"claims": [{"id": "claim:1", "version": 1,
-                                      "origin_source_expression_ref": {"id": "sx:9", "version": 1}, "provenance": self.PROVENANCE}]})
+                                      "origin_source_expression_ref": {"id": "sx:9", "version": 1}, "provenance": self.PROVENANCE}]}, self.IDS)
 
 
 if __name__ == "__main__":

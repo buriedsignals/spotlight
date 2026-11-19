@@ -24,7 +24,6 @@ const REVIEW_PAGE = 'https://editorial.newsroom.example/review/rev-1?cap=secret-
 // The service's answer to a stored batch, for the batch the harness sent.
 const stored = (args: Record<string, unknown>, more: Record<string, unknown> = {}) => ({
 	batch: { batch_info: { id: (args.request as { batch_id: string }).batch_id, status: 'submitted' }, records: {} },
-	assigned_ids: [],
 	...more,
 });
 
@@ -127,7 +126,7 @@ test('newsroom data handed to a model is capped, with a marker saying so', async
 	assert.match(text, /\[\.\.\. truncated at 20000 characters\]\nNEWSROOM_DATA \S+>>>$/);
 });
 
-test('a successful but malformed tool result stops the newsroom case: an id the service did not issue, a stored batch without its ids, a review address that is not an http(s) URL', async () => {
+test('a successful but malformed tool result stops the newsroom case: ids the service did not issue, a stored batch without its id, a review address that is not an http(s) URL', async () => {
 	const url = 'https://editorial.newsroom.example/mcp';
 	for (const [tool, result] of [
 		['get_record', { content: 'not a list' }],
@@ -137,13 +136,14 @@ test('a successful but malformed tool result stops the newsroom case: an id the 
 		['get_record', { structuredContent: { record: [] } }],
 		['traverse', { structuredContent: { root: 'claim:1', nodes: [] } }],
 		['get_record', `{"structuredContent":${'{"a":'.repeat(100_000)}1${'}'.repeat(100_000)}}`],
-		['create_id', { structuredContent: { result: 42 } }],
+		['create_ids', { structuredContent: { result: 42 } }],
+		['create_ids', { structuredContent: { result: [] } }],
+		['create_ids', { structuredContent: { result: [BATCH, 42] } }],
 		['register_case', { structuredContent: { name: 'case-a' } }],
 		['get_knowledge_batch_info', { structuredContent: { id: BATCH } }],
-		['start_case_review', { structuredContent: { batch: { batch_info: {} }, assigned_ids: [] } }],
-		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, assigned_ids: [{ type: 'claim', client_id: 'claim:1' }] } }],
-		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, assigned_ids: [], review_url: 42 } }],
-		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, assigned_ids: [], review_url: 'not-a-url' } }],
+		['start_case_review', { structuredContent: { batch: { batch_info: {} } } }],
+		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, review_url: 42 } }],
+		['start_case_review', { structuredContent: { batch: { batch_info: { id: BATCH } }, review_url: 'not-a-url' } }],
 	] as const) {
 		const fetchImpl: typeof fetch = async (_url, init) => {
 			const message = JSON.parse(String(init?.body)) as { id?: string; method: string };
@@ -247,7 +247,7 @@ async function submittable(t: { after(fn: () => unknown): void }, handlers: Para
 
 test('Submit sends the approved batch under the service\'s ids, opens the newsroom review page in the member\'s browser and keeps its address out of the outcome, the receipts and the case', async (t) => {
 	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, {
-		start_case_review: (args) => stored(args, { review_url: REVIEW_PAGE, assigned_ids: [{ type: 'claim', client_id: 'claim:from-the-batch', uuid: BATCH }] }),
+		start_case_review: (args) => stored(args, { review_url: REVIEW_PAGE }),
 		get_knowledge_batch_info: (args) => ({ id: args.batch_id, status: 'submitted', review_url: REVIEW_PAGE }),
 	});
 	const opened: string[] = [];
@@ -257,12 +257,15 @@ test('Submit sends the approved batch under the service\'s ids, opens the newsro
 	assert.deepEqual(opened, [REVIEW_PAGE]);
 	assert.equal(outcome.state, 'submitted');
 	assert.equal((outcome as { review_opened: boolean }).review_opened, true);
-	// The batch travels as the service's input: the registered case, the batch id it issued, records by client id.
-	const [{ request }] = newsroom.callsOf('start_case_review') as Array<{ request: { case_id: string; batch_id: string; claims: Array<{ client_id: string }> } }>;
+	// The batch travels as the service's input: the registered case, the batch id it issued, each record under an id it issued.
+	const [{ request }] = newsroom.callsOf('start_case_review') as Array<{ request: { case_id: string; batch_id: string; claims: Array<{ id: string }> } }>;
 	const approved = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-batch.json'), 'utf8')) as { claims: Array<{ id: string }> };
-	assert.deepEqual([request.case_id, request.batch_id, request.claims.map((claim) => claim.client_id)], [caseRef, newsroom.staged[0], approved.claims.map((claim) => claim.id)]);
-	// The ids the service assigned are kept for this case's next batch.
-	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'newsroom-ids.json'), 'utf8')).assigned_ids, [{ type: 'claim', client_id: 'claim:from-the-batch', uuid: BATCH }]);
+	// The case keeps which id each record went under, for this case's next batch.
+	const kept = JSON.parse(await readFile(join(caseDir, 'data', 'newsroom-ids.json'), 'utf8')).record_ids as Array<{ type: string; id: string; uuid: string }>;
+	const keptFor = (id: string) => kept.find((entry) => entry.type === 'claim' && entry.id === id)?.uuid;
+	assert.deepEqual([request.case_id, request.batch_id, request.claims.map((claim) => claim.id)], [caseRef, newsroom.staged[0], approved.claims.map((claim) => keptFor(claim.id))]);
+	assert.ok(request.claims.length > 0 && request.claims.every((claim) => /^00000000-0000-4000-8000-\d{12}$/.test(claim.id)), 'every record id is one the service issued');
+	assert.equal(new Set(kept.map((entry) => entry.uuid)).size, kept.length, 'no id serves two records');
 	const written = [JSON.stringify(outcome)];
 	for (const entry of await readdir(caseDir, { recursive: true, withFileTypes: true })) {
 		if (entry.isFile()) written.push(await readFile(join(entry.parentPath, entry.name), 'utf8').catch(() => ''));
@@ -314,10 +317,10 @@ test('a submission cut off before the service stored the batch is sent again und
 	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true });
 
 	assert.equal(outcome.state, 'submitted');
-	const sent = (newsroom.callsOf('start_case_review') as Array<{ request: { batch_id: string } }>).map((call) => call.request.batch_id);
+	const sent = (newsroom.callsOf('start_case_review') as Array<{ request: Record<string, unknown> }>).map((call) => call.request);
 	assert.equal(sent.length, 2);
-	assert.equal(sent[0], sent[1]);
-	assert.equal(newsroom.callsOf('create_id').length, 1, 'the retry reuses the batch id it kept');
+	assert.deepEqual(sent[1], sent[0], 'the retry sends the same batch id and the same record ids');
+	assert.equal(newsroom.callsOf('create_ids').length, 2, 'the retry asks for no new id: one call for the batch, one for its records');
 });
 
 test('a resumed batch the service refuses as already submitted is taken as stored, not as refused', async (t) => {
@@ -428,7 +431,7 @@ test('a case is registered under an id the service issued and the case kept firs
 	const first = await ensureCaseRegistered(client, config, runPackage);
 
 	const id = first.reference.case_ref;
-	assert.deepEqual(newsroom.calls.map((call) => [call.tool, call.args]), [['create_id', {}], ['register_case', { case_id: id, case_name: 'Acme payments' }]]);
+	assert.deepEqual(newsroom.calls.map((call) => [call.tool, call.args]), [['create_ids', { count: 1 }], ['register_case', { case_id: id, case_name: 'Acme payments' }]]);
 	// Kept before the service was asked to register it, then confirmed.
 	assert.deepEqual(kept.map((reference) => [reference.case_ref, reference.confirmed]), [[id, false], [id, true]]);
 	assert.equal(first.registered, true);

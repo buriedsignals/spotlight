@@ -3,7 +3,7 @@
 // tool shapes of docs/newsroom-editorial-mcp.md. It records every tool call
 // and the Authorization header it came with. Each tool's answer is the test's
 // handler, or the default below. Like the contract's server, it issues every
-// id (create_id), refuses a case id or a batch id it already holds, lists its
+// id (create_ids), refuses a case id or a batch id it already holds, lists its
 // tools (tools/list), and answers 404 on a session it ended.
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
@@ -43,7 +43,7 @@ function defaults(held: Held): Record<string, ToolHandler> {
 	// The status read carries the review address too (fieldpress-app #42).
 	const batchStatus = (id: string) => ({ ...batchInfo(id), review_url: FAKE_REVIEW_URL });
 	return {
-		create_id: () => ({ result: `00000000-0000-4000-8000-${String((held.issued += 1)).padStart(12, '0')}` }),
+		create_ids: (args) => ({ result: Array.from({ length: Number(args.count) }, () => `00000000-0000-4000-8000-${String((held.issued += 1)).padStart(12, '0')}`) }),
 		register_case: (args) => {
 			const id = String(args.case_id);
 			if (held.cases.has(id)) return { isError: true, text: `case ${id} is already registered` };
@@ -57,7 +57,6 @@ function defaults(held: Held): Record<string, ToolHandler> {
 			return {
 				batch: { batch_info: { ...batchInfo(request.batch_id), case_id: request.case_id }, records: {} },
 				review_url: FAKE_REVIEW_URL,
-				assigned_ids: [],
 				warnings: [],
 				integrity_status: 'passed',
 				decision_check_status: 'not_implemented',

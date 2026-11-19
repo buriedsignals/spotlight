@@ -363,13 +363,12 @@ export class EditorialClient {
 			const nonEmpty = (field: unknown) => typeof field === 'string' && field.length > 0;
 			const uuidOf = (field: unknown) => typeof field === 'string' && SAFE_ID.test(field);
 			const malformed =
-				(tool === 'create_id' && !uuidOf(value.result)) ||
+				(tool === 'create_ids' && !(Array.isArray(value.result) && value.result.length > 0 && value.result.every(uuidOf))) ||
 				((tool === 'register_case' || tool === 'get_case_info') && !uuidOf(value.id)) ||
 				(carriesReview && value.rejected !== true && value.review_url !== undefined && !(typeof value.review_url === 'string' && /^https?:$/.test(URL.parse(value.review_url)?.protocol ?? ''))) ||
 				(tool === 'get_knowledge_batch_info' && !(uuidOf(value.id) && nonEmpty(value.status))) ||
 				(tool === 'start_case_review' && value.rejected !== true &&
-					(!(isObject(value.batch) && isObject(value.batch.batch_info) && uuidOf(value.batch.batch_info.id)) ||
-						!(Array.isArray(value.assigned_ids) && value.assigned_ids.every((entry) => isObject(entry) && nonEmpty(entry.type) && nonEmpty(entry.client_id) && uuidOf(entry.uuid))))) ||
+					!(isObject(value.batch) && isObject(value.batch.batch_info) && uuidOf(value.batch.batch_info.id))) ||
 				// Knowledge answers: the top-level shapes of schemas/editorial-mcp.
 				(tool === 'search_knowledge' && !(Array.isArray(value.records) && value.records.every(isObject))) ||
 				(tool === 'get_record' && !isObject(value.record)) ||
@@ -447,12 +446,26 @@ function recordInCase(runPackage: RunPackage, args: string[], input?: unknown): 
 
 // ── Step 1: case start ───────────────────────────────────────────────────────
 
-// `case_ref` is the case id the service issued (create_id). `confirmed` is
+// `case_ref` is the case id the service issued (create_ids). `confirmed` is
 // false between keeping the id and the service's answer to register_case.
 export type CaseReference = { case_ref: string; title: string; editorial_origin: string; client_case_id: string; confirmed: boolean };
 
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const fileSafe = (id: string) => id.replace(/[^A-Za-z0-9._-]/g, '_');
+
+// The service issues at most this many ids in one call.
+const MOST_IDS_PER_CALL = 1000;
+
+// `count` new ids from the service, for a case, a batch or records. The
+// service does not reserve them: the case keeps each one before using it.
+async function createIds(client: EditorialClient, count: number, signal?: AbortSignal): Promise<string[]> {
+	const ids: string[] = [];
+	while (ids.length < count) {
+		const answer = await client.call('create_ids', { count: Math.min(count - ids.length, MOST_IDS_PER_CALL) }, signal);
+		ids.push(...(answer.result as string[]));
+	}
+	return ids;
+}
 
 // A read the service answers with a tool error when it holds no such record.
 async function held(client: EditorialClient, tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
@@ -464,7 +477,7 @@ async function held(client: EditorialClient, tool: string, args: Record<string, 
 	}
 }
 
-// Registers the case once. Every id is the service's: create_id issues it,
+// Registers the case once. Every id is the service's: create_ids issues it,
 // the case keeps it before register_case uses it, and a resumed case whose
 // registration was never confirmed asks get_case_info first, because the
 // service refuses an id it already holds. Owner and organization come from
@@ -496,8 +509,8 @@ export async function ensureCaseRegistered(
 		reference = { ...(stored as unknown as CaseReference), confirmed: stored.confirmed === true };
 		if (reference.confirmed) return { reference, registered: false };
 	} else {
-		const issued = await client.call('create_id', {}, signal);
-		reference = { case_ref: issued.result as string, title: editorial.caseTitle, editorial_origin: origin, client_case_id: config.caseId, confirmed: false };
+		const [caseRef] = await createIds(client, 1, signal);
+		reference = { case_ref: caseRef, title: editorial.caseTitle, editorial_origin: origin, client_case_id: config.caseId, confirmed: false };
 		await recordInCase(runPackage, ['register', config.caseDir], reference);
 	}
 	const known = stored ? await held(client, 'get_case_info', { case_id: reference.case_ref }, signal) : undefined;
@@ -541,19 +554,25 @@ export async function pendingSubmission(runPackage: RunPackage, caseDir: string)
 
 // Sends the approved batch with start_case_review (scripts/newsroom-package.py
 // turns it into the service's input) and reads the batch's review status.
-// The batch id is the service's (create_id) and the service stores an id at
-// most once, so the intent is recorded first, with that id, under the case
-// lock and only once the member requested ingestion on the ingest page. A
-// crash then leaves a pending submission: the next start asks the service
-// whether it holds the batch and sends it only if not. A refused batch leaves
-// the case at Ingest with the reasons recorded; otherwise the receipts, the
-// ids the service assigned and the completed ingest marker are recorded
-// together, and the phase seals them.
+// The batch id and every record's id are the service's (create_ids), and the
+// case keeps each record's id before the request is built, so a retry sends
+// the same request. The service stores a batch id at most once, so the intent
+// is recorded first, with that id, under the case lock and only once the
+// member requested ingestion on the ingest page. A crash then leaves a
+// pending submission: the next start asks the service whether it holds the
+// batch and sends it only if not. A refused batch leaves the case at Ingest
+// with the reasons recorded; otherwise the receipts and the completed ingest
+// marker are recorded together, and the phase seals them.
 export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	const { client, caseRef, caseDir, runPackage, signal } = deps;
 	const pending = await recordInCase(runPackage, ['pending', caseDir]);
 	const resumed = pending.pending === true;
-	const batchId = resumed ? String(pending.batch_id) : ((await client.call('create_id', {}, signal)).result as string);
+	const batchId = resumed ? String(pending.batch_id) : (await createIds(client, 1, signal))[0];
+	const keepRecordIds = async (ids: string[]) => Number((await recordInCase(runPackage, ['ids', caseDir], { ids })).missing);
+	const missing = await keepRecordIds([]);
+	if (missing > 0 && (await keepRecordIds(await createIds(client, missing, signal))) !== 0) {
+		throw new CaseRecordError('the case could not keep a newsroom id for every record of the batch');
+	}
 	const scratch = mkdtempSync(join(tmpdir(), 'spotlight-batch-'));
 	let build: { request: Record<string, unknown>; request_sha256: string };
 	try {
@@ -608,7 +627,7 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	await recordInCase(
 		runPackage,
 		['complete', caseDir, '--package-sha256', key, '--batch-id', batchId],
-		{ receipts, review_state: reviewState, assigned_ids: answer ? client.sanitize(answer.assigned_ids) : null },
+		{ receipts, review_state: reviewState },
 	);
 	return {
 		state: 'submitted',
