@@ -6,8 +6,11 @@
 # Resolution, first match wins:
 #   1. $SPOTLIGHT_PYTHON, an absolute path to an executable interpreter;
 #   2. the checkout's own virtual environment, .venv/;
-#   3. python3 on PATH.
+#   3. python3 on PATH, except in an Indicator Labs install.
 # A set but unusable SPOTLIGHT_PYTHON is an error, never a silent fallback.
+# Indicator Labs writes .spotlight/engine-python next to the .venv/bin/python
+# wrapper it renders; with that marker present a missing wrapper is refused,
+# because PATH Python lacks Spotlight's dependencies. Windows is not covered.
 set -eu
 
 if [ -n "${SPOTLIGHT_PYTHON:-}" ]; then
@@ -28,4 +31,13 @@ for candidate in "$root/.venv/bin/python" "$root/.venv/Scripts/python.exe"; do
 		exec "$candidate" "$@"
 	fi
 done
+if [ -f "$root/.spotlight/engine-python" ]; then
+	case "$(uname -s 2>/dev/null)" in
+		MINGW*|MSYS*|CYGWIN*) ;;
+		*)
+			echo "spotlight-python: this Indicator Labs install has no usable Spotlight Python ($root/.venv/bin/python is missing or not executable). Open Indicator Labs and choose Update." >&2
+			exit 127
+			;;
+	esac
+fi
 exec python3 "$@"

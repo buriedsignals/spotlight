@@ -178,7 +178,10 @@ Skills run Python through `scripts/spotlight-python`, never a bare `python3`
 (a system Python may lack Crawl4AI and the other dependencies). It runs
 `$SPOTLIGHT_PYTHON` when set (an absolute path; an unusable one is an error,
 not a fallback), else the checkout's `.venv/` interpreter, else `python3` on
-`PATH`. The review server resolves the same interpreter.
+`PATH`. An Indicator Labs install marks itself with `.spotlight/engine-python`
+next to the `.venv/bin/python` wrapper it renders; with that marker present
+(macOS, Linux) the `PATH` fallback is refused with exit 127 and a pointer to
+Indicator Labs → Update. The review server resolves the same interpreter.
 
 `.spotlight-config.json` is `$SPOTLIGHT_CONFIG` when set (an absolute path),
 else `.spotlight-config.json` at the checkout root. Every script that reads
