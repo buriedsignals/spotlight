@@ -12,10 +12,35 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "integrations" / "rlm"))
-from run_rlm import MODEL, run, validate_analysis  # noqa: E402
+from run_rlm import MODEL, get_case_dir, run, validate_analysis  # noqa: E402
+
+
+def check_cases_root_from_install_config() -> None:
+    """Without SPOTLIGHT_CASES_ROOT (a session not started by the launcher) the
+    RLM writes under the install config's root, not the checkout's cases/."""
+    saved = {name: os.environ.get(name) for name in ("SPOTLIGHT_CASES_ROOT", "SPOTLIGHT_CONFIG")}
+    with tempfile.TemporaryDirectory() as raw:
+        configured = Path(raw) / "configured-cases"
+        config = Path(raw) / "spotlight-config.json"
+        config.write_text(json.dumps({"case_workspace_root": str(configured)}), encoding="utf-8")
+        os.environ.pop("SPOTLIGHT_CASES_ROOT", None)
+        os.environ["SPOTLIGHT_CONFIG"] = str(config)
+        try:
+            assert get_case_dir("case-one") == (configured / "case-one").resolve(), get_case_dir("case-one")
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+    print("ok install-config cases root")
 
 
 def main() -> int:
+    check_cases_root_from_install_config()
+    # The checks below write under the checkout's cases/; pin it so a local
+    # install config cannot move them.
+    os.environ["SPOTLIGHT_CASES_ROOT"] = str(ROOT / "cases")
     with tempfile.TemporaryDirectory(dir=ROOT / "cases") as tmp_dir:
         project = Path(tmp_dir).name
         research = Path(tmp_dir) / "research"

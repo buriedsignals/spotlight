@@ -61,6 +61,28 @@ def main() -> int:
             else:
                 os.environ["SPOTLIGHT_CASES_ROOT"] = old_cases_root
 
+        # A session not started by the launcher has no SPOTLIGHT_CASES_ROOT:
+        # cases still go to the install config's root, not the checkout's cases/.
+        configured = base / "configured-cases"
+        config = base / "spotlight-config.json"
+        config.write_text(json.dumps({"case_workspace_root": str(configured)}), encoding="utf-8")
+        saved = {name: os.environ.get(name) for name in ("SPOTLIGHT_CASES_ROOT", "SPOTLIGHT_CONFIG")}
+        os.environ.pop("SPOTLIGHT_CASES_ROOT", None)
+        os.environ["SPOTLIGHT_CONFIG"] = str(config)
+        try:
+            config_run_dir = integration_run_dir("case-four", "rlm", "run-004")
+            assert config_run_dir == (configured / "case-four" / "research" / "rlm" / "run-004").resolve(), config_run_dir
+            config.write_text(json.dumps({"cases_root": str(configured / "legacy")}), encoding="utf-8")
+            legacy_run_dir = integration_run_dir("case-four", "rlm", "run-004")
+            assert legacy_run_dir == (configured / "legacy" / "case-four" / "research" / "rlm" / "run-004").resolve(), legacy_run_dir
+            print("ok install-config cases root without SPOTLIGHT_CASES_ROOT")
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
         proc = run_subprocess(["python3", "-c", "print('ok')"])
         assert proc.returncode == 0 and proc.stdout.strip() == "ok"
         print("ok subprocess argument list")

@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from ._cli import _kill_tree
-from ._credentials import ConfigPathError, config_path
+from ._cases_root import CasesRootError, cases_root_path
 from ._engine import bsig_path
 
 CHECKOUT = Path(__file__).resolve().parents[1]
@@ -106,20 +106,11 @@ class CaseRefused(Exception):
 
 
 def cases_root() -> Path:
-    """``$SPOTLIGHT_CASES_ROOT`` (set by the Pi launcher), else the install
-    config's ``case_workspace_root`` (legacy ``cases_root``), else ``cases/``."""
-    configured = os.environ.get("SPOTLIGHT_CASES_ROOT", "").strip()
-    if not configured:
-        try:
-            path = config_path()
-            config = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-        except (OSError, ValueError, ConfigPathError) as exc:
-            raise CaseRefused("the install config cannot be read") from exc
-        if not isinstance(config, dict):
-            raise CaseRefused("the install config cannot be read")
-        configured = str(config.get("case_workspace_root") or config.get("cases_root") or "cases").strip()
-    root = Path(configured).expanduser()
-    root = root if root.is_absolute() else CHECKOUT / root
+    """The cases root (``integrations/_cases_root.py``); it must exist."""
+    try:
+        root = cases_root_path(CHECKOUT)
+    except CasesRootError as exc:
+        raise CaseRefused(str(exc)) from exc
     try:
         return root.resolve(strict=True)
     except OSError as exc:
