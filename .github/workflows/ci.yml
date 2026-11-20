@@ -105,6 +105,32 @@ jobs:
           raise SystemExit(1 if failed else 0)
           PY
 
+  archive:
+    name: Install archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Python fixture dependencies
+        run: pip install --quiet jsonschema==4.25.1 requests==2.32.5 jinja2==3.1.6
+      - name: Unpack git archive (the payload Indicator Labs installs)
+        run: mkdir "$RUNNER_TEMP/archive" && git archive HEAD | tar -x -C "$RUNNER_TEMP/archive"
+      - name: Archive leaves out tests, evals and the website; validators and preflight run on it
+        run: python tests/archive-check.py "$RUNNER_TEMP/archive"
+      - name: Pi harness boots from the archive
+        working-directory: ${{ runner.temp }}/archive
+        shell: bash  # -eo pipefail: a failing test run fails the step through tee
+        run: |
+          npm ci --prefix harness/pi
+          node --test --test-reporter=spec --test-name-pattern='stdout carries only RPC records|a missing required variable stops the launcher|a worker writes through its typed tools' harness/pi/src/launcher.part1.test.ts | tee "$RUNNER_TEMP/pi-boot.log"
+          # A renamed test would match nothing and pass silently; require all three.
+          grep -q '^ℹ pass 3$' "$RUNNER_TEMP/pi-boot.log"
+
   review-handoff:
     name: Review page handoff (macOS)
     runs-on: macos-latest
