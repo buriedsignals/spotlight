@@ -1,0 +1,29 @@
+# What an install does not need is left out of `git archive`, the payload
+# Indicator Labs installs. A denylist, not an allowlist: the runtime reads
+# docs/, lanes/, upstreams/, third_party/ and the licence files by path.
+# Only `git archive` honours export-ignore; GitHub Pages still builds the
+# website from the repository tree. tests/archive-check.py and the CI
+# "Install archive" job check the unpacked archive.
+
+# Development
+/tests export-ignore
+/evals export-ignore
+/.github export-ignore
+/CONTRIBUTING.md export-ignore
+/install-spotlight.sh export-ignore
+
+# Website (GitHub Pages)
+/index.html export-ignore
+/going-sovereign.html export-ignore
+/going-sovereign export-ignore
+/docs/index.html export-ignore
+/components export-ignore
+/shared export-ignore
+/DESIGN.md export-ignore
+/CNAME export-ignore
+/.nojekyll export-ignore
+/og-image.png export-ignore
+/robots.txt export-ignore
+/sitemap.xml export-ignore
+/llms.txt export-ignore
+/llms_full.txt export-ignore
