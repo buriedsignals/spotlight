@@ -66,10 +66,10 @@ Spotlight is **sovereign by default**: `fetch` → Crawl4AI (`integrations.scrap
 
 ```
 execute-shell("scripts/spotlight-python -m integrations.scraping https://example.com --provider crawl4ai --no-escalate > /dev/null && echo fetch:ok")   # Crawl4AI, a real fetch
-execute-shell("curl -s --get --data-urlencode 'q=wikipedia' --data-urlencode 'format=json' \"${SEARXNG_URL:-http://localhost:8899}/search\" | scripts/spotlight-python -c 'import json,sys; d=json.load(sys.stdin); print(\"searxng results:\", len(d[\"results\"]), \"unresponsive:\", d[\"unresponsive_engines\"])'")   # SearXNG, a real query
+execute-shell("scripts/spotlight-python -m integrations.search.probe")   # the search backing: SearXNG, a real query; Firecrawl when SEARCH_PROVIDER=firecrawl
 ```
 
-Both probes test the backing end to end: an HTTP 200 from SearXNG with zero results (every engine suspended, CAPTCHA-blocked, or crashing) and an installed-but-unusable Crawl4AI are failures, not green.
+Both probes test the backing end to end: an HTTP 200 from SearXNG with zero results (every engine suspended, CAPTCHA-blocked, or crashing) and an installed-but-unusable Crawl4AI are failures, not green. With `SEARCH_PROVIDER=firecrawl` (Indicator Labs sets it when the member turned Firecrawl on) every search goes to Firecrawl, so the search probe does not query SearXNG; it prints `search: firecrawl …` and fails only when Firecrawl may not run (sensitive mode, `firecrawl_mode: off`, no `firecrawl` CLI). Report that line as the search backing; do not report SearXNG as missing.
 
 If the fetch probe fails:
 

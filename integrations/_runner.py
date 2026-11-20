@@ -27,6 +27,7 @@ _CHECKOUT = Path(__file__).resolve().parents[1]
 if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
 from integrations._cli import run_captured  # noqa: E402
+from integrations._cases_root import CasesRootError, cases_root_path  # noqa: E402
 
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
@@ -56,10 +57,10 @@ def repo_root() -> Path:
 def case_workspace_root(root: Path | None = None) -> Path:
     if root is not None:
         return (root / "cases").resolve()
-    configured = os.environ.get("SPOTLIGHT_CASES_ROOT")
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return (repo_root() / "cases").resolve()
+    try:
+        return cases_root_path().resolve()
+    except CasesRootError as exc:
+        raise IntegrationError(str(exc)) from exc
 
 
 def reject_shell_metacharacters(value: str, label: str) -> None:

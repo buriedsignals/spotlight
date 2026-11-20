@@ -44,10 +44,20 @@ export function which(command, pathValue = process.env.PATH ?? "") {
   return "";
 }
 
+function isRegularFile(path) {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 // The Spotlight interpreter, the rule scripts/spotlight-python applies for the
 // skills: SPOTLIGHT_PYTHON (an absolute path), else the checkout's .venv, else
 // python3 on PATH. A relative SPOTLIGHT_PYTHON is refused, never looked up.
-export function spotlightPython({ env = process.env, root = CHECKOUT_ROOT } = {}) {
+// In an Indicator Labs install (marker .spotlight/engine-python, written with
+// the .venv/bin/python wrapper) PATH Python is refused too; not on Windows.
+export function spotlightPython({ env = process.env, root = CHECKOUT_ROOT, platform = process.platform } = {}) {
   const configured = (env.SPOTLIGHT_PYTHON ?? "").trim();
   if (configured) {
     if (!isAbsolute(configured)) throw new Error("SPOTLIGHT_PYTHON must be an absolute path");
@@ -62,6 +72,11 @@ export function spotlightPython({ env = process.env, root = CHECKOUT_ROOT } = {}
     } catch {
       // No checkout venv here.
     }
+  }
+  if (platform !== "win32" && isRegularFile(join(root, ".spotlight", "engine-python"))) {
+    throw new Error(
+      `this Indicator Labs install has no usable Spotlight Python (${join(root, ".venv", "bin", "python")} is missing or not executable). Open Indicator Labs and choose Update.`,
+    );
   }
   return which("python3", env.PATH ?? "") || which("python", env.PATH ?? "");
 }

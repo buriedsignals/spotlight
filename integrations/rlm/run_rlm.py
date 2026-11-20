@@ -17,6 +17,10 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from integrations._cases_root import CasesRootError, cases_root_path  # noqa: E402
+
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
@@ -76,10 +80,10 @@ def resolve_case_path(case_dir: Path, relative_path: str) -> Path:
 
 
 def case_workspace_root() -> Path:
-    configured = os.environ.get("SPOTLIGHT_CASES_ROOT")
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return ROOT / "cases"
+    try:
+        return cases_root_path()
+    except CasesRootError as exc:
+        raise RLMError(str(exc)) from exc
 
 
 def get_case_dir(project: str) -> Path:

@@ -136,6 +136,27 @@ test("the seam runs the Spotlight interpreter: SPOTLIGHT_PYTHON, else the checko
   assert.equal(spotlightPython({ env: { PATH }, root }), venvPython);
 });
 
+test("an Indicator Labs install marker refuses python3 on PATH; without it the seam falls back", (t) => {
+  const root = tempRoot(t);
+  const PATH = process.env.PATH;
+  // From-repo installs (no marker), including one whose config names a top-level env_file, keep the fallback.
+  assert.equal(spotlightPython({ env: { PATH }, root, platform: "darwin" }), which("python3", PATH));
+  writeFileSync(join(root, ".spotlight-config.json"), JSON.stringify({ env_file: join(root, "keys.env") }));
+  assert.equal(spotlightPython({ env: { PATH }, root, platform: "linux" }), which("python3", PATH));
+  mkdirSync(join(root, ".spotlight"), { recursive: true });
+  writeFileSync(join(root, ".spotlight", "engine-python"), "");
+  assert.throws(() => spotlightPython({ env: { PATH }, root, platform: "darwin" }), /Indicator Labs.*Update/);
+  // Windows keeps today's resolution.
+  assert.equal(spotlightPython({ env: { PATH }, root, platform: "win32" }), which("python3", PATH));
+  // The marker only removes the PATH fallback: an explicit or checkout interpreter still runs.
+  assert.equal(spotlightPython({ env: { PATH, SPOTLIGHT_PYTHON: "/opt/spotlight/bin/python" }, root, platform: "darwin" }), "/opt/spotlight/bin/python");
+  const venvPython = join(root, ".venv", "bin", "python");
+  mkdirSync(join(root, ".venv", "bin"), { recursive: true });
+  writeFileSync(venvPython, "#!/bin/sh\n");
+  chmodSync(venvPython, 0o755);
+  assert.equal(spotlightPython({ env: { PATH }, root, platform: "darwin" }), venvPython);
+});
+
 test("the child environment drops keys, tokens and loader hooks", () => {
   const env = safeChildEnvironment({
     PATH: "/usr/bin",

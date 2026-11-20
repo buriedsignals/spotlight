@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """scripts/spotlight-python picks the Spotlight interpreter every skill step runs:
-SPOTLIGHT_PYTHON (absolute), else the checkout's .venv, else python3 on PATH.
+SPOTLIGHT_PYTHON (absolute), else the checkout's .venv, else python3 on PATH
+unless an Indicator Labs marker (.spotlight/engine-python) refuses it.
 Each case runs the real launcher against fake interpreters that print a tag."""
 
 from __future__ import annotations
@@ -45,6 +46,28 @@ def main() -> int:
         base = {"PATH": f"{path_dir}{os.pathsep}/usr/bin:/bin"}
 
         expect("python3 on PATH without a venv or SPOTLIGHT_PYTHON", run(launcher, base), 0, "path-python3 scripts/x.py --flag")
+        config = checkout / ".spotlight-config.json"
+        config.write_text('{"env_file": "/tmp/keys.env"}', encoding="utf-8")
+        expect("a from-repo config with a top-level env_file keeps the PATH fallback", run(launcher, base), 0, "path-python3 scripts/x.py --flag")
+        config.unlink()
+
+        # An Indicator Labs install that rendered its wrapper leaves this marker:
+        # a missing wrapper is then refused, never replaced by PATH Python.
+        marker = checkout / ".spotlight" / "engine-python"
+        marker.parent.mkdir()
+        marker.write_text("", encoding="utf-8")
+        refused = run(launcher, base)
+        expect("the Engine marker refuses python3 on PATH", refused, 127)
+        if "Indicator Labs" not in refused.stderr or "Update" not in refused.stderr or refused.stdout:
+            failures.append(f"the refusal names Indicator Labs and Update and runs nothing: {refused!r}")
+        windows_dir = tmp / "windows"
+        (windows_dir / "uname").parent.mkdir()
+        (windows_dir / "uname").write_text('#!/bin/sh\necho MINGW64_NT-10.0\n', encoding="utf-8")
+        (windows_dir / "uname").chmod(0o755)
+        windows = {"PATH": f"{windows_dir}{os.pathsep}{base['PATH']}"}
+        expect("Windows (Git Bash) keeps the PATH fallback", run(launcher, windows), 0, "path-python3 scripts/x.py --flag")
+        marked_pinned = fake_python(tmp / "marked" / "python", "marked-python")
+        expect("the marker leaves SPOTLIGHT_PYTHON alone", run(launcher, {**base, "SPOTLIGHT_PYTHON": str(marked_pinned)}), 0, "marked-python scripts/x.py --flag")
         fake_python(checkout / ".venv" / "bin" / "python", "venv-python")
         expect("the checkout venv before PATH", run(launcher, base), 0, "venv-python scripts/x.py --flag")
         pinned = fake_python(tmp / "pinned" / "python", "pinned-python")
