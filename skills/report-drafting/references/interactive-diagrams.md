@@ -7,7 +7,13 @@ model—emits all Mermaid source. Follow `diagram-design.md` for type selection
 and visual grammar. The renderer pins Mermaid to `11.16.1` and
 `@mermaid-js/layout-elk` to `0.2.2`, uses strict Mermaid security, and emits no
 `click` directives or node URLs. Keep the font-ready initialization, natural
-SVG sizing, overflow fixes, and canvas controls below.
+SVG sizing, overflow fixes, and canvas controls below. The renderer
+(`scripts/report_html.py`) renders each diagram with its own id (Mermaid's
+batch runner can draw two diagrams into one canvas) and, since November 2026,
+sets `wrappingWidth: 420` so the width Mermaid measures for a label matches the
+unwrapped label it draws, then fits each canvas to the union of the SVG and its
+labels and sizes the frame to the result, so nothing is clipped at the default
+view.
 
 Default capability for `report.html`. When the case involves an **entity network, money flow, funnel, or pipeline** (≥3 actors with directed relationships), the report SHOULD carry one or more interactive diagrams built with this recipe. Battle-tested in the health-insider investigation (June 2026); every fix below was learned against a real rendering failure — do not "simplify" them away.
 

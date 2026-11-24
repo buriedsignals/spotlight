@@ -6,7 +6,7 @@ This script owns safe, byte-deterministic file construction from that draft plus
 ``data/findings.json`` and ``data/fact-check.json``.
 
 * ``findings-report.md`` — claim-by-claim editorial audit
-* ``report.html`` — designed reader artifact (using the canonical template CSS)
+* ``report.html`` — reader page laid out by ``report_html.py`` with the canonical template CSS
 * ``evidence-map.json`` — machine-readable claim/evidence ledger
 
 No source, quote, verdict, or confidence is invented here. All case-controlled text
@@ -28,6 +28,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import decision_signals_lib as decision_signals
+import report_html
 from source_expression_contract import lifecycle_state
 from spotlight_orchestration.case_writer import atomic_write_files
 from spotlight_orchestration.contract import OrchestrationError
@@ -61,6 +62,10 @@ VERDICT_LABEL = {
     "mischaracterized": "Mischaracterized",
     "not_checkable": "Not checkable",
 }
+# How a findings.json connection is known (schemas/findings.schema.json). An
+# inferred link is drawn undirected and dotted: it must never read as a step.
+CONNECTION_BASIS = ("record", "reported", "inferred")
+EDGE_BY_BASIS = {"record": "==>", "reported": "-->", "inferred": "-.-", "": "-->"}
 MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.esm.min.mjs"
 ELK_LAYOUT_URL = "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs"
 
@@ -283,27 +288,6 @@ def markdown_source(source: dict[str, str]) -> str:
     if source.get("local_file"):
         parts.append(md_code(source["local_file"]))
     return " — ".join(parts)
-
-
-def h(value: Any) -> str:
-    return html.escape(text(value), quote=True)
-
-
-def html_source(source: dict[str, str]) -> str:
-    """A source as readers see it. report.html is for publication, so it names
-    no case-local path, and the fact-checker's descriptions (its working notes
-    about its own downloads) are replaced by the source's host. The paths and
-    descriptions stay in findings-report.md and evidence-map.json."""
-    url = source.get("url") or source.get("archive_url")
-    if source.get("origin") == "finding" and source.get("description"):
-        label = source["description"]
-    elif url:
-        label = urlparse(url).netloc.removeprefix("www.") or url
-    else:
-        label = "Document held in the case file"
-    if url:
-        return f'<a href="{h(url)}" rel="noreferrer">{h(label)}</a>'
-    return h(label)
 
 
 def input_hashes(paths: list[Path]) -> dict[str, str]:
@@ -532,9 +516,9 @@ def compile_timeline_diagram(
         "caption": text(diagram.get("caption")),
         "finding_ids": [text(finding_id) for finding_id in diagram.get("finding_ids", [])],
         "source": "\n".join(source),
-        "initial_zoom": "1.0",
         "legend": [],
         "connections": [],
+        "connection_rows": [],
         "data_points": [[period, event] for _s, _i, period, event in points],
     }
 
@@ -605,9 +589,9 @@ def compile_bar_diagram(
         "caption": text(diagram.get("caption")),
         "finding_ids": [text(finding_id) for finding_id in diagram.get("finding_ids", [])],
         "source": "\n".join(source),
-        "initial_zoom": "1.0",
         "legend": [],
         "connections": [],
+        "connection_rows": [],
         "data_points": [[label, str(count)] for label, count in categories],
     }
 
@@ -618,12 +602,16 @@ def compile_diagrams(
 ) -> list[dict[str, Any]]:
     """Compile validated connection selections into safe, deterministic Mermaid."""
     available: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    basis_of: dict[tuple[str, str, str], str] = {}
     for connection in findings_doc.get("connections", []):
         if not isinstance(connection, dict):
             continue
         triple = tuple(text(connection.get(field)) for field in ("from", "to", "relationship"))
         if all(triple):
             available.setdefault(triple, []).append(connection)
+            basis = text(connection.get("basis"))
+            if basis in CONNECTION_BASIS:
+                basis_of[triple] = basis
 
     compiled: list[dict[str, Any]] = []
     for diagram in draft.get("diagrams", []):
@@ -662,8 +650,15 @@ def compile_diagrams(
             outgoing[source] += 1
             incoming[target] += 1
 
-        direction = "TB" if diagram_type == "hierarchy" else "LR"
-        layout = "dagre" if diagram_type == "loop" else "elk"
+        groups = [
+            (text(group.get("label")), [text(entity) for entity in group.get("entities", [])])
+            for group in diagram.get("groups", []) if isinstance(group, dict)
+        ]
+        grouped = {entity for _label, entities in groups for entity in entities}
+        # Grouped diagrams read top-down so their groups sit side by side as columns.
+        direction = "TB" if diagram_type == "hierarchy" or groups else "LR"
+        # ELK flattens clusters into one long row; dagre keeps a group together.
+        layout = "dagre" if diagram_type == "loop" or groups else "elk"
         title = mermaid_text(diagram.get("title"), 180)
         caption = mermaid_text(diagram.get("caption"), 500)
         source = [
@@ -675,14 +670,17 @@ def compile_diagrams(
             f"  accTitle: {title}",
             f"  accDescr: {caption}",
         ]
-        roles: dict[str, str] = {}
-        for node in nodes:
-            role = diagram_role(diagram_type, node, incoming, outgoing)
-            roles[node] = role
-            source.append(mermaid_node(node_ids[node], node, role))
+        roles = {node: diagram_role(diagram_type, node, incoming, outgoing) for node in nodes}
+        for group_index, (group_label, entities) in enumerate(groups, 1):
+            source.append(f'  subgraph g{group_index}["{mermaid_text(group_label, 60)}"]')
+            source.extend("  " + mermaid_node(node_ids[node], node, roles[node])
+                          for node in nodes if node in entities)
+            source.append("  end")
+        source.extend(mermaid_node(node_ids[node], node, roles[node]) for node in nodes if node not in grouped)
         for source_node, target_node, relationship in ordered_connections:
+            arrow = EDGE_BY_BASIS[basis_of.get((source_node, target_node, relationship), "")]
             source.append(
-                f"  {node_ids[source_node]} -->|\"{mermaid_text(relationship, 96).replace('_', ' ')}\"| {node_ids[target_node]}"
+                f"  {node_ids[source_node]} {arrow}|\"{mermaid_text(relationship, 96).replace('_', ' ')}\"| {node_ids[target_node]}"
             )
         for node in nodes:
             classes = [roles[node]]
@@ -700,15 +698,18 @@ def compile_diagrams(
             "focal": "focus",
         }
         legend_roles = list(dict.fromkeys([roles[node] for node in nodes] + (["focal"] if focal_entities else [])))
+        bases = [basis for basis in CONNECTION_BASIS
+                 if any(basis_of.get(connection) == basis for connection in ordered_connections)]
         compiled.append({
             "id": text(diagram.get("id")),
             "title": text(diagram.get("title")),
             "caption": text(diagram.get("caption")),
             "finding_ids": [text(finding_id) for finding_id in diagram.get("finding_ids", [])],
             "connections": ordered_connections,
+            "connection_rows": [(*connection, basis_of.get(connection, "")) for connection in ordered_connections],
             "source": "\n".join(source),
-            "initial_zoom": "0.85" if len(nodes) >= 7 else "1.0",
-            "legend": [(role, legend_labels[role]) for role in legend_roles],
+            "legend": [(role, legend_labels[role]) for role in legend_roles]
+                      + [(f"basis-{basis}", report_html.BASIS_LEGEND[basis]) for basis in bases],
         })
     return compiled
 
@@ -939,318 +940,57 @@ def arbiter_appendix(case: Path) -> str:
     return appendix.stdout.strip()
 
 
-def diagram_html(
-    diagrams: list[dict[str, Any]], finding_anchors: dict[str, str]
-) -> str:
-    """Render the report's diagram section without accepting authored markup."""
-    if not diagrams:
-        return ""
-    figures: list[str] = []
-    for diagram in diagrams:
-        diagram_id = h(diagram["id"])
-        title_id = f"diagram-{diagram_id}-title"
-        description_id = f"diagram-{diagram_id}-description"
-        finding_links = " · ".join(
-            f'<a href="#{h(finding_anchors[finding_id])}">{h(finding_id)}</a>'
-            for finding_id in diagram["finding_ids"] if finding_id in finding_anchors
-        )
-        if diagram["connections"]:
-            detail_heading = "Connections shown"
-            details = "".join(
-                f"<li><strong>{h(mermaid_text(source))}</strong> <span aria-hidden=\"true\">→</span> "
-                f"{h(mermaid_text(relationship, 96))} <span aria-hidden=\"true\">→</span> "
-                f"<strong>{h(mermaid_text(target))}</strong></li>"
-                for source, target, relationship in diagram["connections"]
-            )
-        else:
-            detail_heading = "Data shown"
-            details = "".join(
-                f"<li><strong>{h(label)}</strong> — {h(detail)}</li>"
-                for label, detail in diagram.get("data_points", [])
-            )
-        legend = "".join(
-            f'<span class="diagram-legend-item"><span class="diagram-key diagram-key-{h(role)}" '
-            f'aria-hidden="true"></span>{h(label)}</span>'
-            for role, label in diagram["legend"]
-        )
-        figures.append(f'''
-  <figure class="report-diagram" id="diagram-{diagram_id}" aria-labelledby="{title_id}" aria-describedby="{description_id}">
-    <div class="kicker">Connection diagram</div>
-    <h2 id="{title_id}">{h(diagram['title'])}</h2>
-    <figcaption id="{description_id}">{h(diagram['caption'])}</figcaption>
-    <p class="diagram-findings"><strong>Supporting findings:</strong> {finding_links or 'None recorded.'}</p>
-    <div class="mermaid-wrap" data-initial-zoom="{h(diagram['initial_zoom'])}">
-      <div class="zoom-controls" role="group" aria-label="Diagram controls">
-        <button type="button" onclick="spotlightDiagramZoom(this, 1.2)" aria-label="Zoom diagram in">+</button>
-        <button type="button" onclick="spotlightDiagramZoom(this, 0.8)" aria-label="Zoom diagram out">−</button>
-        <button type="button" onclick="spotlightDiagramReset(this)" aria-label="Reset diagram view">↻</button>
-        <button type="button" onclick="spotlightDiagramOpen(this)" aria-label="Open diagram full size">⛶</button>
-      </div>
-      <div class="canvas-legend" aria-label="Diagram legend">{legend}</div>
-      <pre class="mermaid" aria-label="{h(diagram['title'])}">{h(diagram['source'])}</pre>
-    </div>
-    <details class="diagram-connections"><summary>{detail_heading}</summary><ul>{details}</ul></details>
-  </figure>''')
-    return '<section class="report-diagrams" aria-label="Connection diagrams">' + "\n".join(figures) + "\n</section>"
+def report_sections(draft: dict[str, Any], rendered: list[dict[str, Any]]) -> list[tuple[str, list[str]]]:
+    """Group the findings table by the draft's sections, or show one group.
 
-
-def diagram_runtime(diagrams: list[dict[str, Any]]) -> str:
-    """Return the pinned, conditional browser runtime for compiled diagrams only."""
-    if not diagrams:
-        return ""
-    return f'''
-<script type="module">
-  import mermaid from "{MERMAID_URL}";
-  import elkLayouts from "{ELK_LAYOUT_URL}";
-
-  mermaid.registerLayoutLoaders(elkLayouts);
-  mermaid.initialize({{
-    startOnLoad: false,
-    theme: "base",
-    layout: "elk",
-    securityLevel: "strict",
-    flowchart: {{ useMaxWidth: false }},
-    themeVariables: {{
-      fontSize: "15px",
-      fontFamily: "Inter, Helvetica Neue, sans-serif",
-      primaryColor: "#fbf8f1",
-      primaryBorderColor: "#6b6258",
-      primaryTextColor: "#1a1815",
-      lineColor: "#6b6258",
-      edgeLabelBackground: "#fbf8f1"
-    }}
-  }});
-
-  try {{
-    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    // Render one source at a time. This keeps each diagram's IDs distinct and
-    // avoids Mermaid's selector runner sharing render state across canvases.
-    for (const [index, node] of Array.from(document.querySelectorAll(".mermaid")).entries()) {{
-      const result = await mermaid.render("spotlight-mermaid-" + index, node.textContent || "");
-      node.innerHTML = result.svg;
-      if (result.bindFunctions) result.bindFunctions(node);
-    }}
-    document.querySelectorAll(".mermaid-wrap").forEach((wrap) => {{
-      const diagram = wrap.querySelector(".mermaid");
-      if (!diagram || !diagram.querySelector("svg")) return;
-      diagram.dataset.zoom = wrap.dataset.initialZoom || "1";
-      diagram.dataset.tx = "0";
-      diagram.dataset.ty = "0";
-      diagram.style.zoom = diagram.dataset.zoom;
-      wrap.classList.add("is-rendered");
-    }});
-  }} catch (error) {{
-    console.warn("Spotlight diagram could not render", error);
-  }}
-</script>
-<script>
-  function spotlightDiagramTarget(button) {{
-    const wrap = button.closest(".mermaid-wrap");
-    const diagram = wrap && wrap.querySelector(".mermaid");
-    return {{ wrap: wrap, diagram: diagram }};
-  }}
-  function spotlightDiagramApply(diagram) {{
-    diagram.style.zoom = diagram.dataset.zoom || "1";
-    diagram.style.transform = "translate(" + (diagram.dataset.tx || 0) + "px," + (diagram.dataset.ty || 0) + "px)";
-  }}
-  function spotlightDiagramZoom(button, factor) {{
-    const target = spotlightDiagramTarget(button); if (!target.diagram) return;
-    const zoom = parseFloat(target.diagram.dataset.zoom || target.wrap.dataset.initialZoom || "1");
-    target.diagram.dataset.zoom = Math.min(Math.max(zoom * factor, 0.25), 4).toString();
-    spotlightDiagramApply(target.diagram);
-  }}
-  function spotlightDiagramReset(button) {{
-    const target = spotlightDiagramTarget(button); if (!target.diagram) return;
-    target.diagram.dataset.zoom = target.wrap.dataset.initialZoom || "1";
-    target.diagram.dataset.tx = "0"; target.diagram.dataset.ty = "0";
-    spotlightDiagramApply(target.diagram);
-  }}
-  function spotlightDiagramOpen(button) {{
-    const target = spotlightDiagramTarget(button);
-    const svg = target.diagram && target.diagram.querySelector("svg"); if (!svg) return;
-    const copy = svg.cloneNode(true); copy.style.zoom = ""; copy.style.transform = "";
-    const page = "<!doctype html><html><head><meta charset=\\"utf-8\\"><title>Diagram</title>" +
-      "<style>body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fbf8f1;padding:32px;box-sizing:border-box}}svg{{max-width:100%;max-height:92vh}}</style>" +
-      "</head><body>" + copy.outerHTML + "</body></html>";
-    window.open(URL.createObjectURL(new Blob([page], {{ type: "text/html" }})), "_blank", "noopener");
-  }}
-  document.querySelectorAll(".mermaid-wrap").forEach((wrap) => {{
-    let startX = 0, startY = 0, startTX = 0, startTY = 0;
-    wrap.addEventListener("pointerdown", (event) => {{
-      if (!wrap.classList.contains("is-rendered") || event.target.closest(".zoom-controls")) return;
-      const diagram = wrap.querySelector(".mermaid"); if (!diagram) return;
-      startX = event.clientX; startY = event.clientY;
-      startTX = parseFloat(diagram.dataset.tx || "0"); startTY = parseFloat(diagram.dataset.ty || "0");
-      wrap.setPointerCapture(event.pointerId); wrap.classList.add("is-panning");
-    }});
-    wrap.addEventListener("pointermove", (event) => {{
-      if (!wrap.classList.contains("is-panning")) return;
-      const diagram = wrap.querySelector(".mermaid"); if (!diagram) return;
-      const zoom = parseFloat(diagram.dataset.zoom || "1");
-      diagram.dataset.tx = (startTX + (event.clientX - startX) / zoom).toString();
-      diagram.dataset.ty = (startTY + (event.clientY - startY) / zoom).toString();
-      spotlightDiagramApply(diagram);
-    }});
-    wrap.addEventListener("pointerup", () => wrap.classList.remove("is-panning"));
-    wrap.addEventListener("pointercancel", () => wrap.classList.remove("is-panning"));
-  }});
-</script>'''
+    validate-report-draft.py proves the sections partition finding_order;
+    within a section, findings keep finding_order.
+    """
+    order = [record["id"] for record in rendered]
+    sections = [item for item in draft.get("sections", []) if isinstance(item, dict)]
+    if not sections:
+        return [("Findings", order)]
+    position = {fid: index for index, fid in enumerate(order)}
+    return [
+        (text(item.get("label")), sorted((text(fid) for fid in item.get("finding_ids", [])
+                                          if text(fid) in position), key=position.__getitem__))
+        for item in sections
+    ]
 
 
 def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
                 draft: dict[str, Any], rendered: list[dict[str, Any]], hashes: dict[str, str],
                 diagrams: list[dict[str, Any]] | None = None) -> str:
-    title = text(draft.get("title"))
-    lead = text(draft.get("deck"))
-    report_date = text(findings_doc.get("investigated_at") or methodology.get("planned_at"))
-    verified_count = sum(record["verdict"]["status"] == "verified" for record in rendered)
-    source_count = len({source.get("url") or source.get("local_file")
-                        for record in rendered for source in record["sources"]})
-
-    summary_items = []
-    finding_sections = []
-    for index, record in enumerate(rendered, 1):
-        fid, finding, treatment = record["id"], record["finding"], record["treatment"]
-        verdict, sources = record["verdict"], record["sources"]
-        anchor = f"finding-{index}-{hashlib.sha256(fid.encode()).hexdigest()[:8]}"
-        label = VERDICT_LABEL.get(verdict["status"], verdict["status"].title())
-        pill = "high" if verdict["confidence"] == "high" else ("med" if verdict["confidence"] == "medium" else "low")
-        summary_items.append(
-            '<div class="tldr-item">'
-            f'<div class="tldr-num">{h(fid)} <span class="pill pill-{pill}">{h(verdict["confidence"])}</span></div>'
-            f'<div class="tldr-claim"><a href="#{h(anchor)}"><strong>{h(treatment.get("headline"))}</strong>'
-            f'{h(label)}</a></div></div>'
-        )
-        source_html = '<span class="sep">·</span>'.join(dict.fromkeys(html_source(source) for source in sources))
-        if not source_html:
-            source_html = "No accessible source URL or case-local evidence file was recorded."
-        evidence = " ".join(list_of_text(finding.get("evidence")))
-        evidence_html = f"<p><strong>Recorded evidence:</strong> {h(evidence)}</p>" if evidence else ""
-        assessment = verdict["assessment"] or "No fact-check narrative was recorded."
-        quotations = "".join(
-            '<blockquote class="source-expression">'
-            f'<p>“{html.escape(expression.get("text", ""), quote=True)}”</p>'
-            + (
-                f'<footer>— {h(expression.get("attribution"))}</footer>'
-                if text(expression.get("attribution")) else ""
-            )
-            + '</blockquote>'
-            for expression in record["quotes"]
-        )
-        # A local tier's treatment holds the claim alone (validate-report-draft.py).
-        lede = f'<p class="lede">{h(treatment.get("summary"))}</p>' if text(treatment.get("summary")) else ""
-        why = f'<p><strong>Why it matters:</strong> {h(treatment.get("why_it_matters"))}</p>' if text(treatment.get("why_it_matters")) else ""
-        finding_sections.append(f'''
-  <section class="finding" id="{h(anchor)}">
-    <div class="finding-meta"><span class="pill pill-id">{h(fid)}</span><span class="pill pill-{pill}">{h(verdict['confidence'])}</span><span class="cat">{h(label)}</span></div>
-    <h2>{h(treatment.get('headline'))}</h2>
-    {lede}
-    <p><strong>Canonical fact-checked claim:</strong> {h(finding.get('claim'))}</p>
-    {why}
-    {evidence_html}
-    <p><strong>Independent fact-check:</strong> {h(assessment)}</p>
-    {quotations}
-    <div class="path" aria-label="How we got here">
-      <div class="step">Structured claim</div><div class="what"><code>data/findings.json</code> · {h(fid)}</div>
-      <div class="step">Evidence</div><div class="what">{len(sources)} accessible source record(s) retained below</div>
-      <div class="step">Fact-check</div><div class="what"><code>data/fact-check.json</code> · {h(label)} · {h(verdict['confidence'].title())}</div>
-    </div>
-    <div class="sources"><span class="label">Sources</span>{source_html}</div>
-  </section>''')
-
-    methodology_sections = []
-    for index, direction in enumerate(methodology.get("investigation_plan", []), 1):
-        if not isinstance(direction, dict):
-            continue
-        items = []
-        for question in list_of_text(direction.get("questions")):
-            items.append(f"<li><strong>Question:</strong> {h(question)}</li>")
-        for step in direction.get("steps", []):
-            if isinstance(step, dict) and text(step.get("action")):
-                tool = text(step.get("tool"))
-                suffix = f" — <code>{h(tool)}</code>" if tool else ""
-                items.append(f"<li>{h(step.get('action'))}{suffix}</li>")
-        methodology_sections.append(f'''
-    <div class="phase">
-      <div class="phase-head"><span class="phase-id">Phase 2 · direction {index}</span><h4 class="phase-title">{h(direction.get('direction') or f'Direction {index}')}</h4></div>
-      <ul>{''.join(items) or '<li>No structured steps recorded.</li>'}</ul>
-    </div>''')
-    if not methodology_sections:
-        methodology_sections.append('<div class="phase"><p>No structured methodology steps were recorded.</p></div>')
-
-    verdict_by_id = {record["id"]: record["verdict"] for record in rendered}
-
-    def html_editorial_item(item: dict[str, Any]) -> str:
-        refs = [text(ref) for ref in item.get("finding_ids", [])]
-        labels = [
-            f"{ref} — {VERDICT_LABEL.get(verdict_by_id[ref]['status'], verdict_by_id[ref]['status'].title())}"
-            for ref in refs if ref in verdict_by_id
-        ]
-        return f"{h(item.get('text'))}<br><small>{h('; '.join(labels))}</small>"
-
-    caveat_items = "".join(
-        f"<li>{html_editorial_item(item)}</li>" for item in editorial_items(draft, "caveats")
-    ) or "<li>No editorial caveat was recorded.</li>"
-    next_rows = "".join(
-        f"<tr><td>{html_editorial_item(item)}</td><td>Model-authored · finding-linked</td></tr>"
-        for item in editorial_items(draft, "next_steps")
-    ) or "<tr><td>No next step was recorded</td><td>—</td></tr>"
-    framing_labels = []
-    for fid in draft.get("framing_finding_ids", []):
-        if fid in verdict_by_id:
-            verdict = verdict_by_id[fid]
-            framing_labels.append(
-                f"{fid} — {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}"
-            )
-    hash_badges = "".join(f"<span>{h(path)} · sha256:{h(digest[:12])}</span>" for path, digest in hashes.items())
-    finding_anchors = {
-        record["id"]: f"finding-{index}-{hashlib.sha256(record['id'].encode()).hexdigest()[:8]}"
-        for index, record in enumerate(rendered, 1)
-    }
-    diagrams = diagrams or []
-    diagrams_block = diagram_html(diagrams, finding_anchors)
-    diagram_scripts = diagram_runtime(diagrams)
-    appendix = arbiter_appendix(case)
-    # Prefixed here rather than in the template so a case without Arbiter data
-    # renders byte-for-byte the same HTML as before this integration existed.
-    arbiter_block = f"\n  {appendix}" if appendix else ""
-
-    local_warning = f"<p><strong>{h(LOCAL_MODEL_WARNING)}</strong></p>" if local_tier() else ""
-    return f'''<!doctype html>
-<html lang="{h(draft.get('language') or 'und')}">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{h(title)} — Spotlight</title>
-<style>
-{template_css()}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="masthead"><span class="pub">Spotlight</span><span class="meta">{h(case.name)}{f' · {h(report_date)}' if report_date else ''}</span></div>
-  <h1>{h(title)}</h1>
-  <p class="deck">{h(lead)}</p>
-  <p class="byline"><strong>Model-authored editorial synthesis · deterministically rendered</strong><br>{verified_count} verified finding(s) · {source_count} accessible source record(s)</p>
-  <section class="honesty" aria-label="AI assistance notice">{local_warning}<p><strong>AI assistance notice:</strong> {h(AI_NOTICE)}</p><p>The model chose localized framing and priority. Deterministic checks bind every prose block to finding IDs and place canonical verdicts beside it; they do not claim semantic entailment.</p><p><strong>Framing references:</strong> {h('; '.join(framing_labels))}</p></section>
-  <section class="tldr" aria-label="findings summary">{''.join(summary_items)}</section>
-  {diagrams_block}
-  {''.join(finding_sections)}{arbiter_block}
-  <section id="method">
-    <div class="kicker">Methodology · structured case record</div>
-    <h2>How the investigation was carried out.</h2>
-    {''.join(methodology_sections)}
-    <div class="phase"><div class="phase-head"><span class="phase-id">Phase 3 · fact-check</span><h4 class="phase-title">Independent verdict boundary</h4></div><p>Report confidence is computed from the recorded verdicts and confidence caps; it is not authored during rendering.</p></div>
-    <div class="phase"><div class="phase-head"><span class="phase-id">Phase 4 · report</span><h4 class="phase-title">Editorial model + deterministic renderer</h4></div><p>The model authored <code>data/report-draft.json</code>; code validated its finding-reference coverage and output structure, then generated all three deliverables.</p></div>
-  </section>
-  <section id="caveats"><div class="kicker">Editorial caveats</div><h2>What readers should keep in view.</h2><ul>{caveat_items}</ul></section>
-  <section id="next"><div class="kicker">Open questions</div><h2>What a later cycle should close.</h2><table><tr><th>Target</th><th>Provenance</th></tr>{next_rows}</table></section>
-  <footer><p><strong>Deliverables:</strong> <code>findings-report.md</code>, <code>report.html</code>, <code>evidence-map.json</code>.</p><p class="databases">{hash_badges}</p></footer>
-</div>
-{diagram_scripts}
-</body>
-</html>
-'''
+    """Resolve the page's inputs; ``report_html`` lays them out."""
+    anchors = {record["id"]: report_html.finding_anchor(index, record["id"])
+               for index, record in enumerate(rendered, 1)}
+    cycle = findings_doc.get("cycle")
+    page = report_html.ReportPage(
+        case_name=case.name,
+        language=text(draft.get("language")),
+        title=text(draft.get("title")),
+        deck=text(draft.get("deck")),
+        report_date=text(findings_doc.get("investigated_at") or methodology.get("planned_at"))[:10],
+        cycle=str(cycle) if isinstance(cycle, int) and not isinstance(cycle, bool) else "",
+        records=rendered,
+        verdict_labels=VERDICT_LABEL,
+        sections=report_sections(draft, rendered),
+        framing_ids=[text(fid) for fid in draft.get("framing_finding_ids", [])],
+        diagrams=diagrams or [],
+        caveats=editorial_items(draft, "caveats"),
+        next_steps=editorial_items(draft, "next_steps"),
+        directions=[item for item in methodology.get("investigation_plan", []) if isinstance(item, dict)],
+        limitations=list_of_text(methodology.get("limitations")),
+        ai_notice=AI_NOTICE,
+        local_warning=LOCAL_MODEL_WARNING if local_tier() else "",
+        hashes=hashes,
+        css=template_css(),
+        appendix=arbiter_appendix(case),
+        mermaid_url=MERMAID_URL,
+        elk_url=ELK_LAYOUT_URL,
+        anchors=anchors,
+    )
+    return report_html.render_page(page)
 
 
 def evidence_map(

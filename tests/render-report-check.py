@@ -473,7 +473,7 @@ def check_code_set_headlines(root: Path) -> None:
     result = finalize(case)
     assert result.returncode == 0, result.stdout + result.stderr
     html, markdown = (case / "report.html").read_text(), (case / "findings-report.md").read_text()
-    assert '<p class="lede"></p>' not in html
+    assert 'class="lede"' not in html
     assert "Why it matters" not in html and "Why it matters" not in markdown
     draft["finding_treatments"][0]["headline"] = "Ada Lovelace leads the Library Freedom Project"
     write_json(draft_path, draft)
@@ -502,6 +502,30 @@ def check_local_model_warning(root: Path) -> None:
             assert html_text.index(escaped) < html_text.index('class="finding"'), "at the top"
 
 
+def check_sections(root: Path) -> None:
+    """Draft sections group the findings table in their own order, and together
+    they must hold each reported finding exactly once."""
+    case = build_case(root / "sections")
+    draft_path = case / "data" / "report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    draft["sections"] = [
+        {"label": "Records we hold", "finding_ids": ["F1"]},
+        {"label": "Still open", "finding_ids": ["F2"]},
+    ]
+    write_json(draft_path, draft)
+    result = finalize(case)
+    assert result.returncode == 0, result.stdout + result.stderr
+    html = (case / "report.html").read_text()
+    held, still_open = html.index("<h3>Records we hold</h3>"), html.index("<h3>Still open</h3>")
+    rows = re.findall(r'<details class="finding" id="[^"]+" data-verdict="[^"]+" data-section="(\d)"', html)
+    assert held < still_open and rows == ["1", "2"], rows
+    draft["sections"] = [{"label": "Records we hold", "finding_ids": ["F1"]}]
+    write_json(draft_path, draft)
+    invalid = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                             capture_output=True, text=True)
+    assert invalid.returncode == 3 and "missing ['F2']" in invalid.stdout, invalid.stdout
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -525,8 +549,9 @@ def main() -> int:
         check_non_direct_quote_selection(Path(tmp))
         check_code_set_headlines(Path(tmp))
         check_local_model_warning(Path(tmp))
+        check_sections(Path(tmp))
         # Frontier's draft keeps every field it wrote.
-        assert '<p class="lede">' in html and "Why it matters:" in html and "Why it matters:" in markdown
+        assert 'class="lede">' in html and "Why it matters:" in html and "Why it matters:" in markdown
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown
@@ -935,7 +960,7 @@ def main() -> int:
             [sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True
         )
         assert localized.returncode == 0, localized.stdout + localized.stderr
-        anchors = re.findall(r'<section class="finding" id="([^"]+)"', (case / "report.html").read_text())
+        anchors = re.findall(r'<details class="finding" id="([^"]+)"', (case / "report.html").read_text())
         assert len(anchors) == 2 and len(set(anchors)) == 2, anchors
 
         # No report is rendered until the model has authored its plan.

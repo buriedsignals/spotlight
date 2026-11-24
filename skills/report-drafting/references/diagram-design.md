@@ -40,6 +40,12 @@ many-to-many relationships → `network`; a returning cycle → `loop`.
 ## Visual rules
 
 - Use at most nine nodes, twelve connections, and two focal entities.
+- Group entities when the diagram compares sides (`groups`, up to four). A
+  grouped diagram reads top-down with its groups side by side; keep each group
+  small enough that its labels stay legible at the fitted size.
+- Line style carries how a link is known, from the connection's `basis`:
+  heavy for a public record, plain for reporting, dotted and undirected for an
+  inference the record does not prove. An inferred link never gets an arrow.
 - Give the diagram a clear reading direction: left-to-right for flow and
   network, top-to-bottom for hierarchy, and a declared starting entity for a
   loop.
@@ -57,7 +63,7 @@ many-to-many relationships → `network`; a returning cycle → `loop`.
 ## Spotlight boundary
 
 The model selects only existing `findings.json.connections` in
-`report-draft.json`. It never writes Mermaid, SVG, HTML, JavaScript, CSS,
+`report-draft.json`, and may group the entities they draw. It never writes Mermaid, SVG, HTML, JavaScript, CSS,
 coordinates, URLs, or Mermaid configuration. The deterministic renderer
 creates the diagram source, labels, layout, classes, title, and description.
 

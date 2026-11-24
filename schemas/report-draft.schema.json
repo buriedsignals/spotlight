@@ -41,6 +41,21 @@
         }
       }
     },
+    "sections": {
+      "description": "Optional themes for the findings table. Together they hold every finding in finding_order exactly once.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "finding_ids"],
+        "properties": {
+          "label": {"type": "string", "minLength": 1, "maxLength": 80},
+          "finding_ids": {"$ref": "#/$defs/findingIds"}
+        }
+      }
+    },
     "diagrams": {
       "type": "array",
       "items": {"$ref": "#/$defs/diagram"}
@@ -106,6 +121,21 @@
           "maxItems": 2,
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
+        },
+        "groups": {
+          "description": "Optional labelled clusters of entities the selected connections already draw; not allowed on a loop.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "entities"],
+            "properties": {
+              "label": {"type": "string", "minLength": 1, "maxLength": 60},
+              "entities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+            }
+          }
         }
       }
     },
