@@ -570,8 +570,9 @@ If a planned approach hits a dead end:
     {
       "from": "entity A",
       "to": "entity B",
-      "relationship": "description",
-      "evidence": "source reference"
+      "relationship": "short label, e.g. paid, owns, directs",
+      "evidence": "source reference",
+      "basis": "record|reported|inferred"
     }
   ],
   "gaps": ["what could not be verified", "what remains unknown"],
@@ -580,6 +581,8 @@ If a planned approach hits a dead end:
 ```
 
 <!-- [/FILE-WRITER: record_finding] -->
+Give each connection a short `relationship` label and a `basis`: `record` when a public record shows the link, `reported` when it rests on reporting, `inferred` when the record suggests it but does not prove it. A report diagram draws an inferred link dotted and without an arrow.
+
 For follow-up cycles: merge new findings with previous ones. Increment the `cycle` field. Update confidence levels if new evidence strengthens or weakens prior findings. Remove items from `gaps` that have been resolved.
 
 <!-- [IF: framework] -->

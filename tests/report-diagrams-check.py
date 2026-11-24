@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -142,6 +143,51 @@ def compiled_mermaid(html: str) -> str:
     )
 
 
+def check_groups_and_basis(root: Path) -> None:
+    """Groups cluster drawn entities side by side, and a connection's basis sets its
+    line: a record is heavy, reporting is plain, and an inference is dotted and
+    undirected, so it can never read as a step in a chain."""
+    case = build_case(root / "grouped", "network")
+    findings_path = case / "data" / "findings.json"
+    draft_path = case / "data" / "report-draft.json"
+    connections = [
+        {"from": "Agency", "to": "Contractor", "relationship": "paid", "basis": "record"},
+        {"from": "Officer", "to": "Agency", "relationship": "oversees", "basis": "reported"},
+        {"from": "Agency", "to": "Network", "relationship": "no documented link", "basis": "inferred"},
+    ]
+    findings = json.loads(findings_path.read_text(encoding="utf-8"))
+    findings["connections"] = connections
+    write_json(findings_path, findings)
+    draft = json.loads(draft_path.read_text(encoding="utf-8"))
+    selectors = [{key: item[key] for key in ("from", "to", "relationship")} for item in connections]
+    draft["diagrams"][0].update(connections=selectors, focal_entities=["Agency"], groups=[
+        {"label": "State side", "entities": ["Officer", "Agency", "Contractor"]},
+        {"label": "Observed accounts", "entities": ["Network"]},
+    ])
+    write_json(draft_path, draft)
+    result = run([sys.executable, str(FINALIZER), str(case)])
+    assert result.returncode == 0, result.stdout + result.stderr
+    html = (case / "report.html").read_text(encoding="utf-8")
+    mermaid = compiled_mermaid(html)
+    assert "layout: dagre" in mermaid and "flowchart TB" in mermaid, mermaid
+    assert 'subgraph g1["State side"]' in mermaid and 'subgraph g2["Observed accounts"]' in mermaid, mermaid
+    lines = mermaid.splitlines()
+    edge = {relationship: next(line for line in lines if f'|"{relationship}"|' in line)
+            for relationship in ("paid", "oversees", "no documented link")}
+    assert " ==>|" in edge["paid"], edge
+    assert " -->|" in edge["oversees"], edge
+    assert " -.-|" in edge["no documented link"] and ">" not in edge["no documented link"].split("|")[0], edge
+    assert "inferred, not proven" in html
+
+    # A group may only hold entities the selected connections draw.
+    draft["diagrams"][0]["groups"][1]["entities"] = ["Network", "Unrelated party"]
+    write_json(draft_path, draft)
+    expect_invalid(case, "'Unrelated party', which is not an endpoint in the selected connections")
+    draft["diagrams"][0]["groups"][1]["entities"] = ["Network", "Agency"]
+    write_json(draft_path, draft)
+    expect_invalid(case, "repeats 'Agency' from another group")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="report-diagrams-") as tmp:
         root = Path(tmp)
@@ -165,6 +211,10 @@ def main() -> int:
                 assert f"layout: {'dagre' if kind == 'loop' else 'elk'}" in html
             if kind == "loop":
                 assert "stroke-dasharray:5 4" in html
+            if diagram_fixture(kind)[1].get("focal_entities"):
+                # A focal node keeps its role and gains "focal" as a separate class.
+                mermaid = compiled_mermaid(html)
+                assert re.search(r"^  class n\d+ focal;$", mermaid, re.M) and ",focal" not in mermaid, mermaid
             if kind == "timeline":
                 mermaid = compiled_mermaid(html)
                 assert mermaid.startswith("timeline\n")
@@ -316,6 +366,8 @@ def main() -> int:
         ]
         write_json(draft_path, draft)
         expect_invalid(bar_with_connections, "has unknown field(s): ['connections']")
+
+        check_groups_and_basis(root)
 
     print("report diagrams: OK")
     return 0

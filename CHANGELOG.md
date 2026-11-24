@@ -4,6 +4,39 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — The report is one page with a findings table
+
+- `report.html` now opens with the case's counts and verdict bars, then shows
+  the diagrams, a findings table and the limitations, methodology and a
+  numbered source index. Each table row shows the headline, a two-line summary,
+  confidence, verdict, how many supporting sources the fact-checker read in
+  full, and the outlets cited; opening a row shows why it matters, the recorded
+  evidence, the fact-check assessment, the exact claim checked and every
+  source. Rows filter by verdict and theme and open from a link to their
+  anchor. The page still names no case-local path and none of the
+  fact-checker's working notes.
+- The layout moved to `scripts/report_html.py`; `render-report.py` keeps the
+  verdicts, confidence caps, sources and diagram compilation. The stylesheet in
+  `report-template.html` takes the review app's look (Fraunces, Inter and Geist
+  Mono from local fonts, square corners, hairline rules) and makes no font
+  requests.
+- Diagrams measure labels at the width they are drawn (`wrappingWidth: 420`)
+  and fit their frame to the drawing and its labels, so no label is clipped at
+  the default view.
+
+### Added — Themes, diagram groups and connection basis
+
+- `report-draft.json` may set `sections` (up to eight `{label, finding_ids}`
+  items that hold every finding in `finding_order` once) to group the findings
+  table by theme.
+- A flow, hierarchy or network diagram may set `groups` (up to four labelled
+  clusters of entities it already draws). Grouped diagrams read top-down with
+  the groups side by side.
+- A `findings.json` connection may set `basis`: `record`, `reported` or
+  `inferred`. Diagrams draw a record heavy, reporting plain, and an inference
+  dotted and without an arrow. All three fields are optional; existing drafts
+  and findings render as before.
+
 ### Changed — Newsroom edition sends every record under an id from `create_ids`
 
 - The newsroom service dropped `create_id`, `client_id`, `existing_server_id`

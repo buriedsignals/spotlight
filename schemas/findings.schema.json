@@ -75,7 +75,11 @@
           "from": { "type": "string" },
           "to": { "type": "string" },
           "relationship": { "type": "string" },
-          "evidence": { "type": "string" }
+          "evidence": { "type": "string" },
+          "basis": {
+            "enum": ["record", "reported", "inferred"],
+            "description": "How the link is known: a public record, reporting, or an inference the record does not prove. Report diagrams draw an inferred link dotted and undirected."
+          }
         }
       }
     },

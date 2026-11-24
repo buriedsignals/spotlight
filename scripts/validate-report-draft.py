@@ -30,7 +30,11 @@ MAX_TEXT = {
     "list_item": 700,
     "diagram_title": 180,
     "diagram_caption": 500,
+    "section_label": 80,
+    "group_label": 60,
 }
+MAX_SECTIONS = 8
+MAX_GROUPS = 4
 DIAGRAM_TYPES = {"flow", "hierarchy", "network", "loop", "timeline", "bar"}
 STRUCTURAL_DIAGRAM_TYPES = {"flow", "hierarchy", "network", "loop"}
 BAR_METRICS = {"verdict_tally", "confidence_distribution", "source_types"}
@@ -266,6 +270,78 @@ def is_simple_loop(
     return node == focal_entity and visited == nodes
 
 
+def validate_diagram_groups(
+    label: str, diagram_type: str, groups: Any, nodes: set[str], failures: list[str]
+) -> None:
+    """Groups only cluster entities the diagram already draws; they add no node or link."""
+    if groups is None:
+        return
+    if diagram_type == "loop":
+        failures.append(f"STRUCTURE: {label}.groups is not allowed on a loop diagram")
+        return
+    if not isinstance(groups, list) or not groups:
+        failures.append(f"STRUCTURE: {label}.groups must be a non-empty array")
+        return
+    if len(groups) > MAX_GROUPS:
+        failures.append(f"STRUCTURE: {label}.groups has {len(groups)} items; limit is {MAX_GROUPS}")
+    placed: set[str] = set()
+    for group_index, group in enumerate(groups):
+        group_label = f"{label}.groups[{group_index}]"
+        if not isinstance(group, dict):
+            failures.append(f"STRUCTURE: {group_label} must be an object")
+            continue
+        unknown = sorted(set(group) - {"label", "entities"})
+        if unknown:
+            failures.append(f"STRUCTURE: {group_label} has unknown field(s): {unknown}")
+        validate_text(f"{group_label}.label", group.get("label"), MAX_TEXT["group_label"], failures)
+        entities = group.get("entities")
+        if not isinstance(entities, list) or not entities:
+            failures.append(f"STRUCTURE: {group_label}.entities must be a non-empty array")
+            continue
+        for raw_entity in entities:
+            entity = clean(raw_entity)
+            if not isinstance(raw_entity, str) or entity != raw_entity or entity not in nodes:
+                failures.append(
+                    f"STRUCTURE: {group_label}.entities has {raw_entity!r}, which is not an endpoint "
+                    "in the selected connections"
+                )
+            elif entity in placed:
+                failures.append(f"STRUCTURE: {group_label}.entities repeats {entity!r} from another group")
+            placed.add(entity)
+
+
+def validate_sections(value: Any, order: list[str], failures: list[str]) -> None:
+    """Sections group the findings table; together they hold each kept finding once."""
+    if value is None:
+        return
+    if not isinstance(value, list) or not value:
+        failures.append("STRUCTURE: sections must be a non-empty array")
+        return
+    if len(value) > MAX_SECTIONS:
+        failures.append(f"STRUCTURE: sections has {len(value)} items; limit is {MAX_SECTIONS}")
+    seen: list[str] = []
+    for index, section in enumerate(value):
+        label = f"sections[{index}]"
+        if not isinstance(section, dict):
+            failures.append(f"STRUCTURE: {label} must be an object")
+            continue
+        unknown = sorted(set(section) - {"label", "finding_ids"})
+        if unknown:
+            failures.append(f"STRUCTURE: {label} has unknown field(s): {unknown}")
+        validate_text(f"{label}.label", section.get("label"), MAX_TEXT["section_label"], failures)
+        ids = section.get("finding_ids")
+        if not isinstance(ids, list) or not ids:
+            failures.append(f"STRUCTURE: {label}.finding_ids must be a non-empty array")
+            continue
+        seen.extend(clean(fid) for fid in ids)
+    if sorted(seen) != sorted(order):
+        failures.append(
+            "STRUCTURE: sections must hold every finding in finding_order exactly once "
+            f"(missing {sorted(set(order) - set(seen))}, unknown or repeated "
+            f"{sorted({fid for fid in seen if fid not in order or seen.count(fid) > 1})})"
+        )
+
+
 def validate_structural_diagram(
     label: str,
     diagram_type: str,
@@ -319,6 +395,7 @@ def validate_structural_diagram(
     nodes = {node for source, target, _relationship in resolved for node in (source, target)}
     if len(nodes) > 9:
         failures.append(f"STRUCTURE: {label} has {len(nodes)} nodes; limit is 9")
+    validate_diagram_groups(label, diagram_type, diagram.get("groups"), nodes, failures)
     focal = diagram.get("focal_entities", [])
     focal_entities: list[str] = []
     if not isinstance(focal, list):
@@ -437,6 +514,7 @@ def validate_diagrams(
         if diagram_type in STRUCTURAL_DIAGRAM_TYPES:
             allowed_fields = {
                 "id", "type", "title", "caption", "finding_ids", "connections", "focal_entities",
+                "groups",
             }
         elif diagram_type == "timeline":
             allowed_fields = {"id", "type", "title", "caption", "finding_ids", "indicator_ids"}
@@ -542,7 +620,7 @@ def check(case: Path) -> list[str]:
 
     allowed_top = {
         "schema_version", "language", "title", "deck", "framing_finding_ids",
-        "finding_order", "finding_treatments", "diagrams", "caveats", "next_steps",
+        "finding_order", "finding_treatments", "sections", "diagrams", "caveats", "next_steps",
     }
     if draft.get("schema_version") != "1.0":
         failures.append("STRUCTURE: schema_version must be '1.0'")
@@ -599,6 +677,7 @@ def check(case: Path) -> list[str]:
     if treatment_ids != order:
         failures.append("STRUCTURE: finding_treatments must follow finding_order exactly")
 
+    validate_sections(draft.get("sections"), order, failures)
     validate_diagrams(draft.get("diagrams"), known_ids, findings_doc, failures)
     validate_editorial_list("caveats", draft.get("caveats"), known_ids, failures)
     validate_editorial_list("next_steps", draft.get("next_steps"), known_ids, failures)

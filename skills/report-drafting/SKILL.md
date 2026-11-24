@@ -18,7 +18,7 @@ You are in the Report phase. The Investigation gate has approved the structured 
 | File | Audience | What it is |
 |---|---|---|
 | `case/findings-report.md` | editor / fact-checker | canonical claim-by-claim audit generated from structured inputs |
-| `case/report.html` | publication / reader | designed artifact using the canonical template stylesheet |
+| `case/report.html` | publication / reader | one page laid out by `scripts/report_html.py` with the canonical template stylesheet: summary and verdict counts, diagrams, a findings table whose rows open onto their evidence and sources, limitations, methodology and a source index |
 | `case/evidence-map.json` | audit / replication | machine-readable claim → verdict → source ledger |
 
 ## Mandatory AI-assistance notice (verbatim, in report.html)
@@ -46,6 +46,20 @@ The renderer places this at the top of the page. Do not soften:
    `source_types`, counted deterministically over your `finding_ids` or all
    findings. Never author Mermaid, SVG, HTML, JavaScript, CSS, URLs, coordinates,
    counts, or layout settings: the renderer owns those.
+
+   A structural diagram (not a `loop`) may add `groups`: up to four labelled
+   clusters, each listing entities the selected connections already draw, with
+   no entity in two groups. Use them to set two sides of a story apart, for
+   example `[{"label": "Russian side, as reported", "entities": [...]},
+   {"label": "Domestic side", "entities": [...]}]`; the renderer draws grouped
+   diagrams top-down with the groups side by side. Line styles come from each
+   connection's `basis` in `findings.json` (`record` heavy, `reported` plain,
+   `inferred` dotted and undirected), never from the draft.
+
+   The report's findings table can be grouped by theme with optional
+   `sections`: up to eight `{label, finding_ids}` items that together hold every
+   finding in `finding_order` exactly once. Rows keep `finding_order` within a
+   section. Without `sections` the table is one group.
 
    `quote_selections` in the example below is optional. It may cite only an
    expression marked `direct_quote: true`; when none qualifies, omit it.
@@ -152,7 +166,7 @@ The structural validator is deliberately language-neutral. It proves reference c
 
 ## References
 
-- `references/report-template.html` — canonical stylesheet and legacy manual skeleton; the renderer reads its CSS.
+- `references/report-template.html` — canonical stylesheet (the review app's look) and legacy manual skeleton; the renderer reads its CSS.
 - `references/citation-discipline.md` — editorial rationale behind source-closure rules.
 - `references/design-discipline.md` — design semantics retained by the renderer.
 - `references/diagram-design.md` — report-diagram type selection and visual grammar.
