@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -210,6 +211,10 @@ def main() -> int:
                 assert f"layout: {'dagre' if kind == 'loop' else 'elk'}" in html
             if kind == "loop":
                 assert "stroke-dasharray:5 4" in html
+            if diagram_fixture(kind)[1].get("focal_entities"):
+                # A focal node keeps its role and gains "focal" as a separate class.
+                mermaid = compiled_mermaid(html)
+                assert re.search(r"^  class n\d+ focal;$", mermaid, re.M) and ",focal" not in mermaid, mermaid
             if kind == "timeline":
                 mermaid = compiled_mermaid(html)
                 assert mermaid.startswith("timeline\n")

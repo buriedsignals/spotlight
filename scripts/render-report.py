@@ -682,11 +682,11 @@ def compile_diagrams(
             source.append(
                 f"  {node_ids[source_node]} {arrow}|\"{mermaid_text(relationship, 96).replace('_', ' ')}\"| {node_ids[target_node]}"
             )
+        # One statement per class: "class n1 a,b;" names a single class "a,b".
         for node in nodes:
-            classes = [roles[node]]
+            source.append(f"  class {node_ids[node]} {roles[node]};")
             if node in focal_entities:
-                classes.append("focal")
-            source.append(f"  class {node_ids[node]} {','.join(classes)};")
+                source.append(f"  class {node_ids[node]} focal;")
         if diagram_type == "loop":
             source.append(
                 f"  linkStyle {len(ordered_connections) - 1} stroke:#6b6258,stroke-width:2px,stroke-dasharray:5 4;"
