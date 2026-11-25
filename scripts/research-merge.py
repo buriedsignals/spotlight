@@ -96,6 +96,23 @@ def name_key(text: str) -> str:
     return " ".join(re.sub(r"[^\w@.+]+", " ", text).split())
 
 
+# Legal-form words at the end of a company name. spotlight-stall 2026-11-25:
+# a company's legal name ("Example Resources NL") became a K1 new_actor clue
+# although the brief named it ("Example Resources"), and the case could not
+# pass its gate without a finding for it. Pty Ltd and Pty Limited are two words, each stripped in turn.
+LEGAL_FORMS = frozenset({"nl", "ltd", "limited", "pty", "inc", "llc", "plc", "ag", "sa", "gmbh"})
+
+
+def entity_key(text: str) -> str:
+    """name_key without the legal-form words a company name ends with
+    ("Ltd.", "N.L.", "Pty Ltd"), so a company matches its own short name.
+    A name that is nothing but such words keeps them."""
+    words = name_key(text).split()
+    while len(words) > 1 and words[-1].replace(".", "") in LEGAL_FORMS:
+        words.pop()
+    return " ".join(words)
+
+
 def attribute_key(text: str) -> str:
     return re.sub(r"[\s-]+", "_", text.strip().casefold())
 
@@ -135,7 +152,7 @@ def brief_text(methodology: Mapping[str, Any]) -> str:
 
 
 def named_in_brief(subject: str, brief: str) -> bool:
-    key = name_key(subject)
+    key = entity_key(subject)
     return bool(key) and f" {key} " in brief
 
 
@@ -335,7 +352,7 @@ def clue_rules(leads_doc: Mapping[str, Any], methodology: Mapping[str, Any]) -> 
     for lead in verified:
         for subject in lead.get("subjects") or []:
             if not named_in_brief(subject, brief):
-                seen.setdefault(name_key(subject), []).append(lead)
+                seen.setdefault(entity_key(subject), []).append(lead)
     for key, group in sorted(seen.items()):
         lanes = {lead["topic_id"] for lead in group}
         families = {_family(lead) for lead in group}
@@ -343,7 +360,7 @@ def clue_rules(leads_doc: Mapping[str, Any], methodology: Mapping[str, Any]) -> 
         apart = any(a["topic_id"] != b["topic_id"] and source[a["lead_id"]] != source[b["lead_id"]]
                     for a, b in itertools.combinations(group, 2))
         if apart and len(families) >= 2:
-            label = next(s for s in group[0]["subjects"] if name_key(s) == key)
+            label = next(s for s in group[0]["subjects"] if entity_key(s) == key)
             clues.append(_clue("K1", "new_actor", (l["lead_id"] for l in group), (l["direction_id"] for l in group),
                                f"{label} is not named in the brief and appears in {len(lanes)} lanes from "
                                f"{len(families)} source families.", ["K1", key]))

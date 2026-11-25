@@ -53,7 +53,10 @@ function checksAfter(role: string, phase: string, producerModel: string, context
 	// data/summary.json against the findings and the fact-check), its report
 	// draft by the draft's own check.
 	if (role === 'analyst' && phase === 'investigation_gate_approval') return [caseCheck];
-	if (role === 'analyst' && phase === 'report') return [{ name: 'validate-report-draft.py', args: [script('validate-report-draft.py'), context.caseDir] }];
+	// Which findings the report covers is the Investigation gate's decision, so
+	// code completes the draft's finding_order and treatments before the check
+	// (validate-report-draft.py complete_order).
+	if (role === 'analyst' && phase === 'report') return [{ name: 'validate-report-draft.py', args: [script('validate-report-draft.py'), context.caseDir, '--complete-order'] }];
 	if (role === 'analyst' && phase === 'ingest') {
 		// --review writes the draft for the ingest page, and the final batch when
 		// no flag awaits a disposition. The producer models are needed on the

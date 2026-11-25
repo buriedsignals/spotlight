@@ -1058,6 +1058,7 @@ function researchContent(content, items) {
 
 function decisionBlockers() {
   if (readOnly()) return "";
+  if (view.stop_report) return "Spotlight stopped on this case, so it cannot be approved. Use Request follow-up to send it back to Investigation.";
   if (view.blocking.length) return "Approval is unavailable while a blocking failure is open.";
   if (view.open_required && view.gate === "research") return `Approval is unavailable until every clue is marked pursue or dismiss (${view.open_required} open).`;
   if (view.open_required) return `Approval is unavailable until every flag has a disposition (${view.open_required} open).`;
@@ -1734,14 +1735,27 @@ function render(next) {
     const parts = [intakeLink()];
     if (readOnly()) parts.push(receiptSection());
     if (view.model_warning) parts.push(el("p", { className: "warning", text: view.model_warning }));
+    if (view.stop_report) {
+      const when = view.stop_report.recorded_at ? ` at ${new Date(view.stop_report.recorded_at).toLocaleString()}` : "";
+      parts.push(
+        el(
+          "section",
+          { "aria-labelledby": "stop-heading" },
+          fold("stop", el("h2", { id: "stop-heading", text: `Why Spotlight stopped${when}` }), [
+            el("p", { text: `${view.blocking.length ? "The case still fails its check (below)." : "The case passes its check now; these failures are from when it stopped."} A stopped case cannot be approved. To go on, use Request follow-up below to send it back to Investigation, with a note on what to fix.` }),
+            list(view.stop_report.lines, ""),
+          ], { className: "fold blocking" }),
+        ),
+      );
+    }
     if (view.blocking.length) {
       parts.push(
         el(
           "section",
           { "aria-labelledby": "blocking-heading" },
           fold("blocking", el("h2", { id: "blocking-heading", text: `Blocking failures (${view.blocking.length})` }), [
-            el("p", { text: view.phase === "blocked"
-              ? "Spotlight stopped on these, so the case cannot be approved. To go on, use Request follow-up below to send it back to Investigation, with a note on what to fix."
+            el("p", { text: view.stop_report
+              ? "The case's check as it is now."
               : "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
             list(view.blocking, ""),
           ], { className: "fold blocking" }),

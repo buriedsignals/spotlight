@@ -185,3 +185,24 @@ test('investigation input admission requires a valid complete owner-tagged valid
   assert.equal(result.passed, expected, name);
  }
 });
+
+// spotlight-stall 2026-11-25: the analyst's draft was refused four times for leaving
+// kept findings out of finding_order; which findings the report covers is the gate's.
+test('after the analyst at Report, code completes the draft to the kept findings before checking it', async (t) => {
+	const caseDir = await mkdtemp(join(tmpdir(), 'spotlight-pi-report-order-'));
+	t.after(() => rm(caseDir, { recursive: true, force: true }));
+	await mkdir(join(caseDir, 'data'));
+	const findings = ['F1', 'F2', 'F3'].map((id) => ({ id, claim: `Registry entry ${id}`, confidence: 'medium' }));
+	await writeFile(join(caseDir, 'data/findings.json'), JSON.stringify({ project: 'p', findings }));
+	await writeFile(join(caseDir, 'data/fact-check.json'), JSON.stringify({ claims: findings.map((row) => ({ finding_id: row.id, verdict: 'unverified' })) }));
+	await writeFile(join(caseDir, 'data/report-draft.json'), JSON.stringify({
+		schema_version: '1.0', title: 'Registry review', deck: 'What the registry shows.', framing_finding_ids: ['F1'], finding_order: ['F1'],
+		finding_treatments: [{ finding_id: 'F1', headline: 'Registry entry F1', summary: '', why_it_matters: '' }], caveats: [], next_steps: [],
+	}));
+	const context: ToolContext = { caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON ?? 'python3', configPath: join(caseDir, 'config.json'), env: process.env };
+	const outcome = await validateAfterWorker('analyst', 'report', 'local-model', context);
+	assert.equal(outcome.passed, true, outcome.report);
+	const draft = JSON.parse(await readFile(join(caseDir, 'data/report-draft.json'), 'utf8'));
+	assert.deepEqual(draft.finding_order, ['F1', 'F2', 'F3']);
+	assert.deepEqual(draft.finding_treatments.map((row: { headline: string }) => row.headline), ['Registry entry F1', 'Registry entry F2', 'Registry entry F3']);
+});

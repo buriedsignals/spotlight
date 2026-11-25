@@ -280,6 +280,9 @@ def record_attempt(case: Path, data_descriptor: CaseDirectory, kind: str, gap: s
             "exhausted_attempt": kind,
             "gap": gap,
             "attempts": dict(attempts),
+            # When the stop was recorded: its failures are a record of that
+            # moment, which the review page shows beside the case's current check.
+            "recorded_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         }
         if kind in (CYCLE, ROUND_CYCLE):
             # The gaps report: every unresolved gap the cycles recorded.

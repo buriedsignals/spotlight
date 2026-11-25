@@ -29,7 +29,11 @@ write.
    stays unavailable while a blocking failure or a required disposition is
    open. The Investigation gate also offers "Request follow-up" with a
    required note: it sends the case back to Investigation, on the same nonce
-   and digest rules, and open flags or failures do not block it. When the
+   and digest rules, and open flags or failures do not block it. A case
+   Spotlight stopped opens on the Investigation gate with the stop's failures
+   and the time it stopped (`stop_report`), apart from the case's check as it
+   is now (`blocking`, re-run on every load), and offers only the follow-up.
+   When the
    member decides, the server sends the digest the page showed
    plus a one-time nonce it holds. The Python transition refuses a changed digest
    (the page reloads and asks again), an unknown or spent nonce, and open
