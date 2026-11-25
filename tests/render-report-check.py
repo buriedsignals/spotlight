@@ -526,6 +526,43 @@ def check_sections(root: Path) -> None:
     assert invalid.returncode == 3 and "missing ['F2']" in invalid.stdout, invalid.stdout
 
 
+def check_complete_order(root: Path) -> None:
+    """spotlight-stall 2026-11-25: the analyst's draft was refused four times
+    for leaving kept findings out of finding_order. Which findings the report
+    covers is the gate's decision, so --complete-order makes the draft cover
+    exactly the kept ones before the check: a kept finding left out is added
+    with its claim as headline, and a set-aside or unknown id is removed."""
+    validate = lambda case: subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case), "--complete-order"],
+        capture_output=True, text=True)
+    case = build_case(root / "complete-order")
+    gate_review(case, {"selection:F1": True, "disposition:F2": "keep"})
+    only_finding(case, "F1")
+    draft_path = case / "data" / "report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    draft["finding_order"] = ["F1", "F9"]
+    draft["sections"] = [{"label": "Records we hold", "finding_ids": ["F1", "F9"]}]
+    write_json(draft_path, draft)
+    result = validate(case)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Code added the kept findings the draft left out, at the end: F2." in result.stdout, result.stdout
+    draft = json.loads(draft_path.read_text())
+    claim = next(row["claim"] for row in json.loads((case / "data" / "findings.json").read_text())["findings"] if row["id"] == "F2")
+    assert draft["finding_order"] == ["F1", "F2"], draft["finding_order"]
+    assert draft["finding_treatments"][1] == {"finding_id": "F2", "headline": claim, "summary": "", "why_it_matters": ""}
+    assert draft["sections"] == [{"label": "Records we hold", "finding_ids": ["F1", "F2"]}], draft["sections"]
+    assert finalize(case).returncode == 0
+    # A complete draft is left byte for byte.
+    before = draft_path.read_bytes()
+    assert validate(case).returncode == 0 and draft_path.read_bytes() == before
+
+    aside = build_case(root / "complete-order-aside")
+    gate_review(aside, {"selection:F1": True, "disposition:F2": "set_aside"})
+    result = validate(aside)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads((aside / "data" / "report-draft.json").read_text())["finding_order"] == ["F1"]
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -550,6 +587,7 @@ def main() -> int:
         check_code_set_headlines(Path(tmp))
         check_local_model_warning(Path(tmp))
         check_sections(Path(tmp))
+        check_complete_order(Path(tmp))
         # Frontier's draft keeps every field it wrote.
         assert 'class="lede">' in html and "Why it matters:" in html and "Why it matters:" in markdown
         assert "<script>alert('unsafe')</script>" not in html

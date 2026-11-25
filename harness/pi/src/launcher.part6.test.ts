@@ -606,7 +606,8 @@ test('a failing report draft: repairs carry the FAIL lines, the cap sets the dra
 	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests/fixtures/review_case.py'), caseDir, 'report', '--activated', '--clean']);
-	const omitsKept = { ...REPORT_DRAFT, framing_finding_ids: [], finding_order: [], finding_treatments: [], caveats: [], next_steps: [] };
+	// A failure code does not repair (a draft that omits kept findings is completed by code: validators.ts).
+	const omitsKept = { ...REPORT_DRAFT, schema_version: '9.9' };
 	let calls = 0;
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'analyst')) {
@@ -625,13 +626,13 @@ test('a failing report draft: repairs carry the FAIL lines, the cap sets the dra
 	assert.equal(tasks.length, 3, 'the first try and two repairs');
 	assert.doesNotMatch(tasks[0], /FAIL/);
 	for (const task of tasks.slice(1)) {
-		assert.match(task, /FAIL {2}STRUCTURE: finding_order must contain every finding exactly once; missing=\['F1'\][^\n]*kept at the Investigation gate/);
+		assert.match(task, /FAIL {2}STRUCTURE: schema_version must be '1\.0'/);
 		assert.doesNotMatch(task, /ORCH-SENTINEL/);
 	}
 	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'analyst')).at(-1)!);
 	assert.match(results[2], /\[report-repair receipt\] \{"cap":"report-repairs","role":"analyst","phase":"report","repairs":2,"failed_checks":3,"set_aside":"data\/harness-checks\/analyst\/report-draft-rejected-[^"]+\.json"\}/);
 	assert.match(results[3], /no analyst was started[^\n]*\[report-repair receipt\]/);
-	assert.match(results[3], /missing=\['F1'\]/);
+	assert.match(results[3], /schema_version must be '1\.0'/);
 	const opened = chat.lines
 		.map((line) => JSON.parse(line) as { type?: string; toolName?: string; isError?: boolean; result?: { content: Array<{ text: string }> } })
 		.filter((record) => record.type === 'tool_execution_end' && record.toolName === 'open_review');
@@ -641,12 +642,12 @@ test('a failing report draft: repairs carry the FAIL lines, the cap sets the dra
 	assert.ok(!existsSync(join(caseDir, 'data', 'report-draft.json')), 'the invalid draft is no longer the case\'s draft');
 	const setAside = /"set_aside":"([^"]+)"/.exec(results[2])![1];
 	const kept = JSON.parse(await readFile(join(caseDir, setAside), 'utf8')) as { receipt: { failed_checks: number }; validator_report: string; draft: string };
-	assert.deepEqual([kept.receipt.failed_checks, kept.draft], [3, JSON.stringify(omitsKept)]);
-	assert.match(kept.validator_report, /missing=\['F1'\]/);
+	assert.deepEqual([kept.receipt.failed_checks, (JSON.parse(kept.draft) as { schema_version: string }).schema_version], [3, '9.9']);
+	assert.match(kept.validator_report, /schema_version must be '1\.0'/);
 
 	await settledPrompt(chat, 'Please try the report once more.');
 	assert.equal(analystTasks().length, 4, 'the member\'s message allows another try');
-	assert.match(analystTasks()[3], /FAIL {2}STRUCTURE: finding_order/);
+	assert.match(analystTasks()[3], /FAIL {2}STRUCTURE: schema_version must be '1\.0'/);
 });
 
 // Audit G4 (reports/audit-feedback-loop.md): the gate-summary analyst had no

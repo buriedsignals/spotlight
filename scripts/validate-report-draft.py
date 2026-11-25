@@ -690,12 +690,131 @@ def check(case: Path) -> list[str]:
     return failures
 
 
+def complete_order(case: Path) -> list[str]:
+    """Make the draft cover exactly the kept findings, in a form the check accepts.
+
+    spotlight-stall 2026-11-25: the analyst's draft was refused four times for
+    leaving kept findings out of finding_order (1, then 15, 25 and 15 of 38),
+    and each retry dropped their treatments with them. Which findings the
+    report covers is not the analyst's choice (the Investigation gate made
+    it), so code completes it: ids the gate set aside or that are not
+    findings leave finding_order, framing_finding_ids and the treatments; a
+    kept finding the draft left out is appended in findings.json order, with
+    its fact-checked claim as headline and no prose (the shape a local tier
+    writes); the treatments follow finding_order; and the sections hold each
+    kept finding once, a missing one in the last section. A draft that
+    cannot be read, or has no finding_order list, is left for the check.
+    Returns what code changed, one line each.
+    """
+    try:
+        findings_doc = load_object(case / "data" / "findings.json")
+        draft = load_object(case / "data" / "report-draft.json")
+        set_aside = set_aside_findings(case)
+    except (ValueError, OrchestrationError):
+        return []
+    if not isinstance(draft.get("finding_order"), list):
+        return []
+    findings = [row for row in findings_doc.get("findings", []) if isinstance(row, dict)]
+    claims = {clean(row.get("id")): clean(row.get("claim")) for row in findings if clean(row.get("id"))}
+    kept = [fid for fid in claims if fid not in set_aside]
+    if not kept:
+        return []
+    before = json.dumps(draft, sort_keys=True)
+    changes: list[str] = []
+
+    order: list[str] = []
+    for ref in draft["finding_order"]:
+        fid = clean(ref)
+        if fid in kept and fid not in order:
+            order.append(fid)
+    missing = [fid for fid in kept if fid not in order]
+    order.extend(missing)
+    if missing:
+        changes.append(f"Code added the kept findings the draft left out, at the end: {', '.join(missing)}.")
+    dropped = sorted({clean(ref) for ref in draft["finding_order"]} - set(kept))
+    if dropped:
+        changes.append(f"Code removed ids that are not kept findings: {', '.join(dropped)}.")
+    draft["finding_order"] = order
+
+    framing = draft.get("framing_finding_ids")
+    if isinstance(framing, list):
+        known = list(dict.fromkeys(clean(ref) for ref in framing if clean(ref) in kept))
+        if known != framing:
+            draft["framing_finding_ids"] = known or order[:1]
+            if not known:
+                changes.append(f"Code framed the report on {order[0]}: the draft's framing named no kept finding.")
+    # A caveat or next step about findings the gate did not keep goes with them.
+    for field in ("caveats", "next_steps"):
+        entries = draft.get(field)
+        if not isinstance(entries, list):
+            continue
+        kept_entries = []
+        for entry in entries:
+            ids = entry.get("finding_ids") if isinstance(entry, dict) else None
+            if not isinstance(ids, list):
+                kept_entries.append(entry)
+                continue
+            known = list(dict.fromkeys(clean(ref) for ref in ids if clean(ref) in kept))
+            if known:
+                kept_entries.append({**entry, "finding_ids": known} if known != ids else entry)
+            else:
+                changes.append(f"Code removed a {field} entry about findings that are not kept: {clean(entry.get('text'))[:80]}")
+        draft[field] = kept_entries
+
+    treatments = draft.get("finding_treatments") if isinstance(draft.get("finding_treatments"), list) else []
+    by_id: dict[str, Any] = {}
+    for item in treatments:
+        if isinstance(item, dict) and clean(item.get("finding_id")) in kept:
+            by_id.setdefault(clean(item.get("finding_id")), item)
+    added = [fid for fid in order if fid not in by_id]
+    draft["finding_treatments"] = [
+        by_id.get(fid) or {"finding_id": fid, "headline": claims[fid], "summary": "", "why_it_matters": ""}
+        for fid in order
+    ]
+    if added:
+        changes.append(f"Code gave {', '.join(added)} its fact-checked claim as headline, with no prose.")
+
+    sections = draft.get("sections")
+    if isinstance(sections, list) and sections:
+        placed: list[str] = []
+        kept_sections = []
+        for section in sections:
+            if not isinstance(section, dict) or not isinstance(section.get("finding_ids"), list):
+                kept_sections.append(section)
+                continue
+            ids = []
+            for ref in section["finding_ids"]:
+                fid = clean(ref)
+                if fid in order and fid not in placed:
+                    ids.append(fid)
+                    placed.append(fid)
+            if ids:
+                kept_sections.append({**section, "finding_ids": ids})
+        unplaced = [fid for fid in order if fid not in placed]
+        last = next((s for s in reversed(kept_sections) if isinstance(s, dict) and isinstance(s.get("finding_ids"), list)), None)
+        if unplaced and last is not None:
+            last["finding_ids"].extend(unplaced)
+            changes.append(f"Code put {', '.join(unplaced)} in the last section, \"{clean(last.get('label'))}\".")
+        if last is not None:
+            draft["sections"] = kept_sections
+
+    if json.dumps(draft, sort_keys=True) == before:
+        return []
+    (case / "data" / "report-draft.json").write_text(json.dumps(draft, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return changes or ["Code put the treatments and sections in finding_order."]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("case_dir")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--complete-order", action="store_true",
+                        help="first make the draft cover exactly the kept findings (complete_order), then check it")
     args = parser.parse_args()
     case = Path(args.case_dir)
+    if args.complete_order and case.is_dir():
+        for change in complete_order(case):
+            print(change)
     failures = [f"STRUCTURE: case dir not found: {case}"] if not case.is_dir() else check(case)
     if args.json:
         print(json.dumps({"passed": not failures, "failures": failures}, indent=2))
