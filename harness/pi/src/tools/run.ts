@@ -39,10 +39,12 @@ export const REPEAT_REASON = 'This is the same call as the last two. Act on what
 // What a 12b worker's run ends with on its third refusal in a row, and what the
 // orchestrator then gets as that worker's answer.
 export const LOOP_STOP = 'repeated one call and was stopped; its last results stand.';
-// What a worker's run ends with when the harness refused its last
-// REFUSAL_STREAK tool calls (a web tool's upstream failure is not counted).
+// What a worker's run ends with when its last REFUSAL_STREAK tool calls all
+// failed: a harness refusal or the call's own error, such as a missing path or
+// bad arguments (a web tool's upstream failure is not counted). The words say
+// that, so a model's errors do not read as the harness refusing it.
 export const REFUSAL_STREAK = 6;
-export const REFUSAL_STOP = 'had six tool calls in a row refused by the harness and was stopped; its last results stand.';
+export const REFUSAL_STOP = 'had six tool calls in a row fail (refused or in error) and was stopped; its last results stand.';
 // What a worker's run ends with when the progress watchdog stops it
 // (extension.ts registerProgressWatchdog); a JSON receipt line follows it.
 export const PROGRESS_STOP = 'made no new accepted record within the progress watchdog limit and was stopped; its last results stand.';

@@ -1325,7 +1325,7 @@ for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker whose
 	// Continuity: the orchestrator gets the stop and the harness's checks, and
 	// goes on with its own turn.
 	const answer = toolResults(orchestrator.at(-1)!).join('\n');
-	assert.match(answer, /The investigator had six tool calls in a row refused by the harness and was stopped; its last results stand\./);
+	assert.match(answer, /The investigator had six tool calls in a row fail \(refused or in error\) and was stopped; its last results stand\./);
 	assert.match(answer, /\[Harness checks after the investigator finished: /);
 });
 

@@ -47,7 +47,7 @@ import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, Worker
 import { withCasePassages, withWikiPassages } from './case-search.ts';
 import { withInvestigationPacket } from './investigation-packet.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
-import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
+import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections, recordDirectionGap } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { INPUTS_REFUSED, batchDraftError, bindActiveCase, dispatchAt, inputsRepair, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments, withPlanCheck } from './tools/spotlight.ts';
 import { batchBlocked, batchBlockedFile, factCheckHash, gateCheck } from './tools/review.ts';
@@ -506,7 +506,8 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 						if (controller.signal.aborted) throw error;
 						answer = (error as Error).message;
 					}
-					answers.push(`Direction ${direction.tag} (${direction.ref}): ${answer}`);
+					const gap = controller.signal.aborted ? undefined : recordDirectionGap(harness.active.caseDir, direction, answer);
+					answers.push(`Direction ${direction.tag} (${direction.ref}): ${answer}${gap ? `\n[code recorded a research gap for ${direction.ref}: the gate shows it, and the next cycle runs this direction again]` : ''}`);
 				}
 				return note + answers.join('\n\n');
 			} finally {

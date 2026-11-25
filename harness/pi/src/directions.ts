@@ -14,7 +14,7 @@
 // are. Its ids carry its tag (D2-F1, D2-E1), so ids never collide and the
 // passage links, which hash the finding id, stay valid. A plan with one
 // direction keeps plain ids and a single spawn.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { Deliverable } from './roles.ts';
@@ -149,6 +149,30 @@ export function directionsToRun(caseDir: string, directions: Direction[]): Direc
 			!ids.some((id) => owns(direction.tag, id)) || gaps.includes(direction.ref) || unverified.some((id) => owns(direction.tag, id)),
 	);
 	return open.length > 0 ? open : directions;
+}
+
+// spotlight-stall 2026-11-25: a direction worker the watchdog stopped, or one
+// that found nothing, left its direction with no finding, and D10 blocked the
+// case until a correction round the worker could not complete. After a
+// direction's run, code records an explicit gap for a direction with no
+// finding and no gap, with the worker's own last words as the reason. The
+// case can continue, the gate shows the gap to the member, and the next
+// cycle runs the direction again (directionsToRun reopens gapped ones).
+// Returns the gap's reason when it recorded one.
+export function recordDirectionGap(caseDir: string, direction: Direction, answer: string): string | undefined {
+	const path = join(caseDir, 'data', 'findings.json');
+	const findings = readJson(path);
+	if (!findings) return undefined;
+	const covered = entries(findings, 'findings').some((finding) => owns(direction.tag, finding.id)
+		|| (Array.isArray(finding.research_refs) && finding.research_refs.includes(direction.ref)));
+	if (covered || entries(findings, 'research_gaps').some((gap) => gap.ref === direction.ref)) return undefined;
+	const said = answer.replace(/\[[a-z-]+ receipt\][^\n]*/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+	const reason = `No finding was recorded for this direction in this cycle. The investigator's last words: ${said || '(none)'}`;
+	const updated = { ...findings, research_gaps: [...entries(findings, 'research_gaps'), { ref: direction.ref, reason }] };
+	const temp = `${path}.${process.pid}.tmp`;
+	writeFileSync(temp, `${JSON.stringify(updated, null, 2)}\n`);
+	renameSync(temp, path);
+	return reason;
 }
 
 // What the worker is told about its direction, after the orchestrator's task.
