@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .case_writer import atomic_write_files
+from .case_writer import CaseDirectory, DirectoryArgument, atomic_write_files
 from .claim_basis import claim_basis
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
 from .dependencies import current_hashes, ingest_digest, investigation_gate_dependencies, material_only_case
@@ -128,7 +128,7 @@ def nonce_sha256(nonce: str) -> str:
 
 
 def _load_json_data(
-    case: Path, name: str, data_descriptor: int | None
+    case: Path, name: str, data_descriptor: DirectoryArgument | None
 ) -> dict[str, Any] | None:
     content = read_data_bytes(case, name, data_descriptor)
     if content is None:
@@ -142,12 +142,12 @@ def _load_json_data(
     return value
 
 
-def review_sha256(case: Path, gate: str, data_descriptor: int | None = None) -> str | None:
+def review_sha256(case: Path, gate: str, data_descriptor: DirectoryArgument | None = None) -> str | None:
     content = read_data_bytes(case, review_file(gate), data_descriptor)
     return None if content is None else hashlib.sha256(content).hexdigest()
 
 
-def load_ledger(case: Path, data_descriptor: int | None = None) -> dict[str, Any]:
+def load_ledger(case: Path, data_descriptor: DirectoryArgument | None = None) -> dict[str, Any]:
     ledger = _load_json_data(case, LEDGER_FILE, data_descriptor)
     if ledger is None:
         return {"schema_version": LEDGER_VERSION, "nonces": {}}
@@ -159,7 +159,7 @@ def load_ledger(case: Path, data_descriptor: int | None = None) -> dict[str, Any
 
 
 def effective_ledger(
-    case: Path, state: dict[str, Any], data_descriptor: int | None = None
+    case: Path, state: dict[str, Any], data_descriptor: DirectoryArgument | None = None
 ) -> dict[str, Any]:
     """The ledger file plus, for a state just upgraded from v1, its in-memory
     legacy entries (published by the first v2 write)."""
@@ -328,7 +328,7 @@ def rebuild_ingest_batch(case: Path) -> None:
         raise OrchestrationError(f"the knowledge batch rebuild failed: {(done.stderr or done.stdout).strip()[-500:]}")
 
 
-def review_digest(case: Path, gate: str, data_descriptor: int | None = None) -> str:
+def review_digest(case: Path, gate: str, data_descriptor: DirectoryArgument | None = None) -> str:
     """The digest a page shows and a receipt binds: subject plus saved review."""
     require_gate(gate)
     return _canonical_sha(
@@ -340,7 +340,7 @@ def review_digest(case: Path, gate: str, data_descriptor: int | None = None) -> 
     )
 
 
-def issue_nonce(case: Path, data_descriptor: int, gate: str, subject: str | None = None) -> str:
+def issue_nonce(case: Path, data_descriptor: CaseDirectory, gate: str, subject: str | None = None) -> str:
     """Record a fresh page nonce for one gate (or, with its material as the
     subject, one intake decision) and return it to the caller only."""
     if gate not in INTAKE_GATES.values():
@@ -357,7 +357,7 @@ def issue_nonce(case: Path, data_descriptor: int, gate: str, subject: str | None
 
 def consume_nonce(
     case: Path,
-    data_descriptor: int,
+    data_descriptor: CaseDirectory,
     gate: str,
     nonce: str | None,
     digest: str | None,
@@ -633,7 +633,7 @@ def _research_plan_items(case: Path) -> list[dict[str, Any]]:
              "required": False}]
 
 
-def _drop_research_plan(case: Path, data_descriptor: int) -> None:
+def _drop_research_plan(case: Path, data_descriptor: CaseDirectory) -> None:
     """The member dropped the plan code added. The methodology changes, so the
     page approves it without research; the saved mark keeps it dropped
     (methodology-paperwork.ts)."""
@@ -956,7 +956,7 @@ def _indicator_framework_content(case: Path) -> tuple[dict[str, Any] | None, lis
     return content, items
 
 
-def indicator_framework_next_cycle(case: Path, data_descriptor: int | None = None) -> list[str]:
+def indicator_framework_next_cycle(case: Path, data_descriptor: DirectoryArgument | None = None) -> list[str]:
     """The Indicator Framework items the member assigned to the next cycle on
     the Investigation gate page, as the review record holds them."""
     review = load_review(case, "investigation_gate", data_descriptor)
@@ -1223,7 +1223,7 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
     return content, blocking, items
 
 
-def load_review(case: Path, gate: str, data_descriptor: int | None = None) -> dict[str, Any]:
+def load_review(case: Path, gate: str, data_descriptor: DirectoryArgument | None = None) -> dict[str, Any]:
     review = _load_json_data(case, review_file(gate), data_descriptor)
     if review is None:
         return {"schema_version": REVIEW_VERSION, "gate": gate, "reviewer": "", "items": {}}
@@ -1279,7 +1279,7 @@ def _gate_parts(
     return _ingest_content(case)
 
 
-def _decisions_recorded(case: Path, gate: str, data_descriptor: int | None) -> int:
+def _decisions_recorded(case: Path, gate: str, data_descriptor: DirectoryArgument | None) -> int:
     """How many decisions (page or command line) this gate has recorded."""
     nonces = load_ledger(case, data_descriptor)["nonces"]
     return sum(
@@ -1293,7 +1293,7 @@ def _decisions_recorded(case: Path, gate: str, data_descriptor: int | None) -> i
 SOLO_DECIDER = "Member"
 
 
-def _reviewer_names(case: Path, gate: str, review: dict[str, Any], data_descriptor: int | None) -> tuple[str, str]:
+def _reviewer_names(case: Path, gate: str, review: dict[str, Any], data_descriptor: DirectoryArgument | None) -> tuple[str, str]:
     """(name for this decision, name saved before an earlier decision).
 
     A name counts for the decision now open only when it was entered after
@@ -1307,7 +1307,7 @@ def _reviewer_names(case: Path, gate: str, review: dict[str, Any], data_descript
     return "", name
 
 
-def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dict[str, Any]:
+def build_view(case: Path, gate: str, data_descriptor: DirectoryArgument | None = None) -> dict[str, Any]:
     """The page model: content, blocking failures, flags, selection and digest."""
     require_gate(gate)
     review = load_review(case, gate, data_descriptor)
@@ -1401,7 +1401,7 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
     return edit
 
 
-def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> None:
+def apply_edit(case: Path, data_descriptor: CaseDirectory, gate: str, edit: object) -> None:
     """Apply one page edit in code and save the canonical review file."""
     require_gate(gate)
     review = load_review(case, gate, data_descriptor)
@@ -1433,7 +1433,7 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
         case_path(case, INGEST_BATCH).unlink(missing_ok=True)
 
 
-def save_shown_review(case: Path, data_descriptor: int, gate: str) -> None:
+def save_shown_review(case: Path, data_descriptor: CaseDirectory, gate: str) -> None:
     """Save the marks the page shows, suggested ones included, so an approval
     without a single edit still binds a review that records them."""
     require_gate(gate)
@@ -1444,7 +1444,7 @@ def save_shown_review(case: Path, data_descriptor: int, gate: str) -> None:
 
 
 def _write_review(
-    case: Path, data_descriptor: int, gate: str, review: dict[str, Any], current: dict[str, dict[str, Any]]
+    case: Path, data_descriptor: CaseDirectory, gate: str, review: dict[str, Any], current: dict[str, dict[str, Any]]
 ) -> None:
     # Items the gate does not show right now (a flag of a deselected claim)
     # keep their saved decision for when they come back.

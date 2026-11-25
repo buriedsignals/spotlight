@@ -4,6 +4,19 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed — Spotlight runs on Windows past the first review
+
+- Case storage used directory-descriptor calls that Windows does not have, so
+  the first locked write failed with "case storage directory is not safely
+  accessible" and runs stopped at the first review page. On Windows the case
+  directory is now held by path. Every part of the path is checked to be a
+  plain directory (no symlink or junction) and re-checked before each write,
+  and the lock is held on `data/.spotlight-lock`. Linux and macOS keep
+  descriptor-anchored storage unchanged.
+- Navigator failed with "No module named 'app'" on every host because the
+  harness started it without `PYTHONPATH`. It now gets the one entry that ends
+  in `navigator/pydeps`, where the Engine installs it.
+
 ### Changed — The report is one page with a findings table
 
 - `report.html` now opens with the case's counts and verdict bars, then shows

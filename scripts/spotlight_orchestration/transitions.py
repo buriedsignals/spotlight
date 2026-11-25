@@ -38,7 +38,7 @@ from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, rebuilt_claim
 from . import research as research_rules
 from .research import AMENDMENT_CORRECTION, CYCLE, ROUND_CYCLE
 from .case_contract import bind as bind_case_contract
-from .case_writer import atomic_write_files, restore_files_on_error
+from .case_writer import CaseDirectory, atomic_write_files, restore_files_on_error
 from . import review
 from .review import (
     LEDGER_FILE,
@@ -63,7 +63,7 @@ def _state_bytes(state: dict) -> bytes:
 
 def _publish(
     case: Path,
-    data_descriptor: int,
+    data_descriptor: CaseDirectory,
     state: dict,
     ledger: dict | None = None,
     extra: dict | None = None,
@@ -100,7 +100,7 @@ def _anomaly_methods(case: Path) -> dict[str, str]:
 
 def approve(
     case: Path,
-    data_descriptor: int,
+    data_descriptor: CaseDirectory,
     gate: str,
     approved_by: str,
     approved_at: str,
@@ -239,7 +239,7 @@ def _decider(
     return {"decided_by": decided_by, "decided_at": decided_at}
 
 
-def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str, reopen: bool = True) -> None:
+def record_attempt(case: Path, data_descriptor: CaseDirectory, kind: str, gap: str, reopen: bool = True) -> None:
     if kind not in RECORDABLE_ATTEMPTS:
         raise OrchestrationError(f"unsupported attempt kind: {kind}")
     if not gap.strip():
@@ -287,7 +287,7 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str, reopen
     _publish(case, data_descriptor, state)
 
 
-def reset_corrections(case: Path, data_descriptor: int) -> None:
+def reset_corrections(case: Path, data_descriptor: CaseDirectory) -> None:
     """A correction made progress: the no-progress count starts again, so it counts
     in a row. Code's own step, never the model's; a blocked case stays blocked."""
     state = load_state(case, data_descriptor)
@@ -299,7 +299,7 @@ def reset_corrections(case: Path, data_descriptor: int) -> None:
     _publish(case, data_descriptor, state)
 
 
-def repair_claim_links(case: Path, data_descriptor: int) -> None:
+def repair_claim_links(case: Path, data_descriptor: CaseDirectory) -> None:
     """Write the claim links findings already name. Code's own step. A repaired link is
     not the investigator's update: an open follow-up still waits for one, so the member's
     note cannot lapse on this write. The repair ends a correction that was about links."""
@@ -322,7 +322,7 @@ def repair_claim_links(case: Path, data_descriptor: int) -> None:
     _publish(case, data_descriptor, state, extra={path: updated})
 
 
-def start_research_round(case: Path, data_descriptor: int) -> None:
+def start_research_round(case: Path, data_descriptor: CaseDirectory) -> None:
     """Append a stalled investigation's targeted round to research_plan.
 
     The investigator proposes the round in data/research-round.json; code
@@ -380,7 +380,7 @@ def start_research_round(case: Path, data_descriptor: int) -> None:
     _publish(case, data_descriptor, state, extra={"data/methodology.json": updated})
 
 
-def record_amendment(case: Path, data_descriptor: int, build: bool = False) -> None:
+def record_amendment(case: Path, data_descriptor: CaseDirectory, build: bool = False) -> None:
     """Check AMENDMENT mode's proposal against the member's marks (D8).
 
     On a pass the proposal becomes data/methodology.json and its hash is
@@ -464,7 +464,7 @@ def record_amendment(case: Path, data_descriptor: int, build: bool = False) -> N
     _publish(case, data_descriptor, state, ledger, {"data/methodology.json": amendment_bytes})
 
 
-def resume_stopped_research(case: Path, data_descriptor: int) -> None:
+def resume_stopped_research(case: Path, data_descriptor: CaseDirectory) -> None:
     """The way out of a stop at Research. A refused amendment goes back to the Research
     page, where the member changes the marks; a failed round runs again. Each try needs
     the member, so this cannot loop by itself."""
@@ -480,7 +480,7 @@ def resume_stopped_research(case: Path, data_descriptor: int) -> None:
     _publish(case, data_descriptor, state)
 
 
-def continue_without_research(case: Path, data_descriptor: int) -> None:
+def continue_without_research(case: Path, data_descriptor: CaseDirectory) -> None:
     """The member's choice while Research is off: drop the research plan.
     The methodology changes, so the Methodology gate reopens and the member
     approves the plan without research there; nothing else advances."""
@@ -540,7 +540,7 @@ def _follow_up_requester(
 
 def request_follow_up(
     case: Path,
-    data_descriptor: int,
+    data_descriptor: CaseDirectory,
     instructions: str,
     nonce: str | None = None,
     digest: str | None = None,
@@ -601,7 +601,7 @@ def request_follow_up(
     _publish(case, data_descriptor, state, ledger)
 
 
-def seal_investigation_gate(case: Path, data_descriptor: int) -> None:
+def seal_investigation_gate(case: Path, data_descriptor: CaseDirectory) -> None:
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
     if status.get("next_phase") != "investigation_gate_finalization" or status.get(
@@ -633,7 +633,7 @@ def _run_helper(script: str, case: Path) -> None:
         raise OrchestrationError(detail)
 
 
-def write_report_skeleton(case: Path, data_descriptor: int) -> bool:
+def write_report_skeleton(case: Path, data_descriptor: CaseDirectory) -> bool:
     """At Report, before any draft exists, write the draft's structure for the
     model to fill in (review.report_skeleton). Returns whether it wrote one."""
     state = load_state(case, data_descriptor)
@@ -651,7 +651,7 @@ def write_report_skeleton(case: Path, data_descriptor: int) -> bool:
 
 def decide_report(
     case: Path,
-    data_descriptor: int,
+    data_descriptor: CaseDirectory,
     decision: str,
     nonce: str | None = None,
     digest: str | None = None,
@@ -693,7 +693,7 @@ def decide_report(
 
 def decide_ingest(
     case: Path,
-    data_descriptor: int,
+    data_descriptor: CaseDirectory,
     decision: str,
     nonce: str | None = None,
     digest: str | None = None,

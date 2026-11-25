@@ -28,7 +28,7 @@ const RECORDER = `#!/usr/bin/env node
 const { appendFileSync, existsSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const args = process.argv.slice(2);
-appendFileSync(join(__dirname, 'argv.jsonl'), JSON.stringify({ program: require('node:path').basename(process.argv[1]), args }) + '\\n');
+appendFileSync(join(__dirname, 'argv.jsonl'), JSON.stringify({ program: require('node:path').basename(process.argv[1]), args, pythonpath: process.env.PYTHONPATH ?? null }) + '\\n');
 if (existsSync(join(__dirname, 'result.json'))) process.stdout.write(readFileSync(join(__dirname, 'result.json')));
 else if (args.includes('integrations.search')) process.stdout.write('[]');
 else process.stdout.write('{}');
@@ -62,7 +62,7 @@ async function fixture(t: TestContext, env: Record<string, string> = {}) {
 		(await readFile(join(bin, 'argv.jsonl'), 'utf8').catch(() => ''))
 			.split('\n')
 			.filter(Boolean)
-			.map((line) => JSON.parse(line) as { program: string; args: string[] });
+			.map((line) => JSON.parse(line) as { program: string; args: string[]; pythonpath: string | null });
 	return { root, bin, caseDir, context, tools, call, recorded };
 }
 
@@ -77,6 +77,19 @@ test('the shared runner passes metacharacters to the program as literal argv', a
 
 	assert.deepEqual((await recorded())[0].args, [HOSTILE, '--', '-x']);
 	assert.equal(existsSync(join(root, 'PWNED')), false);
+});
+
+// Authoring gate: the Engine installs Navigator into <base>/navigator/pydeps and
+// puts it on the session PYTHONPATH; 2.36.0 dropped PYTHONPATH, so Navigator
+// failed with "No module named 'app'" on every host. Only that entry is passed.
+test('Navigator is started with its own pydeps entry from the session PYTHONPATH, and nothing else from it', async (t) => {
+	const own = join('base', 'navigator', 'pydeps');
+	const { call, recorded } = await fixture(t, {
+		PYTHONPATH: [join('base', '.spotlight', 'pydeps'), own, join('elsewhere', 'lib')].join(delimiter),
+	});
+	await call('navigator_tools', { action: 'find', value: 'registry' });
+	const run = (await recorded()).find((entry) => entry.program === 'navigator');
+	assert.equal(run?.pythonpath, own);
 });
 
 // Authoring gate: protect actual invocation/receipt/protected-write behavior.

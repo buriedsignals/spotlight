@@ -10,7 +10,7 @@
 // (indicator-framework.ts) does the mechanics from the fetched data.
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { programEnv, runFixed } from './run.ts';
 import type { Env } from './run.ts';
 
@@ -20,6 +20,16 @@ export const INDICATOR_FRAMEWORK_ROLES = ['investigator', 'fact-checker'];
 export const HARNESS_FILES = { framework: 'assets/framework.json', types: 'assets/indicator-types.json', judgment: 'references/harness-mode.md' };
 // What the Navigator CLI reads to find its account (as navigator_tools).
 export const NAVIGATOR_ENV = ['NAVIGATOR_API_URL', 'NAVIGATOR_TOKEN', 'XDG_CONFIG_HOME'];
+
+// The Engine installs Navigator with `pip --target <base>/navigator/pydeps`, and
+// its launcher imports from there. Navigator gets that one PYTHONPATH entry, not
+// the session's: the session path puts Spotlight's own pydeps first, so shared
+// libraries would load from Spotlight's copy.
+const NAVIGATOR_PYDEPS = /[\\/]navigator[\\/]pydeps[\\/]?$/;
+export function navigatorEnv(env: Env): Record<string, string> {
+	const entry = (env.PYTHONPATH ?? '').split(delimiter).find((path) => NAVIGATOR_PYDEPS.test(path));
+	return programEnv(env, NAVIGATOR_ENV, entry ? { PYTHONPATH: entry } : {});
+}
 
 export type HostedSkillContext = { caseDir: string; dataDir: string; env: Env; sensitive: boolean };
 
@@ -102,7 +112,7 @@ function newestCached(context: HostedSkillContext): string | undefined {
 }
 
 function navigator(context: HostedSkillContext, args: string[], signal?: AbortSignal) {
-	return runFixed('navigator', args, { env: programEnv(context.env, NAVIGATOR_ENV), cwd: context.dataDir, signal, timeoutMs: 60_000 });
+	return runFixed('navigator', args, { env: navigatorEnv(context.env), cwd: context.dataDir, signal, timeoutMs: 60_000 });
 }
 
 function firstLine(text: string): string {

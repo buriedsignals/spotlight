@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .case_writer import DirectoryArgument
 from .contract import METHODOLOGY_INPUTS, RESEARCH_ROUND, STATUS_VERSION, SUMMARY_OUTPUTS, OrchestrationError
 from . import research
 from .dependencies import (
@@ -41,7 +42,7 @@ _PHASE_OWNERS = {
 
 
 def load_ingestion_marker(
-    case: Path, data_descriptor: int | None = None
+    case: Path, data_descriptor: DirectoryArgument | None = None
 ) -> dict[str, Any]:
     marker: dict[str, Any] = {"schema_version": "1.0"}
     content = read_data_bytes(case, "ingestion.json", data_descriptor)
@@ -153,7 +154,7 @@ def _ingest_status(
     status: dict[str, Any],
     ledger: dict[str, Any],
     dependency_digest: str,
-    data_descriptor: int | None,
+    data_descriptor: DirectoryArgument | None,
 ) -> dict[str, Any]:
     """The Ingest section: the decision, bound to ``dependency_digest`` and
     backed by the nonce ledger, then the request and the seal."""
@@ -219,7 +220,7 @@ def _ingest_status(
 
 
 def status_for(
-    case: Path, state: dict[str, Any], data_descriptor: int | None = None
+    case: Path, state: dict[str, Any], data_descriptor: DirectoryArgument | None = None
 ) -> dict[str, Any]:
     status = {"schema_version": STATUS_VERSION, "status": "pending", "next_phase": "brief"}
     if not case_path(case, "brief-directions.txt").is_file():

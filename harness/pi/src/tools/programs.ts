@@ -16,7 +16,7 @@ import { redactor } from '../log.ts';
 import { recordNavigatorLookup } from './navigator-receipts.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { FileRefused, oneMergeAtATime, readTarget, writeConfined, writeGateSummary, writeTarget } from './case-files.ts';
-import { NAVIGATOR_ENV } from './hosted-skill.ts';
+import { navigatorEnv } from './hosted-skill.ts';
 import { HARNESS_PROPOSALS, ToolArgumentError, RETURNED_CHARS, capped, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 import type { FixedStepRunner } from './spotlight.ts';
@@ -67,7 +67,7 @@ function navigatorTool(context: ToolContext): ToolDefinition {
 			let result;
 			try {
 				result = await runFixed('navigator', ['tools', input.action, '--json', '--', input.value], {
-					env: programEnv(context.env, NAVIGATOR_ENV), cwd: context.caseDir, signal,
+					env: navigatorEnv(context.env), cwd: context.caseDir, signal,
 				});
 			} catch (error) {
 				signal?.throwIfAborted();
