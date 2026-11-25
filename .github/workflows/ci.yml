@@ -21,6 +21,9 @@ jobs:
       - name: Firecrawl CLI robustness (tree kill, no stdin, UTF-8 output)
         run: python tests/firecrawl-cli-check.py
 
+      - name: Case storage (path-held on Windows, refuses junctions and symlinks)
+        run: python tests/case-storage-check.py
+
   smoke:
     name: Smoke + Eval
     runs-on: ubuntu-latest
