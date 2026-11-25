@@ -431,7 +431,7 @@ for (const [kind, gone] of [["structural-correction"], ["fact-check-evidence-rep
     const state = JSON.parse(readFileSync(path, "utf8"));
     const gap = "FAIL  record:F1 [investigator]: evidence bundle E1 has no explicit finding link";
     state.attempts = { [kind]: 1 };
-    state.blocked = { phase: "investigation", exhausted_attempt: kind, gap, attempts: state.attempts };
+    state.blocked = { phase: "investigation", exhausted_attempt: kind, gap, attempts: state.attempts, recorded_at: "2026-11-24T10:54:00Z" };
     writeFileSync(path, JSON.stringify(state));
     assert.equal(seamStatus(caseDir).phase, "blocked");
 
@@ -439,7 +439,10 @@ for (const [kind, gone] of [["structural-correction"], ["fact-check-evidence-rep
     let view = (await json("/api/view")).body;
     assert.equal(view.gate, "investigation_gate");
     assert.equal(view.pending_gate, "investigation_gate");
-    assert.ok(view.blocking.some((line) => line.includes("no explicit finding link")), JSON.stringify(view.blocking));
+    // spotlight-stall 2026-11-25: the stop's failures are its record, with its time; the case's
+    // current check stays apart, so failures fixed since the stop no longer show as open.
+    assert.deepEqual(view.stop_report, { recorded_at: "2026-11-24T10:54:00Z", lines: [gap] });
+    assert.ok(!view.blocking.includes(gap), JSON.stringify(view.blocking));
     view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
     const approved = await json("/api/decide", { decision: "approved", digest: view.digest });
     assert.notEqual(approved.status, 200, "the failures block approval");

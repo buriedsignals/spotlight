@@ -337,10 +337,14 @@ def review_view(
             "nonce_sha256": None,
         }
     stopped = gate == "investigation_gate" and review.investigation_stop(status)
-    if stopped:  # the failures block approval, so sending the case back is the one decision left
+    if stopped:  # a stopped case cannot be approved, so sending it back is the one decision left
+        # spotlight-stall 2026-11-25: the stop's failures were shown as the case's
+        # blocking failures, so a member who fixed the files still saw them after
+        # a reload. They are the record of the stop, shown as such with its time;
+        # "blocking" stays the case's check as it is now.
         gaps = status["blocked"].get("gaps_report") or [status["blocked"].get("gap") or ""]
         lines = [line.strip() for gap in gaps for line in str(gap).splitlines() if line.strip()]
-        view = {**view, "blocking": lines + view["blocking"]}
+        view = {**view, "stop_report": {"recorded_at": status["blocked"].get("recorded_at"), "lines": lines}}
     warning = review.local_model_warning() if gate == "investigation_gate" else None
     return {**view, **({"model_warning": warning} if warning else {}), "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
             "can_request_follow_up": stopped or (gate in {"investigation_gate", "report"}
