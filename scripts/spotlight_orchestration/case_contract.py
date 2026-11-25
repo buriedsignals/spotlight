@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .case_writer import atomic_write_files
+from .case_writer import CaseDirectory, atomic_write_files
 from .contract import OrchestrationError
 
 TOOL_VERSION = "spotlight-case-contract/1"
@@ -58,7 +58,7 @@ def _empty_passages(path: Path) -> bool:
     return isinstance(doc, dict) and doc.get("expressions") == []
 
 
-def activate_new(case: Path, data_descriptor: int) -> dict[str, Any]:
+def activate_new(case: Path, data_descriptor: CaseDirectory) -> dict[str, Any]:
     contract_path = case / CONTRACT
     expressions_path = case / "data" / "source-expressions.json"
     for relative in ("data/findings.json", "findings.json", "data/fact-check.json", "data/investigation-log.json"):
@@ -102,7 +102,7 @@ def activate_new(case: Path, data_descriptor: int) -> dict[str, Any]:
     return doc
 
 
-def bind(case: Path, data_descriptor: int) -> dict[str, Any] | None:
+def bind(case: Path, data_descriptor: CaseDirectory) -> dict[str, Any] | None:
     """Append a binding of the current artifacts; None when the case is not
     activated (legacy cases have nothing to bind)."""
     path = case / CONTRACT

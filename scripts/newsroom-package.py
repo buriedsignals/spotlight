@@ -46,7 +46,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -58,7 +57,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 import newsroom_batch  # noqa: E402
 from spotlight_orchestration import review  # noqa: E402
-from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
+from spotlight_orchestration.case_writer import CaseDirectory, atomic_write_files, open_case_directory  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.resolver import load_ingestion_marker, status_for  # noqa: E402
 from spotlight_orchestration.storage import load_state, read_data_bytes, transaction  # noqa: E402
@@ -110,7 +109,7 @@ def _json_bytes(value: Any) -> bytes:
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
-def _read_data(case: Path, descriptor: int, rel: str) -> dict[str, Any] | None:
+def _read_data(case: Path, descriptor: CaseDirectory, rel: str) -> dict[str, Any] | None:
     """Case state: None only when the file is missing."""
     content = read_data_bytes(case, rel.removeprefix("data/"), descriptor)
     if content is None:
@@ -289,13 +288,11 @@ def blocked(case: Path, package_sha256: str, payload: dict[str, Any]) -> dict[st
 
 
 def _ensure_receipts_folder(case: Path) -> None:
-    descriptor = os.open(case, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
-    try:
-        os.mkdir(RECEIPTS, 0o700, dir_fd=descriptor)
-    except FileExistsError:
-        pass
-    finally:
-        os.close(descriptor)
+    with open_case_directory(case, ()) as directory:
+        try:
+            directory.mkdir(RECEIPTS)
+        except FileExistsError:
+            pass
 
 
 def complete(case: Path, package_sha256: str, batch_id: str, payload: dict[str, Any]) -> dict[str, Any]:

@@ -152,8 +152,8 @@ class PortableResolverContract(unittest.TestCase):
             storage = importlib.import_module("spotlight_orchestration.storage")
             contender = os.open(case / "data", os.O_RDONLY)
             try:
-                with storage.transaction(case) as descriptor:
-                    anchored = os.fstat(descriptor)
+                with storage.transaction(case) as directory:
+                    anchored = os.fstat(directory.descriptor)
                     visible = os.stat(case / "data", follow_symlinks=False)
                     self.assertEqual(
                         (anchored.st_dev, anchored.st_ino),

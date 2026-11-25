@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-try:
-    import fcntl
-except ImportError:  # Windows
-    fcntl = None
-    import msvcrt
 import hashlib
 import json
-import os
 import stat
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from .case_writer import atomic_write_json, open_case_directory
+from .case_writer import (
+    CaseDirectory,
+    DirectoryArgument,
+    NotRegularFile,
+    as_directory,
+    atomic_write_json,
+    open_case_directory,
+)
 from .contract import (
     ATTEMPT_LIMITS,
     LEGACY_STATE_VERSION,
@@ -24,7 +25,6 @@ from .contract import (
     STORED_ATTEMPT_CEILINGS,
 )
 
-_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 # Decisions carried over from a v1 state predate the review-nonce ledger, so
 # they count. The upgrade binds each to a "legacy-v1" ledger entry held in
 # memory under this key; the first transition that writes v2 publishes those
@@ -113,7 +113,7 @@ def new_state() -> dict[str, Any]:
 
 
 def read_data_bytes(
-    case: Path, name: str, data_descriptor: int | None = None
+    case: Path, name: str, data_descriptor: DirectoryArgument | None = None
 ) -> bytes | None:
     relative = f"data/{name}"
     if data_descriptor is None:
@@ -128,17 +128,9 @@ def read_data_bytes(
             raise OrchestrationError(f"cannot read {relative}: {exc}") from exc
 
     try:
-        metadata = os.stat(name, dir_fd=data_descriptor, follow_symlinks=False)
-    except FileNotFoundError:
-        return None
-    except OSError as exc:
-        raise OrchestrationError(f"cannot inspect {relative}: {exc}") from exc
-    if not stat.S_ISREG(metadata.st_mode):
-        raise OrchestrationError(f"{relative} must be a regular file")
-    try:
-        handle = os.open(name, os.O_RDONLY | _NOFOLLOW, dir_fd=data_descriptor)
-        with os.fdopen(handle, "rb") as stream:
-            return stream.read()
+        return as_directory(data_descriptor).read_regular(name)
+    except NotRegularFile as exc:
+        raise OrchestrationError(f"{relative} must be a regular file") from exc
     except OSError as exc:
         raise OrchestrationError(f"cannot read {relative}: {exc}") from exc
 
@@ -200,7 +192,7 @@ def _upgrade_v1(state: dict[str, Any]) -> dict[str, Any]:
     return upgraded
 
 
-def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]:
+def load_state(case: Path, data_descriptor: DirectoryArgument | None = None) -> dict[str, Any]:
     content = read_data_bytes(case, "orchestration.json", data_descriptor)
     if content is None:
         return new_state()
@@ -244,24 +236,15 @@ def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]
 
 
 @contextmanager
-def transaction(case: Path) -> Iterator[int]:
-    with open_case_directory(case, ("data",)) as descriptor:
+def transaction(case: Path) -> Iterator[CaseDirectory]:
+    with open_case_directory(case, ("data",)) as directory:
         try:
-            if fcntl is not None:
-                fcntl.flock(descriptor, fcntl.LOCK_EX)
-            else:
-                msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
+            directory.lock_exclusive()
         except OSError as exc:
             raise OrchestrationError(
                 f"cannot lock the case data directory: {exc}"
             ) from exc
         try:
-            yield descriptor
+            yield directory
         finally:
-            if fcntl is not None:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            else:
-                try:
-                    msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
-                except OSError:
-                    pass
+            directory.unlock()
