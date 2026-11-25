@@ -1507,13 +1507,16 @@ def main() -> int:
             "evidence_bundle_sha256": evidence_bundle_path,
             "source_expressions_sha256": expressions_path,
         }
-        # A born case's artifacts are work in progress until its first
-        # gate-approval binding. A migrated case keeps its activation-time
-        # hashes enforced, as before. Once the Investigation gate is approved,
-        # the latest binding (or the migration's hashes) must match exactly.
+        # While the Investigation gate approval stands, the latest binding (or
+        # the migration's hashes) must match exactly. Without it the artifacts
+        # are work in progress: before the first approval, and again after a
+        # follow-up or an earlier gate's re-approval withdraws it; the next
+        # approval appends a fresh binding. A migrated case that has never been
+        # bound keeps its activation-time hashes enforced.
         events = contract_data.get("activation_events") or [{}]
         first_kind = events[0].get("kind", "migration") if isinstance(events[0], dict) else "migration"
-        if investigation_gate_approved(case_dir) or first_kind == "migration" or bound_hashes(contract_data) is not None:
+        never_bound = not any(isinstance(event, dict) and event.get("kind") == "binding" for event in events)
+        if investigation_gate_approved(case_dir) or (first_kind == "migration" and never_bound):
             latest = bound_hashes(contract_data)
             if latest is None:
                 all_errors.append("case-contract.json: the approved Investigation gate has no artifact binding")

@@ -40,7 +40,7 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, PACKET_OVERFLOW, agentSpec, analystTask, allowedTools, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt, taskMode } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, PACKET_OVERFLOW, agentSpec, analystTask, allowedTools, continueApprovedPlan, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt, taskMode } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
@@ -367,6 +367,11 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		queue.run(async () => {
 			const status = await caseStatus(harness);
 			if (harness.lastAnalystCheck && harness.lastAnalystCheck.phase !== String(status.phase)) harness.lastAnalystCheck = undefined;
+			const continued = continueApprovedPlan(request.agent, String(status.phase ?? ''), request.task);
+			if (continued !== request.task) {
+				harness.log(`${request.agent}: a planning task after the methodology was approved runs as EXECUTION`);
+				request.task = continued;
+			}
 			const refusal = await refusalFor(harness, request.agent, request.task, status);
 			if (refusal) throw new Error(`spawn_agent: ${refusal}`);
 			// The fact-checker's task is code-built: the orchestrator's text never

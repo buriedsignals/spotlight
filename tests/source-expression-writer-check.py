@@ -662,6 +662,16 @@ def main() -> int:
         after = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
         require(after.returncode != 0 and "approval covers" in after.stdout + after.stderr,
                 "a change after approval was not caught by the binding: " + after.stdout[-800:] + after.stderr[-800:])
+        # spotlight-stall 2026-11-25: a follow-up withdraws the gate approval
+        # (transitions.request_follow_up) and the case returns to Investigation,
+        # where the artifacts change again until the next approval re-binds them.
+        # The old binding must not hold them; nothing the investigator can write
+        # would ever satisfy it, so the case looped until it was blocked.
+        (case / "data" / "orchestration.json").write_text(json.dumps({"approvals": {}}), encoding="utf-8")
+        reopened = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
+        require("approval covers" not in reopened.stdout + reopened.stderr,
+                "a case sent back to Investigation is still held to its old binding: " + reopened.stdout[-800:] + reopened.stderr[-800:])
+        (case / "data" / "orchestration.json").write_text(json.dumps({"approvals": {"investigation_gate": {}}}), encoding="utf-8")
         # The binding covers the positions that existed at approval.
         bound = json.loads((case / "data" / "case-contract.json").read_text(encoding="utf-8"))["activation_events"][-1]["artifact_hashes"]
         require(bound.get("source_positions_sha256") == hashlib.sha256(positions_path.read_bytes()).hexdigest(),

@@ -372,6 +372,25 @@ function refuseMisplacedBrief(caseDir: string, target: string): void {
 	throw new FileRefused('refused: the approved brief goes to brief-directions.txt at the case root (path: brief-directions.txt); data/brief-directions.txt is not read. The file was not written.');
 }
 
+// spotlight-stall 2026-11-25: a follow-up sent during Investigation had the
+// investigator rewrite the approved data/methodology.json from a template, and
+// the stub was then approved, dropping the research approval. Such a task now
+// runs as EXECUTION (roles.ts continueApprovedPlan). Should a worker still
+// write the approved file, the write is kept out and reported as done with a
+// note, so the worker carries on: no refusal, no correction round. Research
+// amendments and a research-off change go through code, not this tool.
+const KEPT_METHODOLOGY = 'data/methodology.json is the approved methodology and stays as approved; nothing was changed, and nothing more is needed there. Carry on with the investigation: record findings with record_finding and evidence in data/evidence-bundle.json.';
+function approvedMethodology(caseDir: string, target: string): boolean {
+	if (caseRelative(caseDir, target) !== 'data/methodology.json') return false;
+	try {
+		const bound = (JSON.parse(readFileSync(join(caseDir, 'data', 'orchestration.json'), 'utf8')) as { approvals?: { methodology?: { input_sha256?: Record<string, unknown> } } })
+			.approvals?.methodology?.input_sha256?.['data/methodology.json'];
+		return typeof bound === 'string' && bound === createHash('sha256').update(readFileSync(target)).digest('hex');
+	} catch {
+		return false;
+	}
+}
+
 // With the Indicator Framework on, its case file and report come only from
 // record_indicator_framework, which fills ratings, quadrants and items from
 // the fetched framework data.
@@ -618,6 +637,27 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 		if (fromLeads) {
 			item.raw_path = `${path}.raw`;
 			filled.push(`Code moved ${String(item.id)}'s raw_path from ${path} to ${path}.raw, the page as fetched.`);
+		}
+		// spotlight-stall 2026-11-25: a direction worker added four items without extraction_confidence or human_verification_required,
+		// validate-case failed, and two correction rounds did not repair them. Code fills them for an item whose id is new to the bundle, on every tier,
+		// with the values the cite route gives its own items; an item whose raw_path is not a registered, unchanged capture is flagged for a
+		// person instead, which keeps it from anchoring a positive verdict until someone looks.
+		// A rewrite that leaves either field out keeps the stored value, as a merge keeps claim_links.
+		for (const field of ['extraction_confidence', 'human_verification_required'] as const) {
+			if (old && item[field] === undefined && old[field] !== undefined) {
+				item[field] = old[field];
+				filled.push(`Code kept ${String(item.id)}'s ${field}, which the rewrite left out.`);
+			}
+		}
+		const added = !old && typeof item.id === 'string';
+		if (added && item.extraction_confidence === undefined) {
+			item.extraction_confidence = 'medium';
+			filled.push(`Code set ${String(item.id)}'s extraction_confidence to medium.`);
+		}
+		if (added && item.human_verification_required === undefined) {
+			const verified = typeof item.raw_path === 'string' && !!registeredCapture(context, item.raw_path);
+			item.human_verification_required = !verified;
+			filled.push(`Code set ${String(item.id)}'s human_verification_required to ${!verified}${verified ? '' : ': its raw_path is not a capture this run fetched'}.`);
 		}
 		if (local && (fromLeads || !old)) {
 			const capture = typeof item.raw_path === 'string' ? registeredCapture(context, item.raw_path) : undefined;
@@ -1697,6 +1737,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
+				if (approvedMethodology(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites))) return textResult(KEPT_METHODOLOGY);
 				const notes: string[] = [];
 				const written = repairPaperwork(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, context.env, notes);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), written, true);
@@ -1732,6 +1773,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; old_text: string; new_text: string }>('edit_file', editParams, params);
 				const target = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
+				if (approvedMethodology(caseDir, target)) return textResult(KEPT_METHODOLOGY);
 				// Editing reads the file, so a file hidden from this role is refused.
 				if (denied(scope?.denyReads, caseRelative(caseDir, target))) {
 					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);

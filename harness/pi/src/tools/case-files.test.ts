@@ -79,7 +79,8 @@ test('new planning and bundle creation times are real and historical timestamps 
  assert.equal(bundle.schema_version, '1.0');
  assert.ok(Date.parse(bundle.created_at) >= start && Date.parse(bundle.created_at) <= Date.now());
  assert.match(bundle.run_id, /^local-[0-9a-f-]{36}$/);
- assert.deepEqual(bundle.items, [{ id: 'E1', accessed: '2021-06-01', archive_url: null }]);
+ // The item's own dates stay as written; code adds only the fields it was missing.
+ assert.deepEqual(bundle.items, [{ id: 'E1', accessed: '2021-06-01', archive_url: null, extraction_confidence: 'medium', human_verification_required: true }]);
  await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ created_at: '2022-01-01', items: [{ id: 'E2' }] }) });
  const updated = JSON.parse(await readFile(bundlePath, 'utf8'));
  assert.equal(updated.created_at, bundle.created_at);
@@ -122,7 +123,7 @@ test('a direction\'s worker reads only its own entries, and its write keeps ever
 	const findings = JSON.parse(await readFile(data('findings.json'), 'utf8'));
 	assert.deepEqual(findings.findings, [{ id: 'D1-F1', claim: 'first' }, { id: 'F3', claim: 'before the split' }, { id: 'D2-F1', claim: 'second, corrected' }]);
 	assert.deepEqual(findings.gaps, ['D1 gap', 'D2 gap']);
-	assert.deepEqual(JSON.parse(await readFile(data('evidence-bundle.json'), 'utf8')).items, [{ id: 'D1-E1' }, { id: 'FC-E1', created_by: 'fact-checker' }, null, 17, { notes: 'legacy' }, { id: 'D2-E1' }]);
+	assert.deepEqual(JSON.parse(await readFile(data('evidence-bundle.json'), 'utf8')).items, [{ id: 'D1-E1' }, { id: 'FC-E1', created_by: 'fact-checker' }, null, 17, { notes: 'legacy' }, { id: 'D2-E1', extraction_confidence: 'medium', human_verification_required: true }]);
 	assert.deepEqual(JSON.parse(await readFile(data('investigation-log.json'), 'utf8')).cycles.map((cycle: { focus: string }) => cycle.focus), ['D1: first direction', 'D2: second direction']);
 	assert.deepEqual(JSON.parse(await call('read_file', { path: 'data/findings.json' })).findings, [{ id: 'D2-F1', claim: 'second, corrected' }]);
 });
@@ -181,7 +182,7 @@ test('an explicit edit can remove legacy anonymous evidence without changing key
 	await writeFile(file, JSON.stringify(original, null, 2));
 	await call('write_file', { path, content: JSON.stringify({ items: [{ id: 'E2', notes: 'new' }] }) });
 	const before = JSON.parse(await readFile(file, 'utf8'));
-	assert.deepEqual(before.items, [...original.items, { id: 'E2', notes: 'new' }]);
+	assert.deepEqual(before.items, [...original.items, { id: 'E2', notes: 'new', extraction_confidence: 'medium', human_verification_required: true }]);
 	await call('write_file', { path, content: JSON.stringify({ items: [{ id: 'E2', notes: 'new' }] }) });
 	assert.deepEqual(JSON.parse(await readFile(file, 'utf8')).items, before.items);
 	const oldText = JSON.stringify(before, null, 2);
@@ -767,6 +768,36 @@ test('an evidence item naming a distilled leads file is refused, naming its .raw
 	assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), beforeLeadEdit);
 });
 
+// spotlight-stall 2026-11-25: a direction worker added D4-E1..E4 without extraction_confidence
+// or human_verification_required; validate-case failed and two correction rounds changed nothing.
+test('an evidence item new to the bundle gets its missing confidence and verification flag from code, on every tier', async (t) => {
+	for (const tier of ['9b', 'frontier']) await t.test(tier, async (t) => {
+		const harness = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-receipts-')));
+		t.after(() => rm(harness, { recursive: true, force: true }));
+		const { caseDir, call } = await fixture(t, undefined, 'investigator', { SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_HARNESS_DATA: harness });
+		await mkdir(join(caseDir, 'research'));
+		await writeFile(join(caseDir, 'research', 'fetched.md.raw'), 'The page as fetched.\n');
+		await writeFile(join(caseDir, 'research', 'typed.md'), 'Notes the worker wrote itself.\n');
+		registerCapture(harness, caseDir, 'research/fetched.md.raw', 'https://example.org/x', 'investigator');
+		await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E0', raw_path: 'research/typed.md' }] }));
+		const reply = await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [
+			{ id: 'D4-E1', query_or_task: 'q', acquisition_method: 'crawl4ai', source_url: 'https://example.org/x', accessed: '2026-11-24T10:45:00Z', raw_path: 'research/fetched.md.raw' },
+			{ id: 'D4-E2', query_or_task: 'q', acquisition_method: 'other', source_url: 'https://example.org/y', accessed: '2026-11-24T10:45:00Z', raw_path: 'research/typed.md' },
+			{ id: 'D4-E3', query_or_task: 'q', acquisition_method: 'other', source_url: 'https://example.org/z', accessed: '2026-11-24T10:45:00Z', raw_path: 'research/typed.md', extraction_confidence: 'low', human_verification_required: false },
+		] }) });
+		const items = new Map(JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).items.map((item: { id: string }) => [item.id, item]));
+		const fields = (id: string) => { const item = items.get(id) as Record<string, unknown>; return [item.extraction_confidence, item.human_verification_required]; };
+		assert.deepEqual(fields('D4-E1'), ['medium', false], 'a registered capture is trusted as the cite route trusts it');
+		assert.deepEqual(fields('D4-E2'), ['medium', true], 'an unregistered file goes to a person');
+		assert.deepEqual(fields('D4-E3'), ['low', false], 'the worker\'s own values stand');
+		assert.deepEqual(fields('E0'), [undefined, undefined], 'an item already in the bundle is left to the validator');
+		assert.match(reply, /Code set D4-E2's human_verification_required to true/);
+		await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [{ id: 'D4-E2', query_or_task: 'q2', acquisition_method: 'other', source_url: 'https://example.org/y', accessed: '2026-11-24T10:45:00Z', raw_path: 'research/typed.md' }] }) });
+		const rewritten = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).items.find((item: { id: string }) => item.id === 'D4-E2');
+		assert.deepEqual([rewritten.query_or_task, rewritten.extraction_confidence, rewritten.human_verification_required], ['q2', 'medium', true], 'a rewrite that leaves them out keeps them');
+	});
+});
+
 // The paperwork repairs are for the local tiers: on frontier the same writes get what they always got.
 // Each repair also leaves alone what it cannot prove (B15, B16, B17, B14, B23).
 test('code repairs only worker paperwork it can prove, on local tiers, and says so; frontier is unchanged', async (t) => {
@@ -1093,6 +1124,31 @@ test('a new case gets no investigation file before the harness activates it; act
 	const legacy = await fixture(t);
 	await writeFile(join(legacy.caseDir, 'data', 'findings.json'), '{"schema_version": "1.0"}');
 	await legacy.call('write_file', { path: 'data/investigation-log.json', content: '{}' });
+});
+
+// spotlight-stall 2026-11-25: a follow-up during Investigation had the investigator
+// rewrite the approved methodology from a template, and the stub was approved.
+test('a worker write to the approved methodology is kept out and reported as done; an unapproved or changed one is written', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	const approved = '{"project": "Case", "lead": "Approved plan"}\n';
+	await writeFile(join(caseDir, 'data', 'methodology.json'), approved);
+	const approveBytes = (bytes: string) => writeFile(join(caseDir, 'data', 'orchestration.json'), JSON.stringify({
+		approvals: { methodology: { input_sha256: { 'data/methodology.json': createHash('sha256').update(bytes).digest('hex') } } },
+	}));
+	await approveBytes(approved);
+
+	for (const [tool, args] of [
+		['write_file', { path: 'data/methodology.json', content: '{"project": "Case", "lead": "Example Direction 1"}' }],
+		['edit_file', { path: 'data/methodology.json', old_text: 'Approved plan', new_text: 'Example Direction 1' }],
+	] as const) {
+		assert.match(await call(tool, args), /is the approved methodology and stays as approved[\s\S]*Carry on with the investigation/, tool);
+		assert.equal(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), approved, tool);
+	}
+
+	// An approval of other bytes (the gate reopened) leaves corrections to the worker.
+	await approveBytes('{"project": "Case", "lead": "Earlier plan"}\n');
+	await call('edit_file', { path: 'data/methodology.json', old_text: 'Approved plan', new_text: 'Corrected plan' });
+	assert.match(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), /Corrected plan/);
 });
 
 // gold osmf s1 a1 on d74a171e: the fact-checker rewrote F3's claim into an invented London

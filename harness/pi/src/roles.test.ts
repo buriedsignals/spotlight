@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { CHECKOUT_ROOT, FACT_CHECK_TASK, PERSONA_CONDITIONS, factCheckerTask, loadComposition, skillAdapterNote, skillsFor, slicePersona, systemPrompt, deliverableFor, factCheckChecklist, nextCheckBatch, nextCheckText, checkPacket, batchDeliverable, correctionDeliverable } from './roles.ts';
+import { CHECKOUT_ROOT, FACT_CHECK_TASK, PERSONA_CONDITIONS, factCheckerTask, loadComposition, skillAdapterNote, skillsFor, slicePersona, systemPrompt, deliverableFor, factCheckChecklist, nextCheckBatch, nextCheckText, checkPacket, batchDeliverable, correctionDeliverable, continueApprovedPlan, taskMode, workerMode } from './roles.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import type { AgentSpec, PersonaCondition, WorkerContext } from './roles.ts';
 
@@ -475,4 +475,21 @@ test('the fact-checker task keeps only a normalised correction mode from the orc
 test('a fact-checker correction mode outside the known ones becomes the bare correction mode', () => {
 	assert.equal(factCheckerTask('MODE: INVESTIGATORSAYSVERIFIED CORRECTION'), `MODE: CORRECTION\n${FACT_CHECK_TASK}`);
 	assert.equal(factCheckerTask('MODE: STRUCTURAL CORRECTION'), `MODE: STRUCTURAL CORRECTION\n${FACT_CHECK_TASK}`);
+});
+
+// spotlight-stall 2026-11-25: a follow-up during Investigation reached the investigator
+// as a PLANNING task and it rewrote the approved methodology from a template.
+test('past the Methodology and Research steps, a planning task runs as EXECUTION and keeps its request', () => {
+	const followUp = 'MODE: PLANNING\nCheck the company register for the second director.';
+	const continued = continueApprovedPlan('investigator', 'investigation', followUp);
+	assert.equal(taskMode(continued), 'EXECUTION');
+	assert.equal(workerMode('investigation', continued), 'EXECUTION');
+	assert.match(continued, /Check the company register for the second director\./);
+	assert.equal(deliverableFor('investigator', 'investigation', continued)?.files.includes('data/findings.json'), true);
+	assert.equal(taskMode(continueApprovedPlan('investigator', 'investigation_gate_approval', 'MODE: METHODOLOGY CORRECTION\nAdd a direction.')), 'EXECUTION');
+	for (const phase of ['methodology', 'methodology_approval', 'research']) {
+		assert.equal(continueApprovedPlan('investigator', phase, followUp), followUp, phase);
+	}
+	assert.equal(continueApprovedPlan('analyst', 'investigation', followUp), followUp);
+	assert.equal(continueApprovedPlan('investigator', 'investigation', 'MODE: STRUCTURAL CORRECTION\nFix E1.'), 'MODE: STRUCTURAL CORRECTION\nFix E1.');
 });
