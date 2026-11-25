@@ -428,6 +428,24 @@ export function workerMode(phase: string, task: string): 'PLANNING' | 'EXECUTION
 	return RESEARCH_PHASES.includes(phase) ? 'AMENDMENT' : 'EXECUTION';
 }
 
+// spotlight-stall 2026-11-25: a follow-up sent during Investigation reached the
+// investigator as a PLANNING task, and it rewrote the approved methodology from a
+// template. Past the Methodology and Research steps the plan is approved, so an
+// investigator task that asks to plan or correct it runs as EXECUTION: the
+// request stays, worked into findings, evidence and the log.
+export function continueApprovedPlan(role: string, phase: string, task: string): string {
+	if (role !== 'investigator' || !phase || PLANNING_PHASES.includes(phase) || RESEARCH_PHASES.includes(phase)) return task;
+	const mode = taskMode(task);
+	if (mode !== 'PLANNING' && mode !== 'METHODOLOGY CORRECTION') return task;
+	const lines = task.trim().split('\n');
+	const isMode = (line: string, index: number) => {
+		const cleaned = line.trim().replace(/^["'`*#>\s]+/, '');
+		return (index === 0 || cleaned.startsWith('MODE:')) && /^(?:MODE:\s*)?(?:PLANNING|METHODOLOGY CORRECTION)\b/.test(cleaned);
+	};
+	const rest = lines.filter((line, index) => !isMode(line, index)).join('\n').trim();
+	return `MODE: EXECUTION\nThe methodology is approved and stays as it is. Carry out the request below as investigation work, in findings, evidence and the investigation log.${rest ? `\n${rest}` : ''}`;
+}
+
 // tools-da on r4 (LFM3): the fact-checker's task said "write only
 // knowledge-proposal.json" (analyst rows bleeding in) or "data/fact-check-*.json",
 // and the worker obeyed the task, so data/fact-check.json was never written.

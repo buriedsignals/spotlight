@@ -1128,7 +1128,7 @@ test('a new case gets no investigation file before the harness activates it; act
 
 // spotlight-stall 2026-11-25: a follow-up during Investigation had the investigator
 // rewrite the approved methodology from a template, and the stub was approved.
-test('the approved methodology is never rewritten by a worker; an unapproved or changed one still is', async (t) => {
+test('a worker write to the approved methodology is kept out and reported as done; an unapproved or changed one is written', async (t) => {
 	const { caseDir, call } = await fixture(t);
 	const approved = '{"project": "Case", "lead": "Approved plan"}\n';
 	await writeFile(join(caseDir, 'data', 'methodology.json'), approved);
@@ -1141,7 +1141,7 @@ test('the approved methodology is never rewritten by a worker; an unapproved or 
 		['write_file', { path: 'data/methodology.json', content: '{"project": "Case", "lead": "Example Direction 1"}' }],
 		['edit_file', { path: 'data/methodology.json', old_text: 'Approved plan', new_text: 'Example Direction 1' }],
 	] as const) {
-		await assert.rejects(call(tool, args), /is the approved methodology, and an approved methodology is never rewritten; the file is unchanged/, tool);
+		assert.match(await call(tool, args), /is the approved methodology and stays as approved[\s\S]*Carry on with the investigation/, tool);
 		assert.equal(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), approved, tool);
 	}
 
