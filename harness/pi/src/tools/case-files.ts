@@ -372,6 +372,26 @@ function refuseMisplacedBrief(caseDir: string, target: string): void {
 	throw new FileRefused('refused: the approved brief goes to brief-directions.txt at the case root (path: brief-directions.txt); data/brief-directions.txt is not read. The file was not written.');
 }
 
+// spotlight-stall 2026-11-25: a follow-up sent during Investigation had the
+// investigator rewrite the approved data/methodology.json from a template, and
+// the stub was then approved, dropping the research approval. While the
+// Methodology gate's approval covers the file's current bytes, no worker
+// writes it; research amendments and a research-off change go through code.
+function refuseApprovedMethodology(caseDir: string, target: string): void {
+	if (caseRelative(caseDir, target) !== 'data/methodology.json') return;
+	let bound: unknown;
+	let bytes: Buffer;
+	try {
+		bytes = readFileSync(target);
+		bound = (JSON.parse(readFileSync(join(caseDir, 'data', 'orchestration.json'), 'utf8')) as { approvals?: { methodology?: { input_sha256?: Record<string, unknown> } } })
+			.approvals?.methodology?.input_sha256?.['data/methodology.json'];
+	} catch {
+		return;
+	}
+	if (typeof bound !== 'string' || bound !== createHash('sha256').update(bytes).digest('hex')) return;
+	throw new FileRefused('refused: data/methodology.json is the approved methodology, and an approved methodology is never rewritten; the file is unchanged. Work from it as it stands. A follow-up changes the findings, the evidence and the log, not the plan.');
+}
+
 // With the Indicator Framework on, its case file and report come only from
 // record_indicator_framework, which fills ratings, quadrants and items from
 // the fetched framework data.
@@ -1697,6 +1717,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
+				refuseApprovedMethodology(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				const notes: string[] = [];
 				const written = repairPaperwork(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, context.env, notes);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), written, true);
@@ -1732,6 +1753,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; old_text: string; new_text: string }>('edit_file', editParams, params);
 				const target = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
+				refuseApprovedMethodology(caseDir, target);
 				// Editing reads the file, so a file hidden from this role is refused.
 				if (denied(scope?.denyReads, caseRelative(caseDir, target))) {
 					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);

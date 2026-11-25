@@ -1095,6 +1095,31 @@ test('a new case gets no investigation file before the harness activates it; act
 	await legacy.call('write_file', { path: 'data/investigation-log.json', content: '{}' });
 });
 
+// spotlight-stall 2026-11-25: a follow-up during Investigation had the investigator
+// rewrite the approved methodology from a template, and the stub was approved.
+test('the approved methodology is never rewritten by a worker; an unapproved or changed one still is', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	const approved = '{"project": "Case", "lead": "Approved plan"}\n';
+	await writeFile(join(caseDir, 'data', 'methodology.json'), approved);
+	const approveBytes = (bytes: string) => writeFile(join(caseDir, 'data', 'orchestration.json'), JSON.stringify({
+		approvals: { methodology: { input_sha256: { 'data/methodology.json': createHash('sha256').update(bytes).digest('hex') } } },
+	}));
+	await approveBytes(approved);
+
+	for (const [tool, args] of [
+		['write_file', { path: 'data/methodology.json', content: '{"project": "Case", "lead": "Example Direction 1"}' }],
+		['edit_file', { path: 'data/methodology.json', old_text: 'Approved plan', new_text: 'Example Direction 1' }],
+	] as const) {
+		await assert.rejects(call(tool, args), /is the approved methodology, and an approved methodology is never rewritten; the file is unchanged/, tool);
+		assert.equal(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), approved, tool);
+	}
+
+	// An approval of other bytes (the gate reopened) leaves corrections to the worker.
+	await approveBytes('{"project": "Case", "lead": "Earlier plan"}\n');
+	await call('edit_file', { path: 'data/methodology.json', old_text: 'Approved plan', new_text: 'Corrected plan' });
+	assert.match(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), /Corrected plan/);
+});
+
 // gold osmf s1 a1 on d74a171e: the fact-checker rewrote F3's claim into an invented London
 // address and marked it false; matrix-stall s0 verified claims under the wrong finding ids.
 test('a fact-check claim that is not its finding\'s claim is refused, naming the claim to copy', async (t) => {
