@@ -639,6 +639,27 @@ function keepReceiptFields(context: ToolContext, current: string | undefined, me
 			item.raw_path = `${path}.raw`;
 			filled.push(`Code moved ${String(item.id)}'s raw_path from ${path} to ${path}.raw, the page as fetched.`);
 		}
+		// spotlight-stall 2026-11-25: a direction worker added four items without extraction_confidence or human_verification_required,
+		// validate-case failed, and two correction rounds did not repair them. Code fills them for an item whose id is new to the bundle, on every tier,
+		// with the values the cite route gives its own items; an item whose raw_path is not a registered, unchanged capture is flagged for a
+		// person instead, which keeps it from anchoring a positive verdict until someone looks.
+		// A rewrite that leaves either field out keeps the stored value, as a merge keeps claim_links.
+		for (const field of ['extraction_confidence', 'human_verification_required'] as const) {
+			if (old && item[field] === undefined && old[field] !== undefined) {
+				item[field] = old[field];
+				filled.push(`Code kept ${String(item.id)}'s ${field}, which the rewrite left out.`);
+			}
+		}
+		const added = !old && typeof item.id === 'string';
+		if (added && item.extraction_confidence === undefined) {
+			item.extraction_confidence = 'medium';
+			filled.push(`Code set ${String(item.id)}'s extraction_confidence to medium.`);
+		}
+		if (added && item.human_verification_required === undefined) {
+			const verified = typeof item.raw_path === 'string' && !!registeredCapture(context, item.raw_path);
+			item.human_verification_required = !verified;
+			filled.push(`Code set ${String(item.id)}'s human_verification_required to ${!verified}${verified ? '' : ': its raw_path is not a capture this run fetched'}.`);
+		}
 		if (local && (fromLeads || !old)) {
 			const capture = typeof item.raw_path === 'string' ? registeredCapture(context, item.raw_path) : undefined;
 			const fields = capture ? RECEIPT_FIELDS.filter((field) => !isDeepStrictEqual(item[field], capture[field])) : [];
