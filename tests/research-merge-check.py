@@ -229,6 +229,14 @@ class ClueRules(MergeTestCase):
                                 subjects=["Jan Kowal", "Northwind Holdings"], url=url)
         self.assertEqual(self.clues("K1"), [])
 
+    def test_k1_a_named_company_under_its_legal_form_is_not_a_new_actor(self) -> None:
+        # spotlight-stall 2026-11-25: the brief names the company, the lanes give its legal name.
+        for lead_id, topic_id, url, name in (("a", "ownership-registries", "https://registry.example.org/1", "Northwind Holdings NL"),
+                                             ("b", "contracts-news-courts", "https://court.example.net/2", "Northwind Holdings NL")):
+            self.case.page_lead(topic_id, lead_id, page_text=f"{name} filed {lead_id}.", excerpt=f"{name} filed {lead_id}.", subjects=[name], url=url)
+        self.assertEqual(len(self.merged()[0]["leads"]), 2)
+        self.assertEqual(self.clues("K1"), [])
+
     def test_k2_different_values_for_one_subject_and_attribute(self) -> None:
         self.case.page_lead("ownership-registries", "a", page_text="Capital: 100,000 EUR", excerpt="Capital: 100,000 EUR",
                             facts=[{"subject": "Northwind Holdings", "attribute": "share capital", "value": "100,000 EUR"}])
