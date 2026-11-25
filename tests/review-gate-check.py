@@ -168,6 +168,32 @@ class ReviewGate(CaseFixture):
         self.page_approve(case, "investigation_gate", nonce, view["digest"])
         self.assertEqual(self.phase(case), "investigation_gate_finalization")
 
+    def test_gate_notes_search_page_sources_and_repeated_numbers_without_blocking(self) -> None:
+        # spotlight-stall 2026-11-25: a finding rested on a search results page and one
+        # direction gave the same registry number as several findings. The gate says so
+        # beside each finding; the member decides, and nothing else in the review changes.
+        case = self.build("notes", "investigation_gate", "--clean")
+        path = case / "data/findings.json"
+        original = json.loads(path.read_text(encoding="utf-8"))
+
+        def view_with(f1_claim: str, f2_claim: str, f1_url: str) -> dict:
+            doc = json.loads(json.dumps(original))
+            first = doc["findings"][0]
+            first["claim"], first["sources"] = f1_claim, [{"url": f1_url}]
+            doc["findings"].append({**first, "id": "F2", "claim": f2_claim, "sources": [{"url": "https://registry.example.org/2"}]})
+            path.write_text(json.dumps(doc), encoding="utf-8")
+            return self.view(case, "investigation_gate")
+
+        plain = view_with("Company number 123 456 789 is registered.", "Company number 987654321 is active.", "https://registry.example.org/1")
+        noted = view_with("Company number 123 456 789 is registered.", "Its number is 123456789.", "https://www.google.com/search?q=example+holdings")
+        notes = {row["id"]: row.get("warnings", []) for row in noted["content"]["findings"]}
+        self.assertTrue(any("search results page" in note for note in notes["F1"]), notes)
+        self.assertTrue(any("same number (123456789) as F2" in note for note in notes["F1"]), notes)
+        self.assertTrue(any("same number (123456789) as F1" in note for note in notes["F2"]), notes)
+        self.assertEqual([row.get("warnings") for row in plain["content"]["findings"]], [None, None])
+        self.assertEqual((noted["items"], noted["blocking"], noted["open_required"]),
+                         (plain["items"], plain["blocking"], plain["open_required"]))
+
     def test_blocking_integrity_failure_blocks_approval(self) -> None:
         case = self.build("blocking", "investigation_gate")
         view = self.view(case, "investigation_gate")
