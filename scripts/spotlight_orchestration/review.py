@@ -19,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 from .case_writer import CaseDirectory, DirectoryArgument, atomic_write_files
 from .claim_basis import claim_basis
@@ -766,6 +767,45 @@ def set_aside_findings(case: Path) -> set[str]:
     return left_out
 
 
+# spotlight-stall 2026-11-25: a finding rested on a search engine's results page,
+# and one direction recorded the same registry number as ten findings; no step
+# said so. The gate now says it beside the finding. These are notes for the
+# member, who decides: they block nothing and change no confidence or verdict.
+_SEARCH_HOSTS = re.compile(r"(^|\.)(google|bing|duckduckgo|yahoo|yandex|baidu|ecosia|startpage|qwant|brave)\.[a-z.]+$")
+_IDENTIFIER = re.compile(r"(?<!\d)\d(?:[ \u00a0]?\d){8,}(?!\d)")
+
+
+def _search_results_url(url: str) -> bool:
+    """A search engine's results page, not a page it points to."""
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").lower()
+    query = {key.lower() for key, _ in parse_qsl(parts.query)}
+    searching = parts.path.rstrip("/") in {"/search", "/html", "/s", "/web"} or bool(query & {"q", "query", "p", "wd", "text"})
+    return bool(host) and searching and (bool(_SEARCH_HOSTS.search(host)) or parts.path.rstrip("/") == "/search")
+
+
+def _finding_warnings(findings: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Per finding, what the member should look at before keeping it."""
+    warnings: dict[str, list[str]] = {}
+    for finding in findings:
+        urls = [source["url"] for source in finding["sources"] if source["url"]]
+        if urls and all(_search_results_url(url) for url in urls):
+            warnings.setdefault(finding["id"], []).append(
+                "Its only source is a search results page, which shows snippets, not the source. Check the page the result points to.")
+    holders: dict[str, list[str]] = {}
+    for finding in findings:
+        for match in {re.sub(r"\D", "", value) for value in _IDENTIFIER.findall(finding["claim"])}:
+            holders.setdefault(match, []).append(finding["id"])
+    for number, ids in holders.items():
+        if len(ids) < 2:
+            continue
+        for finding_id in ids:
+            others = ", ".join(other for other in ids if other != finding_id)
+            warnings.setdefault(finding_id, []).append(
+                f"Gives the same number ({number}) as {others}: possibly the same fact recorded more than once.")
+    return warnings
+
+
 def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
     dependencies = investigation_gate_dependencies(case)
     blocking = [f"missing: {item}" for item in dependencies["investigation_gate_missing"]]
@@ -830,6 +870,8 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
                     "required": True,
                 }
             )
+    for finding_id, notes in _finding_warnings(findings).items():
+        next(row for row in findings if row["id"] == finding_id)["warnings"] = notes
     summary = _read_case_json(case, "data/summary.json")
     content = {
         "title": _text(summary.get("title"), 500) if isinstance(summary, dict) else "",

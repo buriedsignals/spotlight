@@ -352,6 +352,7 @@ function basisLines(record) {
   return [
     record.basis ? el("p", { className: "muted basis", text: record.basis }) : null,
     record.claim_note ? el("p", { className: "muted basis", text: record.claim_note }) : null,
+    ...(record.warnings || []).map((text) => el("p", { className: "warning", text })),
   ];
 }
 
@@ -522,7 +523,7 @@ function investigationContent(content, items) {
       { "aria-labelledby": "findings-heading" },
       el("h2", { id: "findings-heading", text: `Verified findings (${verified.length})` }),
       verified.length
-        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Basis", "Fact-checker's note", "Sources"], verified.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.basis || finding.claim_note ? el("span", {}, basisLines(finding)) : "", finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
+        ? table("Fact-check verdicts", ["Finding", "Claim", "Verdict", "Confidence", "Basis", "Fact-checker's note", "Sources"], verified.map((finding) => [finding.id, finding.claim, verdictPill(finding.verdict, ""), confidencePill(finding.confidence, ""), finding.basis || finding.claim_note || finding.warnings ? el("span", {}, basisLines(finding)) : "", finding.fact_check_notes, finding.sources.length ? el("span", {}, sourceLinks(finding.sources.map((source) => source.url))) : "No source URL"]))
         : el("p", { className: "muted", text: content.findings.length ? "No finding is verified." : "The case records no findings." }),
     ),
     el(
